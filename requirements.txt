@@ -1,0 +1,21 @@
+# Survivor Board Game Web App - Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Flask framework
+flask>=2.0.0,<3.0.0
+
+# WebSocket support via Socket.IO
+flask-socketio>=5.0.0,<6.0.0
+
+# Response compression for better performance
+flask-compress>=1.13,<2.0.0
+
+# High-performance async (optional but recommended)
+gevent>=23.0.0
+gevent-websocket>=0.10.1
+
+# Environment variable support (for production deployment)
+python-dotenv>=1.0.0,<2.0.0
+
+# Development dependencies (optional)
+# pytest>=7.0.0  # For running tests

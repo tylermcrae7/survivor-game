@@ -1,0 +1,656 @@
+/**
+ * Survivor Game - Network Communication Module
+ * Handles API calls, Socket.IO communication, and state synchronization
+ */
+
+// Network state
+let socket = null;
+let originalEmit = null;
+let isConnected = false;
+let reconnectAttempts = 0;
+let pendingRequests = new Map();
+let requestQueue = [];
+let isOnline = navigator.onLine;
+
+// Configuration
+const API_URL = window.API_URL || window.location.origin;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_DELAY = 30000;
+const REQUEST_TIMEOUT = 10000;
+const BATCH_DELAY = 100;
+
+/**
+ * Enhanced API call function with retry logic and error handling
+ */
+async function apiCall(endpoint, data = {}, method = 'POST', options = {}) {
+    const {
+        timeout = REQUEST_TIMEOUT,
+        retries = 3,
+        retryDelay = 1000
+    } = options;
+    
+    const requestId = generateRequestId();
+    const requestOptions = {
+        method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Request-ID': requestId
+        }
+    };
+    
+    if (method !== 'GET' && method !== 'HEAD') {
+        requestOptions.body = JSON.stringify(data);
+    }
+    
+    // Add to pending requests for tracking
+    pendingRequests.set(requestId, {
+        endpoint,
+        data,
+        method,
+        timestamp: Date.now()
+    });
+    
+    let lastError;
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            requestOptions.signal = controller.signal;
+            
+            const response = await fetch(`${API_URL}/api${endpoint}`, requestOptions);
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                // Try to get error message from response
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const contentType = response.headers.get("content-type");
+            const result = contentType && contentType.includes("application/json") 
+                ? await response.json() 
+                : await response.text();
+            
+            // Remove from pending requests
+            pendingRequests.delete(requestId);
+            
+            // Show success notification for important operations
+            if (method !== 'GET' && result.success) {
+                showToast(result.message || 'Operation completed successfully', 'success');
+            }
+            
+            return result;
+            
+        } catch (error) {
+            lastError = error;
+            
+            // Don't retry on certain errors
+            if (error.name === 'AbortError' || error.message.includes('400')) {
+                break;
+            }
+            
+            // Wait before retry
+            if (attempt < retries) {
+                await sleep(retryDelay * Math.pow(2, attempt));
+            }
+        }
+    }
+    
+    // Remove from pending requests
+    pendingRequests.delete(requestId);
+    
+    // Handle final error
+    console.error('API Call failed:', lastError);
+    showToast(lastError.message || 'Network error occurred', 'error');
+    
+    throw lastError;
+}
+
+/**
+ * Request batching system for performance optimization
+ */
+class RequestBatcher {
+    constructor(delay = BATCH_DELAY) {
+        this.queue = [];
+        this.timer = null;
+        this.delay = delay;
+    }
+    
+    add(request) {
+        this.queue.push(request);
+        
+        if (!this.timer) {
+            this.timer = setTimeout(() => this.flush(), this.delay);
+        }
+    }
+    
+    async flush() {
+        if (this.queue.length === 0) return;
+        
+        const requests = [...this.queue];
+        this.queue = [];
+        this.timer = null;
+        
+        try {
+            // Group requests by type for batching
+            const batchableRequests = requests.filter(req => req.batchable);
+            const individualRequests = requests.filter(req => !req.batchable);
+            
+            // Send batched requests
+            if (batchableRequests.length > 1) {
+                await apiCall('/batch', { operations: batchableRequests });
+            } else if (batchableRequests.length === 1) {
+                const req = batchableRequests[0];
+                await apiCall(req.endpoint, req.data, req.method);
+            }
+            
+            // Send individual requests
+            await Promise.all(
+                individualRequests.map(req => 
+                    apiCall(req.endpoint, req.data, req.method)
+                )
+            );
+            
+        } catch (error) {
+            console.error('Batch request failed:', error);
+        }
+    }
+}
+
+const requestBatcher = new RequestBatcher();
+
+/**
+ * Enhanced Socket.IO management with robust reconnection
+ */
+class SocketManager {
+    constructor() {
+        this.socket = null;
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+        this.eventListeners = new Map();
+        this.connectionPromise = null;
+        this.heartbeatInterval = null;
+    }
+
+    /**
+     * Start heartbeat to keep WebSocket connection alive through Cloudflare
+     * Cloudflare has a 100-second idle timeout by default
+     */
+    startHeartbeat() {
+        this.stopHeartbeat(); // Clear any existing interval
+        this.heartbeatInterval = setInterval(() => {
+            if (this.socket && this.isConnected) {
+                this.socket.emit('heartbeat');
+            }
+        }, 30000); // Send heartbeat every 30 seconds
+    }
+
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+    
+    async connect(gameId = null) {
+        if (this.connectionPromise) {
+            return this.connectionPromise;
+        }
+        
+        this.connectionPromise = this._doConnect(gameId);
+        return this.connectionPromise;
+    }
+    
+    async _doConnect(gameId) {
+        try {
+            // Disconnect existing socket
+            if (this.socket) {
+                this.socket.disconnect();
+            }
+            
+            this.socket = io(API_URL, {
+                transports: ['websocket', 'polling'],
+                timeout: 20000,
+                forceNew: true
+            });
+            
+            // Set up event listeners
+            this.socket.on('connect', () => {
+                this.isConnected = true;
+                this.reconnectAttempts = 0;
+                console.log('✅ Socket connected');
+
+                // Start heartbeat for Cloudflare WebSocket keep-alive
+                this.startHeartbeat();
+
+                // Join game room if provided
+                if (gameId) {
+                    this.socket.emit('join', { gameId });
+                }
+                
+                // Register game event handlers
+                this.socket.on('game_updated', (gameState) => {
+                    console.log('📊 Game updated received:', gameState);
+                    if (window.updateGameState) {
+                        window.updateGameState(gameState);
+                    }
+                    if (window.SurvivorUI) {
+                        window.SurvivorUI.updateCurrentScreen(gameState);
+                    }
+                });
+                
+                this.socket.on('state_update', (gameState) => {
+                    console.log('📊 State update received:', gameState);
+                    if (window.updateGameState) {
+                        window.updateGameState(gameState);
+                    }
+                    if (window.SurvivorUI) {
+                        window.SurvivorUI.updateCurrentScreen(gameState);
+                    }
+                });
+                
+                this.socket.on('player_joined', (data) => {
+                    console.log('👤 Player joined:', data);
+                    if (window.showToast) {
+                        window.showToast(`${data.playerName} joined the game`, 'info');
+                    }
+                });
+                
+                this.socket.on('player_left', (data) => {
+                    console.log('👤 Player left:', data);
+                    if (window.showToast) {
+                        window.showToast(`${data.playerName} left the game`, 'info');
+                    }
+                });
+                
+                // Trigger custom connect handlers
+                this.emit('connected');
+            });
+            
+            this.socket.on('disconnect', (reason) => {
+                this.isConnected = false;
+                console.log('❌ Socket disconnected:', reason);
+
+                // Stop heartbeat on disconnect
+                this.stopHeartbeat();
+
+                // Trigger custom disconnect handlers
+                this.emit('disconnected', reason);
+
+                // Schedule reconnection for unexpected disconnects
+                if (reason === 'io server disconnect') {
+                    // Server initiated disconnect - don't reconnect
+                    return;
+                }
+
+                this.scheduleReconnect(gameId);
+            });
+            
+            this.socket.on('connect_error', (error) => {
+                console.error('Socket connection error:', error);
+                this.emit('error', error);
+                this.scheduleReconnect(gameId);
+            });
+            
+            this.socket.on('error', (error) => {
+                console.error('Socket error:', error);
+                this.emit('error', error);
+            });
+            
+            // Wait for connection
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Socket connection timeout'));
+                }, 10000);
+                
+                this.socket.on('connect', () => {
+                    clearTimeout(timeout);
+                    resolve();
+                });
+                
+                this.socket.on('connect_error', (error) => {
+                    clearTimeout(timeout);
+                    reject(error);
+                });
+            });
+            
+            return this.socket;
+            
+        } finally {
+            this.connectionPromise = null;
+        }
+    }
+    
+    scheduleReconnect(gameId) {
+        if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            console.error('❌ Max reconnection attempts reached');
+            showToast('Connection lost. Please refresh the page.', 'error');
+            return;
+        }
+        
+        const delay = Math.min(
+            BASE_RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts),
+            MAX_RECONNECT_DELAY
+        );
+        
+        this.reconnectAttempts++;
+        
+        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        
+        setTimeout(() => {
+            this.connect(gameId);
+        }, delay);
+    }
+    
+    emit(event, data) {
+        if (this.socket && this.isConnected) {
+            this.socket.emit(event, data);
+        } else {
+            console.warn('Socket not connected, queueing event:', event);
+            // Could implement event queueing here
+        }
+    }
+    
+    on(event, handler) {
+        if (this.socket) {
+            this.socket.on(event, handler);
+        }
+        
+        // Store for reconnection
+        if (!this.eventListeners.has(event)) {
+            this.eventListeners.set(event, []);
+        }
+        this.eventListeners.get(event).push(handler);
+    }
+    
+    off(event, handler) {
+        if (this.socket) {
+            this.socket.off(event, handler);
+        }
+        
+        // Remove from stored listeners
+        if (this.eventListeners.has(event)) {
+            const handlers = this.eventListeners.get(event);
+            const index = handlers.indexOf(handler);
+            if (index !== -1) {
+                handlers.splice(index, 1);
+            }
+        }
+    }
+    
+    disconnect() {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+        }
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+    }
+}
+
+const socketManager = new SocketManager();
+
+/**
+ * State synchronization with diff-based updates
+ */
+let lastKnownState = {};
+let stateUpdateQueue = [];
+let isProcessingStateUpdate = false;
+
+function processStateUpdate(newState) {
+    if (isProcessingStateUpdate) {
+        stateUpdateQueue.push(newState);
+        return;
+    }
+    
+    isProcessingStateUpdate = true;
+    
+    try {
+        // Calculate diff
+        const diff = calculateStateDiff(lastKnownState, newState);
+        
+        if (Object.keys(diff).length === 0) {
+            // No changes
+            return;
+        }
+        
+        // Apply diff to local state
+        Object.assign(window.SurvivorGame.fullGameState, diff);
+        
+        // Update last known state
+        lastKnownState = JSON.parse(JSON.stringify(newState));
+        
+        // Trigger UI update with diff
+        if (window.SurvivorUI && window.SurvivorUI.updateFromDiff) {
+            window.SurvivorUI.updateFromDiff(diff);
+        } else {
+            // Fallback to full update
+            window.updateGameState && window.updateGameState(newState);
+        }
+        
+        console.log('📊 State updated with diff:', Object.keys(diff));
+        
+    } finally {
+        isProcessingStateUpdate = false;
+        
+        // Process queued updates
+        if (stateUpdateQueue.length > 0) {
+            const nextUpdate = stateUpdateQueue.shift();
+            setTimeout(() => processStateUpdate(nextUpdate), 0);
+        }
+    }
+}
+
+function calculateStateDiff(oldState, newState) {
+    const diff = {};
+    
+    // Simple diff implementation - could be enhanced
+    for (const key in newState) {
+        if (JSON.stringify(oldState[key]) !== JSON.stringify(newState[key])) {
+            diff[key] = newState[key];
+        }
+    }
+    
+    return diff;
+}
+
+/**
+ * Network status monitoring
+ */
+function setupNetworkMonitoring() {
+    window.addEventListener('online', () => {
+        isOnline = true;
+        console.log('📶 Connection restored');
+        showToast('Connection restored', 'success');
+        
+        // Reconnect socket if needed
+        if (!socketManager.isConnected && window.SurvivorGame.localGameState.gameId) {
+            socketManager.connect(window.SurvivorGame.localGameState.gameId);
+        }
+    });
+    
+    // Auto-connect if game is active
+    setTimeout(() => {
+        if (window.SurvivorGame?.localGameState?.gameId && !socketManager.isConnected) {
+            console.log('🔌 Auto-connecting to game:', window.SurvivorGame.localGameState.gameId);
+            socketManager.connect(window.SurvivorGame.localGameState.gameId);
+        }
+    }, 1000);
+    
+    window.addEventListener('offline', () => {
+        isOnline = false;
+        console.log('📵 Connection lost');
+        showToast('Connection lost. Some features may not work.', 'warning');
+    });
+}
+
+/**
+ * Game-specific API calls
+ */
+const GameAPI = {
+    // Game management
+    async createGame() {
+        return apiCall('/game/create', {});
+    },
+    
+    async joinGame(gameId, name, color) {
+        return apiCall('/player/join', { gameId, name, color });
+    },
+    
+    async rejoinGame(gameId, playerId) {
+        return apiCall('/player/rejoin', { gameId, playerId });
+    },
+    
+    async startGame(gameId) {
+        return apiCall('/game/start_full', { gameId });
+    },
+    
+    // Turn actions
+    async stealCard(gameId, thiefId, targetId) {
+        return apiCall('/turn/steal', { gameId, thiefId, targetId });
+    },
+    
+    async playCard(gameId, playerId, cardIdx) {
+        return apiCall('/turn/play_card', { gameId, playerId, cardIdx });
+    },
+    
+    async drawCard(gameId, playerId) {
+        return apiCall('/turn/draw', { gameId, playerId });
+    },
+    
+    async advanceTurn(gameId) {
+        return apiCall('/turn/advance', { gameId });
+    },
+    
+    // Tribal council
+    async startVoting(gameId, voteType) {
+        return apiCall('/vote/start', { gameId, voteType });
+    },
+    
+    async castVote(gameId, voterId, votesData) {
+        return apiCall('/vote/cast', { gameId, voterId, votesData });
+    },
+    
+    async playImmunity(gameId, playerId) {
+        return apiCall('/immunity/play', { gameId, playerId });
+    },
+    
+    async blockImmunity(gameId, targetId) {
+        return apiCall('/immunity/block', { gameId, targetId });
+    },
+    
+    async revealVotes(gameId) {
+        return apiCall('/vote/reveal', { gameId });
+    },
+    
+    async completeTribal(gameId) {
+        return apiCall('/tribal/complete', { gameId });
+    },
+    
+    // Game state
+    async resetGame(gameId) {
+        return apiCall('/game/reset', { gameId });
+    },
+    
+    async recordWinner(gameId, winnerId) {
+        return apiCall('/game/finish', { gameId, winnerId });
+    }
+};
+
+/**
+ * Utility functions
+ */
+function generateRequestId() {
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function showToast(message, type = 'info') {
+    // This will be implemented in ui.js
+    if (window.SurvivorUI && window.SurvivorUI.showToast) {
+        window.SurvivorUI.showToast(message, type);
+    } else {
+        console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+}
+
+/**
+ * Setup Socket.IO event handlers
+ */
+function setupSocketEventHandlers() {
+    socketManager.on('state_update', processStateUpdate);
+    
+    socketManager.on('game_reset', (data) => {
+        if (data && data.gameId && window.SurvivorGame.localGameState.gameId === data.gameId) {
+            console.log('🔄 Game reset received');
+            showToast('Game has been reset', 'info');
+            
+            // Reset local state
+            window.SurvivorGame.localGameState.gameId = null;
+            window.SurvivorGame.localGameState.playerId = null;
+            window.SurvivorGame.fullGameState = {};
+            
+            // Navigate to start screen
+            if (window.SurvivorUI && window.SurvivorUI.showScreen) {
+                window.SurvivorUI.showScreen('startScreen');
+            }
+        }
+    });
+    
+    socketManager.on('global_reset', (data) => {
+        console.log('🔄 Global reset received');
+        // Handle global reset if needed
+    });
+    
+    socketManager.on('error', (error) => {
+        console.error('Socket error:', error);
+        showToast('Connection error occurred', 'error');
+    });
+}
+
+/**
+ * Initialize network module
+ */
+function initializeNetwork() {
+    setupNetworkMonitoring();
+    setupSocketEventHandlers();
+    
+    console.log('📡 Network module initialized');
+}
+
+// Export the network interface
+window.SurvivorNetwork = {
+    // API
+    apiCall,
+    GameAPI,
+    
+    // Socket management
+    socketManager,
+    
+    // State management
+    processStateUpdate,
+    
+    // Utilities
+    isOnline: () => isOnline,
+    isConnected: () => socketManager.isConnected,
+    
+    // Initialization
+    initialize: initializeNetwork
+};
+
+// Auto-initialize when module loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeNetwork();
+    
+    // Notify that module is ready
+    if (window.onNetworkModuleReady) {
+        window.onNetworkModuleReady();
+    }
+    console.log('✅ Network module ready');
+});

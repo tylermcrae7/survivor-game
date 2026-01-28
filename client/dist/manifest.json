@@ -1,0 +1,37 @@
+{
+  "name": "Survivor: Digital Voting",
+  "short_name": "Survivor",
+  "description": "Official Survivor board game digital implementation",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "theme_color": "#1d4d3d",
+  "background_color": "#0e1916",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "lang": "en",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false
+}
