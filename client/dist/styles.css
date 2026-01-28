@@ -1422,6 +1422,196 @@ h1 {
   text-shadow: 0 0 10px rgba(244, 197, 66, 0.5);
 }
 
+/* ===== GAME SHARING SECTION ===== */
+
+.share-game-section {
+  background: linear-gradient(135deg, rgba(224, 122, 46, 0.15), rgba(179, 76, 30, 0.1));
+  border: 2px dashed var(--torch);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  text-align: center;
+}
+
+.share-label {
+  font-size: var(--font-size-sm);
+  color: var(--ink);
+  margin-bottom: var(--spacing-sm);
+  opacity: 0.8;
+}
+
+.share-code-display {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.05));
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.game-code-large {
+  font-size: var(--font-size-2xl);
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: var(--torch);
+  font-family: 'Courier New', monospace;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.share-buttons {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.share-buttons .btn {
+  flex: 1;
+  min-width: 120px;
+  max-width: 200px;
+}
+
+/* ===== NETWORK STATUS INDICATOR ===== */
+
+.network-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  margin-left: var(--spacing-sm);
+  transition: all 0.3s ease;
+}
+
+.network-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+.network-status-text {
+  opacity: 0.9;
+}
+
+/* Online state */
+.network-status.status-online {
+  background: rgba(47, 143, 70, 0.2);
+  color: var(--success);
+}
+
+.network-status.status-online .network-status-dot {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+/* Offline state */
+.network-status.status-offline {
+  background: rgba(190, 45, 45, 0.2);
+  color: var(--danger);
+}
+
+.network-status.status-offline .network-status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+  animation: offlinePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes offlinePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Reconnecting state */
+.network-status.status-reconnecting {
+  background: rgba(240, 173, 78, 0.2);
+  color: var(--warning);
+}
+
+.network-status.status-reconnecting .network-status-dot {
+  background: var(--warning);
+  animation: reconnectSpin 1s linear infinite;
+}
+
+@keyframes reconnectSpin {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0.5; }
+}
+
+/* ===== ENHANCED MOBILE TOUCH TARGETS ===== */
+
+/* Medium screens - slightly larger cards */
+@media (max-width: 480px) {
+  .card-button {
+    min-width: 130px;
+    min-height: 85px;
+    padding: var(--spacing-md);
+    font-size: var(--font-size-sm);
+  }
+
+  .hand-grid {
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+  }
+
+  /* Stack cards on very narrow screens */
+  .player-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  }
+
+  .share-buttons {
+    flex-direction: column;
+  }
+
+  .share-buttons .btn {
+    max-width: none;
+  }
+}
+
+/* Small phones (iPhone SE, etc.) */
+@media (max-width: 375px) {
+  .card-button {
+    min-width: 100%;
+    min-height: 75px;
+    padding: var(--spacing-md);
+  }
+
+  .hand-grid {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .btn {
+    min-height: 54px;
+    font-size: var(--font-size-base);
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+
+  .game-code-large {
+    font-size: var(--font-size-xl);
+    letter-spacing: 0.15em;
+  }
+
+  .share-game-section {
+    padding: var(--spacing-md);
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 320px) {
+  .card-button {
+    min-height: 70px;
+  }
+
+  .player-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vote-targets {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Mobile adjustments for narrator */
 @media (max-width: 480px) {
   .narrator-panel {
@@ -1443,6 +1633,19 @@ h1 {
   .phase-guidance {
     padding: 10px 12px;
     font-size: 0.85rem;
+  }
+
+  .network-status {
+    display: none; /* Hide text on very small screens, show just dot */
+  }
+
+  .network-status-text {
+    display: none;
+  }
+
+  .network-status .network-status-dot {
+    width: 10px;
+    height: 10px;
   }
 }
 

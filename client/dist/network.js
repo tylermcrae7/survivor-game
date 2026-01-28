@@ -220,8 +220,23 @@ class SocketManager {
             // Set up event listeners
             this.socket.on('connect', () => {
                 this.isConnected = true;
+                const wasReconnecting = this.reconnectAttempts > 0;
                 this.reconnectAttempts = 0;
                 console.log('✅ Socket connected');
+
+                // Update network status indicator
+                if (window.SurvivorUI && window.SurvivorUI.updateNetworkStatus) {
+                    window.SurvivorUI.updateNetworkStatus(true, 'Connected');
+                }
+
+                // Show reconnected message if we were reconnecting
+                if (wasReconnecting) {
+                    showToast('Connection restored!', 'success');
+                    // Haptic feedback on reconnection
+                    if (window.SurvivorUI && window.SurvivorUI.hapticFeedback) {
+                        window.SurvivorUI.hapticFeedback('success');
+                    }
+                }
 
                 // Start heartbeat for Cloudflare WebSocket keep-alive
                 this.startHeartbeat();
@@ -277,6 +292,19 @@ class SocketManager {
                 // Stop heartbeat on disconnect
                 this.stopHeartbeat();
 
+                // Show disconnect notification
+                showToast('Connection lost. Attempting to reconnect...', 'warning');
+
+                // Update network status indicator
+                if (window.SurvivorUI && window.SurvivorUI.updateNetworkStatus) {
+                    window.SurvivorUI.updateNetworkStatus(false, 'Disconnected');
+                }
+
+                // Haptic feedback on disconnect
+                if (window.SurvivorUI && window.SurvivorUI.hapticFeedback) {
+                    window.SurvivorUI.hapticFeedback('error');
+                }
+
                 // Trigger custom disconnect handlers
                 this.emit('disconnected', reason);
 
@@ -328,18 +356,30 @@ class SocketManager {
         if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             console.error('❌ Max reconnection attempts reached');
             showToast('Connection lost. Please refresh the page.', 'error');
+            // Update network status indicator
+            if (window.SurvivorUI && window.SurvivorUI.updateNetworkStatus) {
+                window.SurvivorUI.updateNetworkStatus(false, 'Connection failed');
+            }
             return;
         }
-        
+
         const delay = Math.min(
             BASE_RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts),
             MAX_RECONNECT_DELAY
         );
-        
+
         this.reconnectAttempts++;
-        
+
         console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-        
+
+        // Show reconnecting UI feedback
+        showToast(`Reconnecting... (${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`, 'warning');
+
+        // Update network status indicator
+        if (window.SurvivorUI && window.SurvivorUI.showReconnecting) {
+            window.SurvivorUI.showReconnecting(this.reconnectAttempts);
+        }
+
         setTimeout(() => {
             this.connect(gameId);
         }, delay);
@@ -464,14 +504,24 @@ function setupNetworkMonitoring() {
     window.addEventListener('online', () => {
         isOnline = true;
         console.log('📶 Connection restored');
-        showToast('Connection restored', 'success');
-        
+        showToast('Internet connection restored', 'success');
+
+        // Update network status indicator
+        if (window.SurvivorUI && window.SurvivorUI.updateNetworkStatus) {
+            window.SurvivorUI.updateNetworkStatus(true, 'Online');
+        }
+
+        // Haptic feedback
+        if (window.SurvivorUI && window.SurvivorUI.hapticFeedback) {
+            window.SurvivorUI.hapticFeedback('success');
+        }
+
         // Reconnect socket if needed
-        if (!socketManager.isConnected && window.SurvivorGame.localGameState.gameId) {
+        if (!socketManager.isConnected && window.SurvivorGame?.localGameState?.gameId) {
             socketManager.connect(window.SurvivorGame.localGameState.gameId);
         }
     });
-    
+
     // Auto-connect if game is active
     setTimeout(() => {
         if (window.SurvivorGame?.localGameState?.gameId && !socketManager.isConnected) {
@@ -479,11 +529,21 @@ function setupNetworkMonitoring() {
             socketManager.connect(window.SurvivorGame.localGameState.gameId);
         }
     }, 1000);
-    
+
     window.addEventListener('offline', () => {
         isOnline = false;
         console.log('📵 Connection lost');
-        showToast('Connection lost. Some features may not work.', 'warning');
+        showToast('No internet connection', 'warning');
+
+        // Update network status indicator
+        if (window.SurvivorUI && window.SurvivorUI.updateNetworkStatus) {
+            window.SurvivorUI.updateNetworkStatus(false, 'Offline');
+        }
+
+        // Haptic feedback
+        if (window.SurvivorUI && window.SurvivorUI.hapticFeedback) {
+            window.SurvivorUI.hapticFeedback('warning');
+        }
     });
 }
 

@@ -135,10 +135,27 @@
             <div id="lobbyScreen" class="screen">
                 <div class="phase-box">
                     <h2>🏕️ Game Lobby</h2>
+
+                    <!-- Share Game Section -->
+                    <div class="share-game-section">
+                        <p class="share-label">Share this game with friends:</p>
+                        <div class="share-code-display">
+                            <span id="lobbyGameCode" class="game-code-large">------</span>
+                        </div>
+                        <div class="share-buttons">
+                            <button class="btn btn-secondary btn-enhanced touch-target" onclick="window.SurvivorUI.copyGameCode()">
+                                📋 Copy Code
+                            </button>
+                            <button class="btn btn-primary btn-enhanced touch-target" onclick="window.SurvivorUI.shareGame()">
+                                📤 Share Game
+                            </button>
+                        </div>
+                    </div>
+
                     <div id="playerList" class="player-grid">
                         <!-- Players will be rendered here -->
                     </div>
-                    
+
                     <div id="leaderControls" style="display: none;">
                         <h3>Leader Controls</h3>
                         <button class="btn btn-success btn-enhanced touch-target" onclick="startFullGame()">
@@ -551,7 +568,13 @@
                 
                 showToast('Joined game successfully!', 'success');
                 showScreen('lobbyScreen');
-                
+
+                // Update lobby game code display
+                const lobbyGameCode = document.getElementById('lobbyGameCode');
+                if (lobbyGameCode) {
+                    lobbyGameCode.textContent = gameId;
+                }
+
                 // Update game state if provided
                 if (result.gameState) {
                     updateGameState(result.gameState);
@@ -730,20 +753,54 @@
         
         function initializeApp() {
             console.log('🚀 Initializing Survivor App...');
-            
+
             // Setup color selection
             setupColorSelection();
-            
+
             // Setup form handlers
             setupFormHandlers();
-            
+
+            // Handle deep links (e.g., /join/ABC123)
+            handleDeepLink();
+
             // Check for saved game state
             checkSavedGameState();
-            
+
             // Setup touch optimizations
             setupTouchOptimizations();
-            
+
             console.log('✅ Survivor App fully initialized');
+        }
+
+        // Deep link handling
+        function handleDeepLink() {
+            const pathMatch = window.location.pathname.match(/^\/join\/([A-Za-z0-9]+)$/i);
+            if (pathMatch) {
+                const gameCode = pathMatch[1].toUpperCase();
+                console.log(`🔗 Deep link detected: ${gameCode}`);
+
+                // Pre-fill the game code input
+                const gameCodeInput = document.getElementById('gameCodeInput');
+                if (gameCodeInput) {
+                    gameCodeInput.value = gameCode;
+                }
+
+                // Show the join form
+                const joinForm = document.getElementById('joinForm');
+                if (joinForm) {
+                    joinForm.style.display = 'block';
+                }
+
+                // Focus on name input
+                setTimeout(() => {
+                    const nameInput = document.getElementById('playerNameInput');
+                    if (nameInput) {
+                        nameInput.focus();
+                    }
+                }, 100);
+
+                showToast(`Game code ${gameCode} detected!`, 'info');
+            }
         }
         
         function setupColorSelection() {

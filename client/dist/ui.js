@@ -249,13 +249,19 @@ function setupLeaderControls() {
 
 function updateGameInfo(gameState) {
     if (!gameState) return;
-    
-    // Update game code
+
+    // Update game code (header)
     const gameCodeEl = document.getElementById('gameCode');
     if (gameCodeEl && gameState.id) {
         gameCodeEl.textContent = gameState.id;
     }
-    
+
+    // Update game code (lobby display)
+    const lobbyGameCode = document.getElementById('lobbyGameCode');
+    if (lobbyGameCode && gameState.id) {
+        lobbyGameCode.textContent = gameState.id;
+    }
+
     // Update player count/info
     const playerInfo = document.getElementById('playerInfo');
     if (playerInfo && window.SurvivorGame?.localGameState?.playerId) {
@@ -264,7 +270,7 @@ function updateGameInfo(gameState) {
             playerInfo.textContent = player.name;
         }
     }
-    
+
     // Update phase indicator if visible
     const phaseIndicator = document.getElementById('phaseIndicator');
     if (phaseIndicator && gameState.phase === 'lobby') {
@@ -675,13 +681,16 @@ function handleCardClick(event) {
     const cardIndex = parseInt(cardElement.dataset.cardIndex);
     const cardType = cardElement.dataset.cardType;
     const requiresTarget = cardElement.dataset.requiresTarget === 'true';
-    
+
+    // Haptic feedback on card interaction
+    hapticFeedback('medium');
+
     if (requiresTarget) {
         showTargetSelectionModal(cardIndex, cardType);
     } else {
         playCard(cardIndex);
     }
-    
+
     // Add visual feedback
     addCardPlayAnimation(cardElement);
 }
@@ -689,13 +698,16 @@ function handleCardClick(event) {
 function handleVoteTargetClick(event) {
     const targetElement = event.currentTarget;
     const playerId = targetElement.dataset.playerId;
-    
+
+    // Haptic feedback on vote
+    hapticFeedback('heavy');
+
     // Toggle selection
     document.querySelectorAll('.vote-target').forEach(el => {
         el.classList.remove('selected');
     });
     targetElement.classList.add('selected');
-    
+
     // Cast vote
     castVote(playerId);
 }
@@ -1325,39 +1337,272 @@ function updateCurrentScreen(gameState) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GAME SHARING SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Copy game code to clipboard
+ */
+async function copyGameCode() {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    if (!gameId) {
+        showToast('No game code to copy', 'warning');
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(gameId);
+        showToast('Game code copied!', 'success');
+        hapticFeedback('success');
+    } catch (error) {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = gameId;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            showToast('Game code copied!', 'success');
+            hapticFeedback('success');
+        } catch (e) {
+            showToast('Failed to copy code', 'error');
+        }
+        document.body.removeChild(textArea);
+    }
+}
+
+/**
+ * Share game using native share API or fallback
+ */
+async function shareGame() {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    if (!gameId) {
+        showToast('No game to share', 'warning');
+        return;
+    }
+
+    const shareUrl = `${window.location.origin}/join/${gameId}`;
+    const shareData = {
+        title: 'Join my Survivor game!',
+        text: `Join my Survivor game with code: ${gameId}`,
+        url: shareUrl
+    };
+
+    // Try native share API first (mobile)
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+        try {
+            await navigator.share(shareData);
+            hapticFeedback('success');
+            showToast('Shared successfully!', 'success');
+            return;
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.log('Native share failed, using fallback');
+            }
+        }
+    }
+
+    // Fallback: copy link to clipboard
+    try {
+        await navigator.clipboard.writeText(`Join my Survivor game! Code: ${gameId}\n${shareUrl}`);
+        showToast('Share link copied to clipboard!', 'success');
+        hapticFeedback('success');
+    } catch (error) {
+        copyGameCode(); // Ultimate fallback
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HAPTIC FEEDBACK SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Provide haptic feedback for interactions
+ * @param {string} type - Type of feedback: 'light', 'medium', 'heavy', 'success', 'error'
+ */
+function hapticFeedback(type = 'light') {
+    if (!('vibrate' in navigator)) return;
+
+    const patterns = {
+        light: [10],
+        medium: [30],
+        heavy: [50],
+        success: [10, 50, 10],
+        error: [100, 50, 100],
+        warning: [50, 30, 50]
+    };
+
+    try {
+        navigator.vibrate(patterns[type] || patterns.light);
+    } catch (error) {
+        // Silently fail - vibration not critical
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NETWORK STATUS INDICATOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NetworkStatusManager = {
+    indicator: null,
+    isOnline: true,
+
+    init() {
+        // Create indicator if it doesn't exist
+        if (!document.getElementById('networkStatus')) {
+            const indicator = document.createElement('div');
+            indicator.id = 'networkStatus';
+            indicator.className = 'network-status status-online';
+            indicator.innerHTML = `
+                <span class="network-status-dot"></span>
+                <span class="network-status-text">Connected</span>
+            `;
+
+            // Insert into header
+            const header = document.querySelector('.header .game-info');
+            if (header) {
+                header.appendChild(indicator);
+            } else {
+                document.body.appendChild(indicator);
+            }
+        }
+        this.indicator = document.getElementById('networkStatus');
+
+        // Listen for online/offline events
+        window.addEventListener('online', () => this.setStatus(true));
+        window.addEventListener('offline', () => this.setStatus(false));
+
+        // Initial status
+        this.setStatus(navigator.onLine);
+    },
+
+    setStatus(isOnline, message = null) {
+        this.isOnline = isOnline;
+        if (!this.indicator) return;
+
+        const dot = this.indicator.querySelector('.network-status-dot');
+        const text = this.indicator.querySelector('.network-status-text');
+
+        if (isOnline) {
+            this.indicator.className = 'network-status status-online';
+            if (text) text.textContent = message || 'Connected';
+        } else {
+            this.indicator.className = 'network-status status-offline';
+            if (text) text.textContent = message || 'Offline';
+            hapticFeedback('warning');
+        }
+    },
+
+    setReconnecting(attempt = 0) {
+        if (!this.indicator) return;
+        this.indicator.className = 'network-status status-reconnecting';
+        const text = this.indicator.querySelector('.network-status-text');
+        if (text) text.textContent = attempt > 0 ? `Reconnecting (${attempt})...` : 'Reconnecting...';
+    }
+};
+
+/**
+ * Update network status from external source
+ */
+function updateNetworkStatus(isOnline, message = null) {
+    NetworkStatusManager.setStatus(isOnline, message);
+}
+
+/**
+ * Show reconnecting state
+ */
+function showReconnecting(attempt = 0) {
+    NetworkStatusManager.setReconnecting(attempt);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEEP LINK HANDLING
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Check URL for game code deep link and pre-fill
+ */
+function handleDeepLink() {
+    const pathMatch = window.location.pathname.match(/^\/join\/([A-Za-z0-9]+)$/i);
+    if (pathMatch) {
+        const gameCode = pathMatch[1].toUpperCase();
+        console.log(`🔗 Deep link detected: ${gameCode}`);
+
+        // Pre-fill the game code input
+        setTimeout(() => {
+            const gameCodeInput = document.getElementById('gameCodeInput');
+            if (gameCodeInput) {
+                gameCodeInput.value = gameCode;
+                // Show the join form
+                const joinForm = document.getElementById('joinForm');
+                if (joinForm) {
+                    joinForm.style.display = 'block';
+                }
+                // Focus on name input
+                const nameInput = document.getElementById('playerNameInput');
+                if (nameInput) {
+                    nameInput.focus();
+                }
+                showToast(`Game code ${gameCode} detected!`, 'info');
+            }
+        }, 100);
+
+        return true;
+    }
+    return false;
+}
+
 // Export UI interface
 window.SurvivorUI = {
     // Screen management
     showScreen,
     currentScreen: () => currentScreen,
-    
+
     // Components
     renderPlayerList,
     renderPlayerHand,
     renderVoteTargets,
-    
+
     // Modals and notifications
     showModal,
     hideModal,
     showConfirm,
     showToast,
-    
+
     // Loading states
     showLoading,
     hideLoading,
     LoadingManager,
-    
+
     // Game actions
     playCard,
     castVote,
-    
+
     // State updates
     updateFromDiff,
     updateCurrentScreen,
-    
+
     // Screen setup
     setupLeaderControls,
-    
+
+    // Sharing
+    copyGameCode,
+    shareGame,
+
+    // Haptic feedback
+    hapticFeedback,
+
+    // Network status
+    updateNetworkStatus,
+    showReconnecting,
+    NetworkStatusManager,
+
+    // Deep links
+    handleDeepLink,
+
     // Utilities
     formatPlayerName
 };
@@ -1365,12 +1610,18 @@ window.SurvivorUI = {
 // Auto-setup on DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🎨 UI module initialized');
-    
+
+    // Initialize network status indicator
+    NetworkStatusManager.init();
+
+    // Handle deep links (e.g., /join/ABC123)
+    handleDeepLink();
+
     // Setup global click handlers
     document.addEventListener('click', (e) => {
         // Handle any global click events here
     });
-    
+
     // Setup keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         // ESC to close modals
@@ -1378,7 +1629,7 @@ document.addEventListener('DOMContentLoaded', function() {
             hideModal();
         }
     });
-    
+
     // Notify that module is ready
     if (window.onUIModuleReady) {
         window.onUIModuleReady();
