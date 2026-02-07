@@ -1661,6 +1661,37 @@ h1 {
   }
 }
 
+/* Card Play Animation (CSS fallback) */
+.card-button.playing-animation {
+  animation: cardPlayOut 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes cardPlayOut {
+  0% { transform: scale(1) translateY(0); opacity: 1; }
+  30% { transform: scale(1.1) translateY(-20px); opacity: 1; }
+  100% { transform: scale(0.8) translateY(-60px); opacity: 0; }
+}
+
+/* Playable card pulse glow */
+.card-button.playable {
+  animation: playableGlow 2s ease-in-out infinite;
+}
+
+@keyframes playableGlow {
+  0%, 100% { box-shadow: var(--shadow-md), 0 0 0 0 rgba(224, 122, 46, 0); }
+  50% { box-shadow: var(--shadow-md), 0 0 12px 4px rgba(224, 122, 46, 0.3); }
+}
+
+/* Screen transition */
+.screen-section {
+  animation: screenFadeIn 0.25s ease-out;
+}
+
+@keyframes screenFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   .narrator-cursor,
@@ -1669,7 +1700,10 @@ h1 {
   .current-turn,
   .pulse-highlight,
   .vote-slam,
-  .dramatic-dots {
+  .dramatic-dots,
+  .card-button.playable,
+  .card-button.playing-animation,
+  .screen-section {
     animation: none;
   }
 

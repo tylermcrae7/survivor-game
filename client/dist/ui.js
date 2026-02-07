@@ -547,7 +547,11 @@ function renderPlayerHand(gameState) {
     ).join('');
     
     container.innerHTML = `<div class="hand-grid">${html}</div>`;
-    
+
+    // Animate cards entering the hand
+    const handGrid = container.querySelector('.hand-grid');
+    if (handGrid) animateCardEntrance(handGrid);
+
     // Setup card interactions
     setupCardInteractions();
 }
@@ -1070,10 +1074,60 @@ function hideLoading() {
  * Animations
  */
 function addCardPlayAnimation(cardElement) {
-    cardElement.classList.add('playing-animation');
-    setTimeout(() => {
-        cardElement.classList.remove('playing-animation');
-    }, 600);
+    // Enhanced card play animation using Web Animations API
+    const animation = cardElement.animate([
+        { transform: 'scale(1) translateY(0)', opacity: 1 },
+        { transform: 'scale(1.1) translateY(-20px)', opacity: 1, offset: 0.3 },
+        { transform: 'scale(0.8) translateY(-60px)', opacity: 0 }
+    ], {
+        duration: 500,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        fill: 'forwards'
+    });
+
+    animation.onfinish = () => {
+        cardElement.style.opacity = '0';
+    };
+}
+
+/**
+ * Animate cards dealing into the hand (entrance animation)
+ */
+function animateCardEntrance(container) {
+    const cards = container.querySelectorAll('.card-button');
+    cards.forEach((card, i) => {
+        card.animate([
+            { transform: 'translateY(40px) scale(0.9)', opacity: 0 },
+            { transform: 'translateY(0) scale(1)', opacity: 1 }
+        ], {
+            duration: 300,
+            delay: i * 60,
+            easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+            fill: 'backwards'
+        });
+    });
+}
+
+/**
+ * Animate a stolen card flying from target to thief
+ */
+function animateCardSteal(fromEl, toEl) {
+    if (!fromEl || !toEl) return;
+    const fromRect = fromEl.getBoundingClientRect();
+    const toRect = toEl.getBoundingClientRect();
+    const dx = toRect.left - fromRect.left;
+    const dy = toRect.top - fromRect.top;
+
+    const ghost = document.createElement('div');
+    ghost.className = 'card-button';
+    ghost.style.cssText = `position:fixed;top:${fromRect.top}px;left:${fromRect.left}px;width:${fromRect.width}px;height:${fromRect.height}px;z-index:9999;pointer-events:none;`;
+    ghost.textContent = '?';
+    document.body.appendChild(ghost);
+
+    ghost.animate([
+        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy}px) rotate(${dx > 0 ? 15 : -15}deg)`, opacity: 0.6 }
+    ], { duration: 400, easing: 'ease-in-out' }).onfinish = () => ghost.remove();
 }
 
 function animateStateChange(element, property, from, to, duration = 300) {
