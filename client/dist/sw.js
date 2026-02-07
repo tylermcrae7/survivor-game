@@ -3,9 +3,9 @@
  * Provides offline functionality and performance optimization
  */
 
-const CACHE_NAME = 'survivor-v1.0.0';
-const STATIC_CACHE = 'survivor-static-v1.0.0';
-const DYNAMIC_CACHE = 'survivor-dynamic-v1.0.0';
+const CACHE_NAME = 'survivor-v1.1.0';
+const STATIC_CACHE = 'survivor-static-v1.1.0';
+const DYNAMIC_CACHE = 'survivor-dynamic-v1.1.0';
 
 // Assets to cache immediately
 const STATIC_ASSETS = [
@@ -15,7 +15,10 @@ const STATIC_ASSETS = [
     '/game.js',
     '/network.js',
     '/ui.js',
+    '/narrator.js',
     '/manifest.json',
+    '/icon-192x192.png',
+    '/icon-512x512.png',
     'https://cdn.socket.io/4.7.5/socket.io.min.js'
 ];
 
