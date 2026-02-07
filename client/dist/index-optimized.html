@@ -2,9 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
     <meta name="description" content="Survivor Board Game - Digital Implementation">
     <meta name="theme-color" content="#1d4d3d">
+    <meta name="color-scheme" content="dark">
+    <meta name="format-detection" content="telephone=no,email=no,address=no">
+
+    <!-- iOS PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Survivor">
+    <meta name="mobile-web-app-capable" content="yes">
+
     <title>Survivor: Digital Voting</title>
 
     <!-- HTTPS redirect for production (skip for localhost development) -->
@@ -17,6 +26,9 @@
             location.replace('https:' + location.href.substring(location.protocol.length));
         }
     </script>
+
+    <!-- Preconnect to external CDN -->
+    <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
 
     <!-- Preload critical resources -->
     <link rel="preload" href="styles.css" as="style">
