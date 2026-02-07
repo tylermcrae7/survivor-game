@@ -1550,6 +1550,27 @@ h1 {
   100% { transform: scale(0.8); opacity: 0.5; }
 }
 
+/* Connection quality: fair (yellow dot) */
+.network-status.status-fair {
+  background: rgba(240, 173, 78, 0.15);
+  color: var(--warning);
+}
+
+.network-status.status-fair .network-status-dot {
+  background: var(--warning);
+}
+
+/* Connection quality: poor (red dot, pulsing) */
+.network-status.status-poor {
+  background: rgba(217, 83, 79, 0.15);
+  color: var(--danger, #d9534f);
+}
+
+.network-status.status-poor .network-status-dot {
+  background: var(--danger, #d9534f);
+  animation: reconnectSpin 1.5s linear infinite;
+}
+
 /* ===== ENHANCED MOBILE TOUCH TARGETS ===== */
 
 /* Medium screens - slightly larger cards */

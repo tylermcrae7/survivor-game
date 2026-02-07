@@ -173,25 +173,72 @@ class SocketManager {
         this.eventListeners = new Map();
         this.connectionPromise = null;
         this.heartbeatInterval = null;
+        this.latency = 0;
+        this.latencyHistory = [];
+        this.pendingEmits = []; // Queue events while disconnected
     }
 
     /**
      * Start heartbeat to keep WebSocket connection alive through Cloudflare
-     * Cloudflare has a 100-second idle timeout by default
+     * Also measures latency for connection quality indicator
      */
     startHeartbeat() {
-        this.stopHeartbeat(); // Clear any existing interval
+        this.stopHeartbeat();
         this.heartbeatInterval = setInterval(() => {
             if (this.socket && this.isConnected) {
-                this.socket.emit('heartbeat');
+                const pingStart = performance.now();
+                this.socket.volatile.emit('heartbeat', { t: pingStart }, () => {
+                    this.latency = Math.round(performance.now() - pingStart);
+                    this.latencyHistory.push(this.latency);
+                    if (this.latencyHistory.length > 10) this.latencyHistory.shift();
+                    this.updateConnectionQuality();
+                });
             }
-        }, 30000); // Send heartbeat every 30 seconds
+        }, 15000); // Ping every 15 seconds
     }
 
     stopHeartbeat() {
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
+        }
+    }
+
+    /**
+     * Get connection quality based on recent latency
+     * Returns 'good' (<150ms), 'fair' (150-400ms), or 'poor' (>400ms)
+     */
+    getConnectionQuality() {
+        if (!this.isConnected) return 'offline';
+        if (this.latencyHistory.length === 0) return 'good';
+        const avg = this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length;
+        if (avg < 150) return 'good';
+        if (avg < 400) return 'fair';
+        return 'poor';
+    }
+
+    updateConnectionQuality() {
+        const quality = this.getConnectionQuality();
+        if (window.SurvivorUI?.updateNetworkStatus) {
+            const labels = { good: 'Connected', fair: 'Slow connection', poor: 'Poor connection' };
+            window.SurvivorUI.updateNetworkStatus(true, labels[quality] || 'Connected');
+        }
+        // Update quality CSS class on indicator
+        const indicator = document.getElementById('networkStatus');
+        if (indicator) {
+            indicator.classList.remove('status-fair', 'status-poor');
+            if (quality === 'fair') indicator.classList.add('status-fair');
+            if (quality === 'poor') indicator.classList.add('status-poor');
+        }
+    }
+
+    /**
+     * Flush queued events that were buffered during disconnect
+     */
+    flushPendingEmits() {
+        while (this.pendingEmits.length > 0) {
+            const { event, data } = this.pendingEmits.shift();
+            this.socket.emit(event, data);
         }
     }
     
@@ -238,13 +285,25 @@ class SocketManager {
                     }
                 }
 
-                // Start heartbeat for Cloudflare WebSocket keep-alive
+                // Start heartbeat for Cloudflare WebSocket keep-alive + latency
                 this.startHeartbeat();
 
-                // Join game room if provided
-                if (gameId) {
-                    this.socket.emit('join', { gameId });
+                // Join game room if provided (or rejoin on reconnect)
+                const activeGameId = gameId || window.SurvivorGame?.localGameState?.gameId;
+                if (activeGameId) {
+                    this.socket.emit('join', { gameId: activeGameId });
+
+                    // Request fresh state on reconnect
+                    if (wasReconnecting) {
+                        const playerId = window.SurvivorGame?.localGameState?.playerId;
+                        if (playerId) {
+                            GameAPI.rejoinGame(activeGameId, playerId).catch(() => {});
+                        }
+                    }
                 }
+
+                // Flush any events that were queued while disconnected
+                this.flushPendingEmits();
                 
                 // Register game event handlers
                 this.socket.on('game_updated', (gameState) => {
@@ -390,7 +449,10 @@ class SocketManager {
             this.socket.emit(event, data);
         } else {
             console.warn('Socket not connected, queueing event:', event);
-            // Could implement event queueing here
+            // Queue non-internal events for replay on reconnect
+            if (event !== 'connected' && event !== 'disconnected' && event !== 'error') {
+                this.pendingEmits.push({ event, data });
+            }
         }
     }
     
@@ -699,6 +761,8 @@ window.SurvivorNetwork = {
     // Utilities
     isOnline: () => isOnline,
     isConnected: () => socketManager.isConnected,
+    getLatency: () => socketManager.latency,
+    getConnectionQuality: () => socketManager.getConnectionQuality(),
     
     // Initialization
     initialize: initializeNetwork
