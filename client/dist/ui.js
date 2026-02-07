@@ -619,8 +619,15 @@ function createVoteTargetElement(player) {
 }
 
 /**
- * Event Handlers
+ * Event Handlers — Unified Pointer Events
  */
+
+// Long-press state tracking
+const LONG_PRESS_MS = 400;
+let longPressTimer = null;
+let longPressTriggered = false;
+let activePointerId = null;
+
 function setupCardInteractions() {
     document.querySelectorAll('.card-button').forEach(cardElement => {
         const cardType = cardElement.dataset.cardType;
@@ -629,31 +636,80 @@ function setupCardInteractions() {
         const infoBtn = cardElement.querySelector('.card-info-btn');
         if (infoBtn) {
             infoBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Don't trigger card play
+                e.stopPropagation();
                 CardTooltipManager.show(cardType, cardElement);
             });
         }
 
-        // Hover tooltip (desktop)
-        cardElement.addEventListener('mouseenter', () => {
+        // Unified pointer events for hover + touch
+        cardElement.addEventListener('pointerenter', () => {
             CardTooltipManager.show(cardType, cardElement);
         });
-        cardElement.addEventListener('mouseleave', () => {
+        cardElement.addEventListener('pointerleave', () => {
             CardTooltipManager.hideDelayed();
         });
 
         // Skip play interactions for locked cards
         if (cardElement.classList.contains('locked')) return;
 
-        cardElement.addEventListener('click', handleCardClick);
+        // Pointer down — start long-press timer and add press feedback
+        cardElement.addEventListener('pointerdown', (e) => {
+            activePointerId = e.pointerId;
+            longPressTriggered = false;
+            cardElement.classList.add('pressing');
+            cardElement.setPointerCapture(e.pointerId);
 
-        // Touch optimizations
-        cardElement.addEventListener('touchstart', handleTouchStart, { passive: true });
-        cardElement.addEventListener('touchend', handleTouchEnd, { passive: true });
+            longPressTimer = setTimeout(() => {
+                longPressTriggered = true;
+                hapticFeedback('medium');
+                CardTooltipManager.show(cardType, cardElement);
+                cardElement.classList.remove('pressing');
+                cardElement.classList.add('inspecting');
+            }, LONG_PRESS_MS);
+        });
+
+        // Pointer up — if not long-press, treat as tap (play card)
+        cardElement.addEventListener('pointerup', (e) => {
+            clearTimeout(longPressTimer);
+            cardElement.classList.remove('pressing', 'inspecting');
+
+            if (longPressTriggered) {
+                // Long-press completed — tooltip shown, don't play card
+                longPressTriggered = false;
+                return;
+            }
+
+            // Short tap — play the card
+            handleCardClick(e);
+        });
+
+        // Pointer cancel — clean up state
+        cardElement.addEventListener('pointercancel', () => {
+            clearTimeout(longPressTimer);
+            longPressTriggered = false;
+            cardElement.classList.remove('pressing', 'inspecting');
+        });
+
+        // Pointer move — cancel long-press if finger moves too far
+        cardElement.addEventListener('pointermove', (e) => {
+            if (!longPressTimer) return;
+            // Allow small movements (5px) but cancel on larger drags
+            const rect = cardElement.getBoundingClientRect();
+            const inBounds = e.clientX >= rect.left - 5 && e.clientX <= rect.right + 5 &&
+                             e.clientY >= rect.top - 5 && e.clientY <= rect.bottom + 5;
+            if (!inBounds) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                cardElement.classList.remove('pressing');
+            }
+        });
+
+        // Prevent context menu on long-press (mobile)
+        cardElement.addEventListener('contextmenu', (e) => e.preventDefault());
     });
 
-    // Hide tooltip when clicking elsewhere
-    document.addEventListener('click', (e) => {
+    // Hide tooltip when tapping elsewhere
+    document.addEventListener('pointerdown', (e) => {
         if (!e.target.closest('.card-button') && !e.target.closest('.card-tooltip')) {
             CardTooltipManager.hide();
         }
@@ -662,7 +718,8 @@ function setupCardInteractions() {
 
 function setupVoteInteractions() {
     document.querySelectorAll('.vote-target').forEach(target => {
-        target.addEventListener('click', handleVoteTargetClick);
+        target.addEventListener('pointerup', handleVoteTargetClick);
+        target.addEventListener('contextmenu', (e) => e.preventDefault());
     });
 }
 
@@ -681,7 +738,13 @@ function setupPlayerCardEvents(playerCard) {
 }
 
 function handleCardClick(event) {
-    const cardElement = event.currentTarget;
+    // Find the card-button element (pointer events may fire on children)
+    const cardElement = event.target.closest('.card-button');
+    if (!cardElement) return;
+
+    // Skip if the info button was clicked
+    if (event.target.closest('.card-info-btn')) return;
+
     const cardIndex = parseInt(cardElement.dataset.cardIndex);
     const cardType = cardElement.dataset.cardType;
     const requiresTarget = cardElement.dataset.requiresTarget === 'true';
@@ -739,13 +802,7 @@ function handleLeaderClick(event) {
     }
 }
 
-function handleTouchStart(event) {
-    event.currentTarget.classList.add('touching');
-}
-
-function handleTouchEnd(event) {
-    event.currentTarget.classList.remove('touching');
-}
+// Touch handlers replaced by unified Pointer Events in setupCardInteractions
 
 /**
  * Game Actions

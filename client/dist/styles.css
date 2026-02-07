@@ -1692,6 +1692,44 @@ h1 {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ─── Pointer/Touch Interaction States ─── */
+
+/* Pressed state — subtle scale-down feedback */
+.card-button.pressing {
+  transform: scale(0.95);
+  transition: transform 0.1s ease-out;
+}
+
+/* Long-press inspection state — lift and highlight */
+.card-button.inspecting {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3)),
+              0 0 0 2px var(--color-accent, #e07a2e);
+  z-index: 10;
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+/* Minimum touch target size (44x44 per WCAG) */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Disable text selection on interactive elements during pointer events */
+.card-button,
+.vote-target,
+.btn {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* Vote target pressed state */
+.vote-target:active {
+  transform: scale(0.97);
+  transition: transform 0.1s ease-out;
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   .narrator-cursor,
@@ -1705,6 +1743,13 @@ h1 {
   .card-button.playing-animation,
   .screen-section {
     animation: none;
+  }
+
+  .card-button.pressing,
+  .card-button.inspecting,
+  .vote-target:active {
+    transform: none;
+    transition: none;
   }
 
   .narrator-panel {
