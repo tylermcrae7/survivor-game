@@ -2249,8 +2249,7 @@ def on_connect():
 @socketio.on('heartbeat')
 def on_heartbeat():
     """Handle heartbeat to keep WebSocket connection alive through Cloudflare"""
-    # Simply acknowledge - no response needed, just keeps connection alive
-    pass
+    return {'status': 'ok', 'timestamp': time.time()}
 
 @socketio.on_error_default
 def default_error_handler(e):

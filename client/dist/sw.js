@@ -16,6 +16,7 @@ const STATIC_ASSETS = [
     '/network.js',
     '/ui.js',
     '/narrator.js',
+    '/state-manager.js',
     '/manifest.json',
     '/icon-192x192.png',
     '/icon-512x512.png',
