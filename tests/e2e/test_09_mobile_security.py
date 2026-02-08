@@ -57,10 +57,7 @@ class TestMobileViewport:
             });
             return tooSmall;
         }""")
-        if undersized:
-            names = [f"{b['text']} ({b['width']}x{b['height']})" for b in undersized]
-            # KNOWN ISSUE: Some small UI controls below 44px minimum
-            pytest.xfail(f"ACCESSIBILITY ISSUE: Buttons below 44px: {', '.join(names)}")
+        assert not undersized, f"Buttons below 44px minimum: {undersized}"
 
     def test_no_horizontal_overflow(self, browser):
         """No horizontal scrollbar at mobile width."""
@@ -167,10 +164,7 @@ class TestInputSecurity:
             "gameId": gid,
             "playerId": target_pid
         })
-        # BUG FOUND: Server allows eliminated players to draw cards
-        # This should be rejected but currently succeeds
-        if result["success"] is True:
-            pytest.xfail("BUG: Eliminated player can draw cards - server should reject")
+        assert result["success"] is False, "Eliminated player should not be able to draw cards"
 
     def test_malformed_socket_event(self, browser_page):
         """Server handles malformed socket events gracefully."""

@@ -927,22 +927,29 @@ class GameState:
             "message": "Tribal council reset - game returned to playing phase"
         }
 
-    def advance_tribal_phase(self, gid, target_phase):
+    def advance_tribal_phase(self, gid, target_phase=None, **kwargs):
         """
         Advance tribal council to a specific phase with validation.
-        
+
         Args:
             gid: Game ID
-            target_phase: Phase to advance to
-            
+            target_phase: Phase to advance to (positional or keyword)
+            **kwargs: Additional keyword arguments (supports 'phase' from API handler)
+
         Returns:
             Boolean indicating success
         """
+        # Support both direct calls (positional) and API handler calls (kwarg 'phase')
+        if target_phase is None:
+            target_phase = kwargs.get('phase')
+        if not target_phase:
+            return False
+
         if gid not in self.games:
             return False
-            
+
         game = self.games[gid]
-        
+
         # Use rules engine to advance tribal phase with validation
         success, message = self.rules_engine.advance_tribal_phase(game, target_phase)
         
@@ -1132,7 +1139,17 @@ class GameState:
         
         if thief_id not in game["players"] or target_id not in game["players"]:
             return {"success": False, "message": "Invalid player IDs"}
-        
+
+        # Validate it's the thief's turn
+        turn_order = game.get("turnOrder", [])
+        current_index = game.get("currentTurnIndex", 0)
+        if turn_order and turn_order[current_index] != thief_id:
+            return {"success": False, "message": "It's not your turn to steal"}
+
+        # Prevent stealing from yourself
+        if thief_id == target_id:
+            return {"success": False, "message": "Cannot steal from yourself"}
+
         thief = game["players"][thief_id]
         target = game["players"][target_id]
         
@@ -1272,7 +1289,13 @@ class GameState:
         
         if player.get("isEliminated", False):
             return {"success": False, "message": "Eliminated players cannot draw cards"}
-        
+
+        # Validate it's this player's turn
+        turn_order = game.get("turnOrder", [])
+        current_index = game.get("currentTurnIndex", 0)
+        if turn_order and turn_order[current_index] != player_id:
+            return {"success": False, "message": "It's not your turn to draw"}
+
         deck = game.get("deck", [])
         if not deck:
             return {"success": True, "message": "Deck is empty - no cards to draw"}

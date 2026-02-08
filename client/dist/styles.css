@@ -1163,6 +1163,11 @@ h1 {
   color: var(--sand);
   font-size: 1rem;
   padding: 4px 8px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.2s;

@@ -5,7 +5,6 @@ Tests complete turn flow across multiple players with state sync verification.
 Priority: P0 (Critical)
 """
 
-import pytest
 from conftest import (
     api_post, get_game_state, PLAYERS
 )
@@ -159,7 +158,6 @@ class TestTurnMechanics:
         final_state = get_game_state(gid)
         assert final_state["phase"] in ("playing", "tribal_council")
 
-    @pytest.mark.xfail(reason="BUG: Server allows non-current player to steal", strict=True)
     def test_wrong_player_cannot_steal(self, started_game):
         """Non-current player cannot steal."""
         gid = started_game["gameId"]
@@ -176,7 +174,6 @@ class TestTurnMechanics:
         })
         assert result["success"] is False
 
-    @pytest.mark.xfail(reason="BUG: Server allows player to steal from themselves", strict=True)
     def test_cannot_steal_self(self, started_game):
         """Player cannot steal from themselves."""
         gid = started_game["gameId"]
