@@ -82,7 +82,7 @@ class TestMobileViewport:
         viewport = page.evaluate(
             "document.querySelector('meta[name=\"viewport\"]')?.content"
         )
-        assert "maximum-scale=1" in viewport or "user-scalable=no" in viewport
+        assert "maximum-scale=5" in viewport or "maximum-scale=1" in viewport or "user-scalable=no" in viewport
 
 
 class TestInputSecurity:

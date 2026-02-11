@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0,viewport-fit=cover">
     <meta name="description" content="Survivor Board Game - Digital Implementation">
     <meta name="theme-color" content="#1d4d3d">
     <meta name="color-scheme" content="dark">
@@ -72,6 +72,9 @@
     </script>
 </head>
 <body>
+    <!-- Skip Navigation -->
+    <a href="#app" class="skip-link sr-only" style="position:absolute;top:-40px;left:0;z-index:10000;background:var(--torch,#c17a2a);color:#fff;padding:8px 16px;transition:top 0.2s;" onfocus="this.style.top='0'" onblur="this.style.top='-40px'">Skip to content</a>
+
     <!-- Phase Indicator (Fixed Header) -->
     <div id="phaseIndicator" class="phase-indicator-container" style="display: none;">
         <div class="phase-indicator">
@@ -100,16 +103,16 @@
         <!-- Main Content Area -->
         <main class="main">
             <!-- Start Screen -->
-            <div id="startScreen" class="screen active">
+            <div id="startScreen" class="screen active" role="region" aria-label="Start screen">
                 <div class="form-card">
                     <h1>🏝️ Welcome to Survivor</h1>
                     <p>Join an existing game or create a new one.</p>
                     
                     <div class="game-actions">
-                        <button class="btn btn-enhanced touch-target" onclick="createGame()">
+                        <button class="btn btn-enhanced touch-target" data-action="createGame">
                             Create New Game
                         </button>
-                        <button class="btn btn-secondary btn-enhanced touch-target" onclick="showJoinForm()">
+                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="showJoinForm">
                             Join Existing Game
                         </button>
                     </div>
@@ -125,18 +128,18 @@
                         </div>
                         <div class="form-group">
                             <label>Choose Your Color:</label>
-                            <div id="colorSelection" class="color-grid">
-                                <div class="color-btn touch-target" data-color="#FF6B6B" style="background: #FF6B6B;"></div>
-                                <div class="color-btn touch-target" data-color="#4ECDC4" style="background: #4ECDC4;"></div>
-                                <div class="color-btn touch-target" data-color="#45B7D1" style="background: #45B7D1;"></div>
-                                <div class="color-btn touch-target" data-color="#96CEB4" style="background: #96CEB4;"></div>
-                                <div class="color-btn touch-target" data-color="#FFEAA7" style="background: #FFEAA7;"></div>
-                                <div class="color-btn touch-target" data-color="#DDA0DD" style="background: #DDA0DD;"></div>
-                                <div class="color-btn touch-target" data-color="#98D8C8" style="background: #98D8C8;"></div>
-                                <div class="color-btn touch-target" data-color="#F7DC6F" style="background: #F7DC6F;"></div>
+                            <div id="colorSelection" class="color-grid" role="radiogroup" aria-label="Player color selection">
+                                <div class="color-btn touch-target" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" aria-label="Red" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" aria-label="Teal" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#45B7D1" style="background: #45B7D1;" role="radio" aria-label="Blue" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#96CEB4" style="background: #96CEB4;" role="radio" aria-label="Sage" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#FFEAA7" style="background: #FFEAA7;" role="radio" aria-label="Yellow" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#DDA0DD" style="background: #DDA0DD;" role="radio" aria-label="Plum" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#98D8C8" style="background: #98D8C8;" role="radio" aria-label="Mint" aria-checked="false"></div>
+                                <div class="color-btn touch-target" data-color="#F7DC6F" style="background: #F7DC6F;" role="radio" aria-label="Gold" aria-checked="false"></div>
                             </div>
                         </div>
-                        <button class="btn btn-success btn-enhanced touch-target" onclick="joinGame()">
+                        <button class="btn btn-success btn-enhanced touch-target" data-action="joinGame">
                             Join Game
                         </button>
                     </div>
@@ -144,7 +147,7 @@
             </div>
 
             <!-- Lobby Screen -->
-            <div id="lobbyScreen" class="screen">
+            <div id="lobbyScreen" class="screen" role="region" aria-label="Game lobby">
                 <div class="phase-box">
                     <h2>🏕️ Game Lobby</h2>
 
@@ -155,10 +158,10 @@
                             <span id="lobbyGameCode" class="game-code-large">------</span>
                         </div>
                         <div class="share-buttons">
-                            <button class="btn btn-secondary btn-enhanced touch-target" onclick="window.SurvivorUI.copyGameCode()">
+                            <button class="btn btn-secondary btn-enhanced touch-target" data-action="copyGameCode">
                                 📋 Copy Code
                             </button>
-                            <button class="btn btn-primary btn-enhanced touch-target" onclick="window.SurvivorUI.shareGame()">
+                            <button class="btn btn-primary btn-enhanced touch-target" data-action="shareGame">
                                 📤 Share Game
                             </button>
                         </div>
@@ -170,10 +173,10 @@
 
                     <div id="leaderControls" style="display: none;">
                         <h3>Leader Controls</h3>
-                        <button class="btn btn-success btn-enhanced touch-target" onclick="startFullGame()">
+                        <button class="btn btn-success btn-enhanced touch-target" data-action="startFullGame">
                             Start Game
                         </button>
-                        <button class="btn btn-danger btn-enhanced touch-target" onclick="resetGame()">
+                        <button class="btn btn-danger btn-enhanced touch-target" data-action="resetGame">
                             Reset Game
                         </button>
                     </div>
@@ -181,11 +184,11 @@
             </div>
 
             <!-- Playing Screen -->
-            <div id="playingScreen" class="screen">
+            <div id="playingScreen" class="screen" role="region" aria-label="Game play">
                 <div class="phase-box">
                     <div id="turnInfo">
                         <h3>Turn Phase</h3>
-                        <div id="currentPlayerIndicator"></div>
+                        <div id="currentPlayerIndicator" aria-live="polite"></div>
                         <div id="turnPhaseIndicator"></div>
                     </div>
                     
@@ -194,10 +197,10 @@
                     </div>
                     
                     <div id="gameActions" class="game-actions">
-                        <button class="btn btn-secondary btn-enhanced touch-target" onclick="drawCard()">
+                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="drawCard">
                             Draw Card
                         </button>
-                        <button class="btn btn-info btn-enhanced touch-target" onclick="advanceTurn()">
+                        <button class="btn btn-info btn-enhanced touch-target" data-action="advanceTurn">
                             End Turn
                         </button>
                     </div>
@@ -205,7 +208,7 @@
             </div>
 
             <!-- Tribal Council Screens -->
-            <div id="tribalAnnouncementScreen" class="screen">
+            <div id="tribalAnnouncementScreen" class="screen" role="region" aria-label="Tribal council announcement">
                 <div class="phase-box">
                     <h2>⚖️ Tribal Council - Announcement</h2>
                     <div id="tribalLeaderPhrase"></div>
@@ -213,14 +216,14 @@
                 </div>
             </div>
 
-            <div id="tribalAdvantageScreen" class="screen">
+            <div id="tribalAdvantageScreen" class="screen" role="region" aria-label="Tribal advantage phase">
                 <div class="phase-box">
                     <h2>🎯 Tribal Council - Advantage Phase</h2>
                     <div id="tribalAdvantageContent"></div>
                 </div>
             </div>
 
-            <div id="tribalDiscussionScreen" class="screen">
+            <div id="tribalDiscussionScreen" class="screen" role="region" aria-label="Tribal discussion">
                 <div class="phase-box">
                     <h2>💭 Tribal Council - Discussion</h2>
                     <div id="tribalDiscussionPhrase"></div>
@@ -229,7 +232,7 @@
             </div>
 
             <!-- Voting Screen -->
-            <div id="votingScreen" class="screen">
+            <div id="votingScreen" class="screen" role="region" aria-label="Voting">
                 <div class="phase-box">
                     <h2>🗳️ Cast Your Vote</h2>
                     <div id="votingInfo"></div>
@@ -238,7 +241,7 @@
                     </div>
                     
                     <div id="leaderVotingControls" style="display: none;">
-                        <button class="btn btn-warning btn-enhanced touch-target" onclick="revealVotes()">
+                        <button class="btn btn-warning btn-enhanced touch-target" data-action="revealVotes">
                             Reveal Votes
                         </button>
                     </div>
@@ -246,7 +249,7 @@
             </div>
 
             <!-- Immunity Screen -->
-            <div id="immunityScreen" class="screen">
+            <div id="immunityScreen" class="screen" role="region" aria-label="Immunity phase">
                 <div class="phase-box">
                     <h2>🛡️ Immunity Phase</h2>
                     <p>Players may play immunity idols or nullifiers.</p>
@@ -255,7 +258,7 @@
                     </div>
                     
                     <div id="leaderImmunityControls" style="display: none;">
-                        <button class="btn btn-primary btn-enhanced touch-target" onclick="proceedToVoting()">
+                        <button class="btn btn-primary btn-enhanced touch-target" data-action="proceedToVoting">
                             Proceed to Voting
                         </button>
                     </div>
@@ -263,17 +266,17 @@
             </div>
 
             <!-- Results Screen -->
-            <div id="resultsScreen" class="screen">
+            <div id="resultsScreen" class="screen" role="region" aria-label="Tribal council results">
                 <div class="results-container">
                     <h2>📊 Tribal Council Results</h2>
-                    <div id="voteResults"></div>
-                    <div id="eliminationResults"></div>
+                    <div id="voteResults" aria-live="polite"></div>
+                    <div id="eliminationResults" aria-live="assertive"></div>
                     
                     <div id="leaderResultsControls" style="display: none;">
-                        <button class="btn btn-success btn-enhanced touch-target" onclick="completeTribal()">
+                        <button class="btn btn-success btn-enhanced touch-target" data-action="completeTribal">
                             Continue Game
                         </button>
-                        <button class="btn btn-secondary btn-enhanced touch-target" onclick="resetTribal()">
+                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="resetTribal">
                             Reset Tribal
                         </button>
                     </div>
@@ -281,7 +284,7 @@
             </div>
 
             <!-- Final Tribal Screen -->
-            <div id="finalTribalScreen" class="screen">
+            <div id="finalTribalScreen" class="screen" role="region" aria-label="Final tribal council">
                 <div class="phase-box">
                     <h2>👑 Final Tribal Council</h2>
                     <div id="finalTribalContent">
@@ -291,15 +294,15 @@
             </div>
 
             <!-- Game Over Screen -->
-            <div id="gameOverScreen" class="screen">
+            <div id="gameOverScreen" class="screen" role="region" aria-label="Game over">
                 <div class="victory-container">
                     <h1 class="victory-title">🎉 Sole Survivor!</h1>
                     <div id="winnerInfo" class="victory-subtitle"></div>
                     <div id="gameOverActions" class="game-actions">
-                        <button class="btn btn-success btn-enhanced touch-target" onclick="recordWinner()">
+                        <button class="btn btn-success btn-enhanced touch-target" data-action="recordWinner">
                             Record Winner
                         </button>
-                        <button class="btn btn-secondary btn-enhanced touch-target" onclick="startNewGame()">
+                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="startNewGame">
                             New Game
                         </button>
                     </div>
@@ -319,12 +322,30 @@
         <div class="loading-text">Initializing Survivor...</div>
     </div>
 
-    <!-- Modal Overlay -->
-    <div id="modalOverlay" class="modal-overlay" style="display: none;">
+    <!-- Modal Overlay (native dialog) -->
+    <dialog id="modalOverlay" class="modal-overlay">
         <div class="modal-content">
             <!-- Modal content will be inserted here -->
         </div>
+    </dialog>
+
+    <!-- Card Tooltip (Popover API) -->
+    <div id="cardTooltip" class="card-tooltip" popover>
+        <div class="card-tooltip-arrow bottom"></div>
+        <div class="card-tooltip-header">
+            <span class="card-tooltip-name"></span>
+            <span class="card-tooltip-category"></span>
+        </div>
+        <div class="card-tooltip-description"></div>
+        <div class="card-tooltip-timing">
+            <span class="card-tooltip-timing-icon"></span>
+            <span class="card-tooltip-timing-text">Playable during:</span>
+        </div>
+        <div class="card-tooltip-phases"></div>
     </div>
+
+    <!-- Screen Reader Announcements -->
+    <div id="srAnnouncer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
 
     <!-- Error Boundary -->
     <div id="errorBoundary" style="display: none;">
@@ -345,643 +366,199 @@
     <script src="state-manager.js" defer></script>
     <script src="narrator.js" defer></script>
     
-    <!-- Enhanced Initialization and Button Handlers -->
+    <!-- Slim Initialization Script -->
     <script>
-        // Global variables
+        // ── Global Config ──
         window.API_URL = window.location.origin;
-        let appReady = false;
-        let modules = {
-            game: false,
-            network: false,
-            ui: false,
-            stateManager: false
+        window.appReady = false;
+
+        // ── Module Readiness ──
+        const _modules = { game: false, network: false, ui: false, stateManager: false };
+
+        function _disableButtons() {
+            document.querySelectorAll('button').forEach(btn => {
+                if (!btn.classList.contains('color-btn')) { btn.disabled = true; btn.style.opacity = '0.6'; }
+            });
+        }
+        function _enableButtons() {
+            document.querySelectorAll('button').forEach(btn => { btn.disabled = false; btn.style.opacity = '1'; });
+        }
+
+        // Fallback toast (replaced by ui.js showToast once loaded)
+        window.showToast = function(msg, type) {
+            console.log(`[${(type||'info').toUpperCase()}] ${msg}`);
+            const t = document.createElement('div');
+            t.className = 'toast toast-' + (type||'info');
+            t.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10000;padding:1rem;border-radius:8px;max-width:300px;word-wrap:break-word;';
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { if (t.parentNode) { t.style.opacity='0'; setTimeout(()=>t.remove(),300); } }, 3000);
         };
-        
-        // Utility functions
-        function showToast(message, type = 'info') {
-            console.log(`[${type.toUpperCase()}] ${message}`);
-            
-            // Create simple toast notification
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.style.cssText = `
-                position: fixed; top: 20px; right: 20px; z-index: 10000;
-                background: ${type === 'error' ? '#be2d2d' : type === 'success' ? '#2f8f46' : '#45B7D1'};
-                color: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                max-width: 300px; word-wrap: break-word;
-            `;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.style.opacity = '0';
-                    setTimeout(() => toast.remove(), 300);
-                }
-            }, 3000);
-        }
-        
-        // Make showToast globally available
-        window.showToast = showToast;
-        
-        function disableButtons() {
-            document.querySelectorAll('button').forEach(btn => {
-                if (!btn.classList.contains('color-btn')) {
-                    btn.disabled = true;
-                    btn.style.opacity = '0.6';
-                }
-            });
-        }
-        
-        function enableButtons() {
-            document.querySelectorAll('button').forEach(btn => {
-                btn.disabled = false;
-                btn.style.opacity = '1';
-            });
-        }
-        
-        function showLoading(message = 'Processing...') {
-            let overlay = document.getElementById('app-loading');
-            if (!overlay) {
-                overlay = document.createElement('div');
-                overlay.id = 'app-loading';
-                overlay.style.cssText = `
-                    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                    background: rgba(14, 25, 22, 0.8); display: flex;
-                    flex-direction: column; align-items: center; justify-content: center;
-                    z-index: 9999; backdrop-filter: blur(5px);
-                `;
-                overlay.innerHTML = `
-                    <div style="width: 60px; height: 60px; border: 4px solid #2f6b57; border-top: 4px solid #e07a2e; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                    <div style="margin-top: 1rem; color: #f7f5ef; font-size: 1rem; font-weight: 500;">${message}</div>
-                `;
-                document.body.appendChild(overlay);
+
+        // Fallback loading (replaced by ui.js once loaded)
+        window.showLoading = function(msg) {
+            let o = document.getElementById('app-loading');
+            if (!o) {
+                o = document.createElement('div'); o.id = 'app-loading';
+                o.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:oklch(0.14 0.02 180/0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(5px);';
+                o.innerHTML = '<div class="loading-spinner"></div><div class="loading-text">' + (msg||'Loading...') + '</div>';
+                document.body.appendChild(o);
             }
-            overlay.style.display = 'flex';
-        }
-        
-        function hideLoading() {
-            const overlay = document.getElementById('app-loading');
-            if (overlay) {
-                overlay.style.display = 'none';
-            }
-        }
-        
-        // Module ready detection
-        function checkModuleReady(moduleName) {
-            modules[moduleName] = true;
-            console.log(`✅ ${moduleName} module ready`);
-            
-            if (Object.values(modules).every(ready => ready)) {
-                console.log('🎉 All modules ready!');
-                appReady = true;
-                enableButtons();
-                hideLoading();
+            o.style.display = 'flex';
+        };
+        window.hideLoading = function() {
+            const o = document.getElementById('app-loading');
+            if (o) o.style.display = 'none';
+        };
+
+        function checkModuleReady(name) {
+            _modules[name] = true;
+            console.log(name + ' module ready');
+            if (Object.values(_modules).every(Boolean)) {
+                console.log('All modules ready');
+                window.appReady = true;
+                _enableButtons();
+                window.hideLoading();
                 document.getElementById('loading-overlay').style.display = 'none';
-                initializeApp();
+                _initApp();
             }
-        }
-        
-        // Enhanced API call with better error handling
-        async function safeApiCall(endpoint, data = {}, method = 'POST') {
-            if (!appReady) {
-                showToast('App is still loading, please wait...', 'warning');
-                return null;
-            }
-            
-            try {
-                showLoading('Connecting to server...');
-                
-                const options = {
-                    method,
-                    headers: { 'Content-Type': 'application/json' }
-                };
-                
-                if (method !== 'GET') {
-                    options.body = JSON.stringify(data);
-                }
-                
-                const response = await fetch(`${API_URL}/api${endpoint}`, options);
-                hideLoading();
-                
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const result = await response.json();
-                
-                if (result.success === false) {
-                    throw new Error(result.message || 'Operation failed');
-                }
-                
-                return result;
-                
-            } catch (error) {
-                hideLoading();
-                console.error('API call failed:', error);
-                showToast(error.message || 'Network error occurred', 'error');
-                return null;
-            }
-        }
-        
-        // ========== BUTTON IMPLEMENTATIONS ==========
-        
-        async function createGame() {
-            console.log('🎮 Creating new game...');
-            const result = await safeApiCall('/game/create');
-            
-            if (result && result.gameId) {
-                // Initialize local state
-                if (window.SurvivorGame) {
-                    window.SurvivorGame.localGameState.gameId = result.gameId;
-                    window.SurvivorGame.fullGameState = {
-                        id: result.gameId,
-                        players: {},
-                        phase: 'lobby'
-                    };
-                }
-                
-                document.getElementById('gameCode').textContent = result.gameId;
-                showToast('Game created successfully!', 'success');
-                
-                // Show join form to enter the game
-                showJoinForm();
-                
-                // Pre-populate the game code
-                const gameCodeInput = document.getElementById('gameCodeInput');
-                if (gameCodeInput) {
-                    gameCodeInput.value = result.gameId;
-                }
-            }
-        }
-        
-        function showJoinForm() {
-            const joinForm = document.getElementById('joinForm');
-            if (joinForm) {
-                const isVisible = joinForm.style.display !== 'none';
-                joinForm.style.display = isVisible ? 'none' : 'block';
-                
-                if (!isVisible) {
-                    document.getElementById('gameCodeInput').focus();
-                }
-            }
-        }
-        
-        async function joinGame() {
-            const gameId = document.getElementById('gameCodeInput').value.trim();
-            const name = document.getElementById('playerNameInput').value.trim();
-            const colorBtn = document.querySelector('.color-btn.selected');
-            const color = colorBtn ? colorBtn.dataset.color : null;
-            
-            if (!gameId) {
-                showToast('Please enter a game code', 'warning');
-                document.getElementById('gameCodeInput').focus();
-                return;
-            }
-            
-            if (!name) {
-                showToast('Please enter your name', 'warning');
-                document.getElementById('playerNameInput').focus();
-                return;
-            }
-            
-            if (!color) {
-                showToast('Please select a color', 'warning');
-                return;
-            }
-            
-            console.log('🚀 Joining game:', gameId);
-            const result = await safeApiCall('/player/join', { gameId, name, color });
-            
-            if (result && result.success) {
-                // Save local state
-                if (window.SurvivorGame) {
-                    window.SurvivorGame.localGameState.gameId = gameId;
-                    window.SurvivorGame.localGameState.playerId = result.playerId;
-                    window.SurvivorGame.fullGameState = result.gameState || {};
-                }
-                
-                // Connect socket to game room
-                if (window.SurvivorNetwork && window.SurvivorNetwork.socketManager) {
-                    window.SurvivorNetwork.socketManager.connect(gameId);
-                }
-                
-                // Update UI elements
-                document.getElementById('gameCode').textContent = gameId;
-                document.getElementById('playerInfo').textContent = name;
-                
-                // Save for reconnection
-                localStorage.setItem('survivorState', JSON.stringify({
-                    gameId: gameId,
-                    playerId: result.playerId,
-                    playerName: name
-                }));
-                
-                showToast('Joined game successfully!', 'success');
-                showScreen('lobbyScreen');
-
-                // Update lobby game code display
-                const lobbyGameCode = document.getElementById('lobbyGameCode');
-                if (lobbyGameCode) {
-                    lobbyGameCode.textContent = gameId;
-                }
-
-                // Update game state if provided
-                if (result.gameState) {
-                    updateGameState(result.gameState);
-                }
-            }
-        }
-        
-        async function startFullGame() {
-            if (!window.SurvivorGame?.localGameState.gameId) {
-                showToast('No active game found', 'error');
-                return;
-            }
-            
-            console.log('🏁 Starting full game...');
-            const result = await safeApiCall('/game/start_full', { 
-                gameId: window.SurvivorGame.localGameState.gameId 
-            });
-            
-            if (result && result.success) {
-                showToast('Game started successfully!', 'success');
-                showScreen('playingScreen');
-            }
-        }
-        
-        async function resetGame() {
-            if (!window.SurvivorGame?.localGameState.gameId) {
-                showToast('No active game found', 'error');
-                return;
-            }
-            
-            if (!confirm('Are you sure you want to reset the game? This cannot be undone.')) {
-                return;
-            }
-            
-            console.log('🔄 Resetting game...');
-            const result = await safeApiCall('/game/reset', { 
-                gameId: window.SurvivorGame.localGameState.gameId 
-            });
-            
-            if (result && result.success) {
-                showToast('Game reset successfully!', 'success');
-                showScreen('lobbyScreen');
-            }
-        }
-        
-        async function drawCard() {
-            const gameId = window.SurvivorGame?.localGameState.gameId;
-            const playerId = window.SurvivorGame?.localGameState.playerId;
-            
-            if (!gameId || !playerId) {
-                showToast('Game state error', 'error');
-                return;
-            }
-            
-            console.log('🃏 Drawing card...');
-            const result = await safeApiCall('/turn/draw', { gameId, playerId });
-            
-            if (result && result.success) {
-                showToast('Card drawn successfully!', 'success');
-            }
-        }
-        
-        async function advanceTurn() {
-            if (!window.SurvivorGame?.localGameState.gameId) {
-                showToast('No active game found', 'error');
-                return;
-            }
-            
-            console.log('⏭️ Advancing turn...');
-            const result = await safeApiCall('/turn/advance', { 
-                gameId: window.SurvivorGame.localGameState.gameId 
-            });
-            
-            if (result && result.success) {
-                showToast('Turn advanced!', 'success');
-            }
-        }
-        
-        async function revealVotes() {
-            if (!window.SurvivorGame?.localGameState.gameId) {
-                showToast('No active game found', 'error');
-                return;
-            }
-            
-            console.log('📊 Revealing votes...');
-            const result = await safeApiCall('/vote/reveal', { 
-                gameId: window.SurvivorGame.localGameState.gameId 
-            });
-            
-            if (result && result.success) {
-                showToast('Votes revealed!', 'success');
-                showScreen('resultsScreen');
-            }
-        }
-        
-        function proceedToVoting() {
-            showScreen('votingScreen');
-        }
-        
-        async function completeTribal() {
-            if (!window.SurvivorGame?.localGameState.gameId) {
-                showToast('No active game found', 'error');
-                return;
-            }
-            
-            console.log('⚖️ Completing tribal council...');
-            const result = await safeApiCall('/tribal/complete', { 
-                gameId: window.SurvivorGame.localGameState.gameId 
-            });
-            
-            if (result && result.success) {
-                showToast('Tribal council completed!', 'success');
-                showScreen('playingScreen');
-            }
-        }
-        
-        async function resetTribal() {
-            if (!window.SurvivorGame?.localGameState.gameId) {
-                showToast('No active game found', 'error');
-                return;
-            }
-            
-            if (!confirm('Are you sure you want to reset the tribal council?')) {
-                return;
-            }
-            
-            console.log('🔄 Resetting tribal council...');
-            const result = await safeApiCall('/tribal/reset', { 
-                gameId: window.SurvivorGame.localGameState.gameId 
-            });
-            
-            if (result && result.success) {
-                showToast('Tribal council reset!', 'success');
-                showScreen('playingScreen');
-            }
-        }
-        
-        function recordWinner() {
-            showToast('Winner recording feature coming soon!', 'info');
-            // TODO: Implement winner recording
-        }
-        
-        function startNewGame() {
-            if (confirm('Start a new game? Current game will be lost.')) {
-                localStorage.removeItem('survivorState');
-                location.reload();
-            }
-        }
-        
-        // ========== SCREEN MANAGEMENT ==========
-        
-        function showScreen(screenId) {
-            console.log(`📱 Switching to screen: ${screenId}`);
-            
-            // Hide all screens
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.remove('active');
-            });
-            
-            // Show target screen
-            const targetScreen = document.getElementById(screenId);
-            if (targetScreen) {
-                targetScreen.classList.add('active');
-                
-                // Update local state if available
-                if (window.SurvivorGame) {
-                    window.SurvivorGame.localGameState.currentScreen = screenId;
-                }
-            } else {
-                console.error(`❌ Screen not found: ${screenId}`);
-                showToast('Navigation error', 'error');
-            }
-        }
-        
-        // ========== INITIALIZATION ==========
-        
-        function initializeApp() {
-            console.log('🚀 Initializing Survivor App...');
-
-            // Setup color selection
-            setupColorSelection();
-
-            // Setup form handlers
-            setupFormHandlers();
-
-            // Handle deep links (e.g., /join/ABC123)
-            handleDeepLink();
-
-            // Check for saved game state
-            checkSavedGameState();
-
-            // Setup touch optimizations
-            setupTouchOptimizations();
-
-            console.log('✅ Survivor App fully initialized');
         }
 
-        // Deep link handling
-        function handleDeepLink() {
-            const pathMatch = window.location.pathname.match(/^\/join\/([A-Za-z0-9]+)$/i);
-            if (pathMatch) {
-                const gameCode = pathMatch[1].toUpperCase();
-                console.log(`🔗 Deep link detected: ${gameCode}`);
+        // ── Event Delegation (data-action) ──
+        const _actionMap = {
+            createGame:       () => window.SurvivorGame?.createGame(),
+            showJoinForm:     () => window.SurvivorGame?.showJoinForm(),
+            joinGame:         () => window.SurvivorGame?.joinGame(),
+            startFullGame:    () => window.SurvivorGame?.startFullGame(),
+            resetGame:        () => window.SurvivorGame?.resetGame(),
+            drawCard:         () => window.SurvivorGame?.drawCard(),
+            advanceTurn:      () => window.SurvivorGame?.advanceTurn(),
+            revealVotes:      () => window.SurvivorGame?.revealVotes(),
+            proceedToVoting:  () => window.SurvivorGame?.proceedToVoting(),
+            completeTribal:   () => window.SurvivorGame?.completeTribal(),
+            resetTribal:      () => window.SurvivorGame?.resetTribal(),
+            recordWinner:     () => window.SurvivorGame?.recordWinner(),
+            startNewGame:     () => window.SurvivorGame?.startNewGame(),
+            copyGameCode:     () => window.SurvivorUI?.copyGameCode(),
+            shareGame:        () => window.SurvivorUI?.shareGame(),
+        };
 
-                // Pre-fill the game code input
-                const gameCodeInput = document.getElementById('gameCodeInput');
-                if (gameCodeInput) {
-                    gameCodeInput.value = gameCode;
-                }
+        document.getElementById('app').addEventListener('click', function(e) {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const action = btn.dataset.action;
+            if (_actionMap[action]) _actionMap[action]();
+        });
 
-                // Show the join form
-                const joinForm = document.getElementById('joinForm');
-                if (joinForm) {
-                    joinForm.style.display = 'block';
-                }
+        // ── Backward-compat globals (tests may call these directly) ──
+        window.createGame = () => _actionMap.createGame();
+        window.showJoinForm = () => _actionMap.showJoinForm();
+        window.joinGame = () => _actionMap.joinGame();
+        window.startFullGame = () => _actionMap.startFullGame();
+        window.resetGame = () => _actionMap.resetGame();
+        window.drawCard = () => _actionMap.drawCard();
+        window.advanceTurn = () => _actionMap.advanceTurn();
+        window.revealVotes = () => _actionMap.revealVotes();
+        window.proceedToVoting = () => _actionMap.proceedToVoting();
+        window.completeTribal = () => _actionMap.completeTribal();
+        window.resetTribal = () => _actionMap.resetTribal();
+        window.recordWinner = () => _actionMap.recordWinner();
+        window.startNewGame = () => _actionMap.startNewGame();
+        window.showScreen = (id) => (window.SurvivorUI?.showScreen || function(sid) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            const t = document.getElementById(sid);
+            if (t) { t.classList.add('active'); if (window.SurvivorGame) window.SurvivorGame.localGameState.currentScreen = sid; }
+        })(id);
 
-                // Focus on name input
-                setTimeout(() => {
-                    const nameInput = document.getElementById('playerNameInput');
-                    if (nameInput) {
-                        nameInput.focus();
-                    }
-                }, 100);
+        // ── State Update ──
+        window.updateGameState = function(state) {
+            if (window.SurvivorStateManager?.updateState) window.SurvivorStateManager.updateState(state, 'server');
+            if (window.SurvivorGame) window.SurvivorGame.fullGameState = state;
+            if (window.SurvivorUI) window.SurvivorUI.updateCurrentScreen(state);
+        };
 
-                showToast(`Game code ${gameCode} detected!`, 'info');
-            }
-        }
-        
-        function setupColorSelection() {
+        // ── Initialization ──
+        function _initApp() {
+            // Color selection
             document.querySelectorAll('.color-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
-                    // Remove previous selection
-                    document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
-                    
-                    // Select this color
+                    document.querySelectorAll('.color-btn').forEach(b => { b.classList.remove('selected'); b.setAttribute('aria-checked', 'false'); });
                     this.classList.add('selected');
-                    
-                    // Store selection
-                    if (window.SurvivorGame) {
-                        window.SurvivorGame.localGameState.playerColor = this.dataset.color;
-                    }
+                    this.setAttribute('aria-checked', 'true');
+                    if (window.SurvivorGame) window.SurvivorGame.localGameState.playerColor = this.dataset.color;
                 });
             });
-        }
-        
-        function setupFormHandlers() {
-            // Enter key handlers for inputs
-            const gameCodeInput = document.getElementById('gameCodeInput');
-            const playerNameInput = document.getElementById('playerNameInput');
-            
-            if (gameCodeInput) {
-                gameCodeInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        playerNameInput.focus();
-                    }
-                });
-            }
-            
-            if (playerNameInput) {
-                playerNameInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        joinGame();
-                    }
-                });
-            }
-        }
-        
-        function setupTouchOptimizations() {
-            // Add touch feedback for all buttons
+
+            // Form enter keys
+            const gci = document.getElementById('gameCodeInput');
+            const pni = document.getElementById('playerNameInput');
+            if (gci) gci.addEventListener('keypress', e => { if (e.key === 'Enter') pni?.focus(); });
+            if (pni) pni.addEventListener('keypress', e => { if (e.key === 'Enter') window.joinGame(); });
+
+            // Deep link
+            if (window.SurvivorUI?.handleDeepLink) window.SurvivorUI.handleDeepLink();
+
+            // Saved state reconnection
+            _checkSaved();
+
+            // Touch feedback
             document.querySelectorAll('button').forEach(btn => {
-                // Prevent double-tap zoom
-                btn.addEventListener('touchstart', function(e) {
-                    this.style.transform = 'scale(0.95)';
-                }, { passive: true });
-                
-                btn.addEventListener('touchend', function(e) {
-                    this.style.transform = 'scale(1)';
-                }, { passive: true });
-                
-                btn.addEventListener('touchcancel', function(e) {
-                    this.style.transform = 'scale(1)';
-                }, { passive: true });
+                btn.addEventListener('touchstart', function() { this.style.transform = 'scale(0.95)'; }, { passive: true });
+                btn.addEventListener('touchend', function() { this.style.transform = 'scale(1)'; }, { passive: true });
+                btn.addEventListener('touchcancel', function() { this.style.transform = 'scale(1)'; }, { passive: true });
             });
         }
-        
-        async function checkSavedGameState() {
+
+        async function _checkSaved() {
             const saved = localStorage.getItem('survivorState');
-            if (saved) {
-                try {
-                    const state = JSON.parse(saved);
-                    if (state.gameId && state.playerId) {
-                        console.log('🔄 Attempting to rejoin game...');
-                        
-                        const result = await safeApiCall('/player/rejoin', {
-                            gameId: state.gameId,
-                            playerId: state.playerId
-                        });
-                        
-                        if (result && result.success) {
-                            console.log('✅ Successfully rejoined game');
-                            
-                            if (window.SurvivorGame) {
-                                window.SurvivorGame.localGameState.gameId = state.gameId;
-                                window.SurvivorGame.localGameState.playerId = state.playerId;
-                            }
-                            
-                            document.getElementById('gameCode').textContent = state.gameId;
-                            document.getElementById('playerInfo').textContent = state.playerName || result.playerName || 'Player';
-                            
-                            showToast('Reconnected to game!', 'success');
-                            showScreen('lobbyScreen');
-                            
-                            if (result.gameState) {
-                                updateGameState(result.gameState);
-                            }
-                        } else {
-                            console.log('❌ Failed to rejoin, clearing saved state');
-                            localStorage.removeItem('survivorState');
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error parsing saved state:', error);
-                    localStorage.removeItem('survivorState');
-                }
-            }
+            if (!saved) return;
+            try {
+                const s = JSON.parse(saved);
+                if (!s.gameId || !s.playerId) return;
+                const safeApiCall = window.SurvivorGame?.safeApiCall;
+                if (!safeApiCall) return;
+                const result = await safeApiCall('/player/rejoin', { gameId: s.gameId, playerId: s.playerId });
+                if (result?.success) {
+                    if (window.SurvivorGame) { window.SurvivorGame.localGameState.gameId = s.gameId; window.SurvivorGame.localGameState.playerId = s.playerId; }
+                    document.getElementById('gameCode').textContent = s.gameId;
+                    document.getElementById('playerInfo').textContent = s.playerName || result.playerName || 'Player';
+                    window.showToast('Reconnected to game!', 'success');
+                    window.showScreen('lobbyScreen');
+                    if (result.gameState) window.updateGameState(result.gameState);
+                } else { localStorage.removeItem('survivorState'); }
+            } catch (e) { localStorage.removeItem('survivorState'); }
         }
-        
-        // Main state update function
-        function updateGameState(state) {
-            console.log('📊 Updating game state:', state);
-            
-            // Update state manager
-            if (window.SurvivorStateManager && window.SurvivorStateManager.updateState) {
-                window.SurvivorStateManager.updateState(state, 'server');
-            }
-            
-            // Update game module
-            if (window.SurvivorGame) {
-                window.SurvivorGame.fullGameState = state;
-            }
-            
-            // Update UI based on current screen
-            if (window.SurvivorUI) {
-                window.SurvivorUI.updateCurrentScreen(state);
-            }
-        }
-        
-        // ========== EVENT LISTENERS ==========
-        
+
+        // ── DOMContentLoaded ──
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🎮 DOM loaded, initializing...');
-            
-            // Disable buttons initially
-            disableButtons();
-            showLoading('Loading game modules...');
-            
-            // Check if modules are already loaded
+            _disableButtons();
+            window.showLoading('Loading game modules...');
             setTimeout(() => {
                 if (window.SurvivorGame) checkModuleReady('game');
                 if (window.SurvivorNetwork) checkModuleReady('network');
                 if (window.SurvivorUI) checkModuleReady('ui');
                 if (window.SurvivorStateManager) checkModuleReady('stateManager');
             }, 100);
-            
-            // Fallback initialization if modules don't load properly
             setTimeout(() => {
-                if (!appReady) {
-                    console.warn('⚠️ Some modules failed to load, enabling basic functionality');
-                    appReady = true;
-                    enableButtons();
-                    hideLoading();
+                if (!window.appReady) {
+                    console.warn('Fallback: enabling basic functionality');
+                    window.appReady = true;
+                    _enableButtons(); window.hideLoading();
                     document.getElementById('loading-overlay').style.display = 'none';
-                    initializeApp();
+                    _initApp();
                 }
             }, 5000);
         });
-        
-        // Error boundary
-        window.addEventListener('error', function(event) {
-            console.error('Global error:', event.error);
-            showToast('An error occurred: ' + event.error.message, 'error');
-        });
-        
-        window.addEventListener('unhandledrejection', function(event) {
-            console.error('Unhandled promise rejection:', event.reason);
-            showToast('Connection error occurred', 'error');
-        });
-        
-        // Module ready callbacks (called by modules when they load)
+
+        // ── Error Handlers ──
+        window.addEventListener('error', e => { if (e.error) window.showToast('Error: ' + e.error.message, 'error'); });
+        window.addEventListener('unhandledrejection', e => window.showToast('Connection error occurred', 'error'));
+
+        // ── Module Ready Callbacks ──
         window.onGameModuleReady = () => checkModuleReady('game');
         window.onNetworkModuleReady = () => checkModuleReady('network');
         window.onUIModuleReady = () => checkModuleReady('ui');
         window.onStateManagerModuleReady = () => checkModuleReady('stateManager');
-        
-        console.log('📱 Button handlers and initialization system loaded');
     </script>
     
     <!-- Service Worker Registration -->

@@ -10,9 +10,7 @@ let modalOverlay = null;
 let loadingOverlay = null;
 let cardTooltip = null;
 
-// Component cache for performance
-const componentCache = new Map();
-const animationQueue = [];
+// Animation state
 let isAnimating = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,11 +23,13 @@ const CardTooltipManager = {
     currentCardType: null,
 
     init() {
-        // Create tooltip container if it doesn't exist
-        if (!document.getElementById('cardTooltip')) {
+        this.tooltip = document.getElementById('cardTooltip');
+        // Fallback: create tooltip if not in HTML (shouldn't happen)
+        if (!this.tooltip) {
             const tooltip = document.createElement('div');
             tooltip.id = 'cardTooltip';
             tooltip.className = 'card-tooltip';
+            tooltip.setAttribute('popover', '');
             tooltip.innerHTML = `
                 <div class="card-tooltip-arrow bottom"></div>
                 <div class="card-tooltip-header">
@@ -38,14 +38,14 @@ const CardTooltipManager = {
                 </div>
                 <div class="card-tooltip-description"></div>
                 <div class="card-tooltip-timing">
-                    <span class="card-tooltip-timing-icon">⏱️</span>
+                    <span class="card-tooltip-timing-icon"></span>
                     <span class="card-tooltip-timing-text">Playable during:</span>
                 </div>
                 <div class="card-tooltip-phases"></div>
             `;
             document.body.appendChild(tooltip);
+            this.tooltip = tooltip;
         }
-        this.tooltip = document.getElementById('cardTooltip');
     },
 
     show(cardType, targetElement) {
@@ -76,13 +76,21 @@ const CardTooltipManager = {
         // Position tooltip
         this.position(targetElement);
 
-        // Show tooltip with animation
-        this.tooltip.classList.add('visible');
+        // Show via Popover API (with fallback)
+        if (this.tooltip.showPopover) {
+            try { this.tooltip.showPopover(); } catch(e) { /* already open */ }
+        } else {
+            this.tooltip.classList.add('visible');
+        }
     },
 
     hide() {
         if (this.tooltip) {
-            this.tooltip.classList.remove('visible');
+            if (this.tooltip.hidePopover) {
+                try { this.tooltip.hidePopover(); } catch(e) { /* already closed */ }
+            } else {
+                this.tooltip.classList.remove('visible');
+            }
             this.currentCardType = null;
         }
     },
@@ -95,8 +103,16 @@ const CardTooltipManager = {
         if (!this.tooltip || !targetElement) return;
 
         const rect = targetElement.getBoundingClientRect();
-        const tooltipRect = this.tooltip.getBoundingClientRect();
         const arrow = this.tooltip.querySelector('.card-tooltip-arrow');
+
+        // Temporarily make visible to measure (popover may not have dimensions yet)
+        const wasHidden = !this.tooltip.matches(':popover-open') && !this.tooltip.classList.contains('visible');
+        if (wasHidden) {
+            this.tooltip.style.visibility = 'hidden';
+            this.tooltip.style.opacity = '0';
+        }
+
+        const tooltipRect = this.tooltip.getBoundingClientRect();
 
         // Default: show above the card
         let top = rect.top - tooltipRect.height - 12;
@@ -118,6 +134,11 @@ const CardTooltipManager = {
 
         this.tooltip.style.top = `${top}px`;
         this.tooltip.style.left = `${left}px`;
+
+        if (wasHidden) {
+            this.tooltip.style.visibility = '';
+            this.tooltip.style.opacity = '';
+        }
     },
 
     formatPhaseName(phase) {
@@ -141,28 +162,40 @@ const CardTooltipManager = {
  * Screen Management
  */
 function showScreen(screenId) {
-    // Hide all screens
-    document.querySelectorAll('.screen').forEach(screen => {
-        screen.classList.remove('active');
-    });
-    
-    // Show target screen
-    const targetScreen = document.getElementById(screenId);
-    if (targetScreen) {
-        targetScreen.classList.add('active', 'fade-in');
-        currentScreen = screenId;
-        
-        // Update local game state
-        if (window.SurvivorGame) {
-            window.SurvivorGame.localGameState.currentScreen = screenId;
+    function applyScreenChange() {
+        // Hide all screens
+        document.querySelectorAll('.screen').forEach(screen => {
+            screen.classList.remove('active');
+        });
+
+        // Show target screen
+        const targetScreen = document.getElementById(screenId);
+        if (targetScreen) {
+            targetScreen.classList.add('active', 'fade-in');
+            currentScreen = screenId;
+
+            // Update local game state
+            if (window.SurvivorGame) {
+                window.SurvivorGame.localGameState.currentScreen = screenId;
+            }
+
+            // Trigger screen-specific setup
+            setupScreen(screenId);
+
+            // Announce screen change for accessibility
+            announce && announce(`Navigated to ${screenId.replace('Screen', ' screen')}`);
+
+            console.log(`Navigated to screen: ${screenId}`);
+        } else {
+            console.error(`Screen not found: ${screenId}`);
         }
-        
-        // Trigger screen-specific setup
-        setupScreen(screenId);
-        
-        console.log(`📱 Navigated to screen: ${screenId}`);
+    }
+
+    // Use View Transitions API if available (progressive enhancement)
+    if (document.startViewTransition) {
+        document.startViewTransition(() => applyScreenChange());
     } else {
-        console.error(`❌ Screen not found: ${screenId}`);
+        applyScreenChange();
     }
 }
 
@@ -319,6 +352,7 @@ function renderTurnInfo(gameState) {
         
         if (currentPlayerIndicator && currentPlayer) {
             currentPlayerIndicator.innerHTML = `<p>Current Player: ${escapeHtml(currentPlayer.name)}</p>`;
+            announce(`It is ${currentPlayer.name}'s turn`);
         }
 
         if (turnPhaseIndicator && gameState.phase) {
@@ -415,6 +449,7 @@ function renderVoteResults(gameState) {
                     <p class="elimination-subtext">Your torch has been snuffed.</p>
                 </div>
             `;
+            announce(`Eliminated: ${eliminated.join(', ')}. The tribe has spoken.`);
         }
     }
 }
@@ -886,7 +921,12 @@ function showModal(content, options = {}) {
         closeBtn.addEventListener('click', hideModal);
     }
 
-    modalOverlay.style.display = 'flex';
+    // Use native dialog API if available, fall back to style toggle
+    if (typeof modalOverlay.showModal === 'function') {
+        if (!modalOverlay.open) modalOverlay.showModal();
+    } else {
+        modalOverlay.style.display = 'flex';
+    }
     modalOverlay.classList.add('fade-in');
 
     // Store close callback as a function reference (safe, no eval)
@@ -901,7 +941,12 @@ function showModal(content, options = {}) {
 
 function hideModal() {
     if (modalOverlay) {
-        modalOverlay.style.display = 'none';
+        // Use native dialog API if available
+        if (typeof modalOverlay.close === 'function' && modalOverlay.open) {
+            modalOverlay.close();
+        } else {
+            modalOverlay.style.display = 'none';
+        }
         modalOverlay.classList.remove('fade-in');
 
         // Call onClose callback if set (safely stored function reference)
@@ -1242,8 +1287,8 @@ function createToastContainer() {
     container.className = 'toast-container';
     container.style.cssText = `
         position: fixed;
-        top: 20px;
-        right: 20px;
+        inset-block-start: calc(20px + env(safe-area-inset-top, 0px));
+        inset-inline-end: calc(20px + env(safe-area-inset-right, 0px));
         z-index: 10000;
         display: flex;
         flex-direction: column;
@@ -1666,6 +1711,19 @@ function handleDeepLink() {
     return false;
 }
 
+/**
+ * Screen reader announcement
+ */
+function announce(message) {
+    const announcer = document.getElementById('srAnnouncer');
+    if (announcer) {
+        announcer.textContent = '';
+        // Force reflow so screen readers pick up the change
+        void announcer.offsetHeight;
+        announcer.textContent = message;
+    }
+}
+
 // Export UI interface
 window.SurvivorUI = {
     // Screen management
@@ -1713,6 +1771,9 @@ window.SurvivorUI = {
 
     // Deep links
     handleDeepLink,
+
+    // Accessibility
+    announce,
 
     // Utilities
     formatPlayerName

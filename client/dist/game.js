@@ -331,6 +331,258 @@ function formatCardName(card) {
     return cardInfo ? cardInfo.name : card.type;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GAME ACTION FUNCTIONS (moved from inline script)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Safe API call with loading states and error handling
+ */
+async function safeApiCall(endpoint, data = {}, method = 'POST') {
+    if (!window.appReady) {
+        window.showToast && window.showToast('App is still loading, please wait...', 'warning');
+        return null;
+    }
+
+    try {
+        const showLoading = window.SurvivorUI?.showLoading || window.showLoading;
+        const hideLoading = window.SurvivorUI?.hideLoading || window.hideLoading;
+        if (showLoading) showLoading('Connecting to server...');
+
+        const options = {
+            method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+
+        if (method !== 'GET') {
+            options.body = JSON.stringify(data);
+        }
+
+        const response = await fetch(`${window.API_URL}/api${endpoint}`, options);
+        if (hideLoading) hideLoading();
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success === false) {
+            throw new Error(result.message || 'Operation failed');
+        }
+
+        return result;
+
+    } catch (error) {
+        const hideLoading = window.SurvivorUI?.hideLoading || window.hideLoading;
+        if (hideLoading) hideLoading();
+        console.error('API call failed:', error);
+        const showToast = window.SurvivorUI?.showToast || window.showToast;
+        if (showToast) showToast(error.message || 'Network error occurred', 'error');
+        return null;
+    }
+}
+
+async function createGame() {
+    console.log('Creating new game...');
+    const result = await safeApiCall('/game/create');
+
+    if (result && result.gameId) {
+        if (window.SurvivorGame) {
+            window.SurvivorGame.localGameState.gameId = result.gameId;
+            window.SurvivorGame.fullGameState = {
+                id: result.gameId,
+                players: {},
+                phase: 'lobby'
+            };
+        }
+
+        document.getElementById('gameCode').textContent = result.gameId;
+        (window.SurvivorUI?.showToast || window.showToast)('Game created successfully!', 'success');
+        showJoinForm();
+
+        const gameCodeInput = document.getElementById('gameCodeInput');
+        if (gameCodeInput) {
+            gameCodeInput.value = result.gameId;
+        }
+    }
+}
+
+function showJoinForm() {
+    const joinForm = document.getElementById('joinForm');
+    if (joinForm) {
+        const isVisible = joinForm.style.display !== 'none';
+        joinForm.style.display = isVisible ? 'none' : 'block';
+        if (!isVisible) {
+            document.getElementById('gameCodeInput').focus();
+        }
+    }
+}
+
+async function joinGame() {
+    const gameId = document.getElementById('gameCodeInput').value.trim();
+    const name = document.getElementById('playerNameInput').value.trim();
+    const colorBtn = document.querySelector('.color-btn.selected');
+    const color = colorBtn ? colorBtn.dataset.color : null;
+    const toast = window.SurvivorUI?.showToast || window.showToast;
+
+    if (!gameId) { toast('Please enter a game code', 'warning'); document.getElementById('gameCodeInput').focus(); return; }
+    if (!name) { toast('Please enter your name', 'warning'); document.getElementById('playerNameInput').focus(); return; }
+    if (!color) { toast('Please select a color', 'warning'); return; }
+
+    console.log('Joining game:', gameId);
+    const result = await safeApiCall('/player/join', { gameId, name, color });
+
+    if (result && result.success) {
+        if (window.SurvivorGame) {
+            window.SurvivorGame.localGameState.gameId = gameId;
+            window.SurvivorGame.localGameState.playerId = result.playerId;
+            window.SurvivorGame.fullGameState = result.gameState || {};
+        }
+
+        if (window.SurvivorNetwork && window.SurvivorNetwork.socketManager) {
+            window.SurvivorNetwork.socketManager.connect(gameId);
+        }
+
+        document.getElementById('gameCode').textContent = gameId;
+        document.getElementById('playerInfo').textContent = name;
+
+        localStorage.setItem('survivorState', JSON.stringify({
+            gameId: gameId,
+            playerId: result.playerId,
+            playerName: name
+        }));
+
+        toast('Joined game successfully!', 'success');
+        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+        showScreen('lobbyScreen');
+
+        const lobbyGameCode = document.getElementById('lobbyGameCode');
+        if (lobbyGameCode) lobbyGameCode.textContent = gameId;
+
+        if (result.gameState) {
+            window.updateGameState && window.updateGameState(result.gameState);
+        }
+    }
+}
+
+async function startFullGame() {
+    if (!localGameState.gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
+        return;
+    }
+    console.log('Starting full game...');
+    const result = await safeApiCall('/game/start_full', { gameId: localGameState.gameId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Game started successfully!', 'success');
+        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+        showScreen('playingScreen');
+    }
+}
+
+async function resetGame() {
+    if (!localGameState.gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
+        return;
+    }
+    if (!confirm('Are you sure you want to reset the game? This cannot be undone.')) return;
+
+    console.log('Resetting game...');
+    const result = await safeApiCall('/game/reset', { gameId: localGameState.gameId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Game reset successfully!', 'success');
+        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+        showScreen('lobbyScreen');
+    }
+}
+
+async function drawCard() {
+    const gameId = localGameState.gameId;
+    const playerId = localGameState.playerId;
+    if (!gameId || !playerId) {
+        (window.SurvivorUI?.showToast || window.showToast)('Game state error', 'error');
+        return;
+    }
+    console.log('Drawing card...');
+    const result = await safeApiCall('/turn/draw', { gameId, playerId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Card drawn successfully!', 'success');
+    }
+}
+
+async function advanceTurn() {
+    if (!localGameState.gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
+        return;
+    }
+    console.log('Advancing turn...');
+    const result = await safeApiCall('/turn/advance', { gameId: localGameState.gameId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Turn advanced!', 'success');
+    }
+}
+
+async function revealVotes() {
+    if (!localGameState.gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
+        return;
+    }
+    console.log('Revealing votes...');
+    const result = await safeApiCall('/vote/reveal', { gameId: localGameState.gameId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Votes revealed!', 'success');
+        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+        showScreen('resultsScreen');
+    }
+}
+
+function proceedToVoting() {
+    const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+    showScreen('votingScreen');
+}
+
+async function completeTribal() {
+    if (!localGameState.gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
+        return;
+    }
+    console.log('Completing tribal council...');
+    const result = await safeApiCall('/tribal/complete', { gameId: localGameState.gameId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Tribal council completed!', 'success');
+        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+        showScreen('playingScreen');
+    }
+}
+
+async function resetTribal() {
+    if (!localGameState.gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
+        return;
+    }
+    if (!confirm('Are you sure you want to reset the tribal council?')) return;
+
+    console.log('Resetting tribal council...');
+    const result = await safeApiCall('/tribal/reset', { gameId: localGameState.gameId });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('Tribal council reset!', 'success');
+        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+        showScreen('playingScreen');
+    }
+}
+
+function recordWinner() {
+    (window.SurvivorUI?.showToast || window.showToast)('Winner recording feature coming soon!', 'info');
+}
+
+function startNewGame() {
+    if (confirm('Start a new game? Current game will be lost.')) {
+        localStorage.removeItem('survivorState');
+        location.reload();
+    }
+}
+
 // Export functions for use in other modules
 window.SurvivorGame = {
     // State
@@ -366,6 +618,22 @@ window.SurvivorGame = {
     getFinalists,
     getJury,
     
+    // Game Actions
+    safeApiCall,
+    createGame,
+    showJoinForm,
+    joinGame,
+    startFullGame,
+    resetGame,
+    drawCard,
+    advanceTurn,
+    revealVotes,
+    proceedToVoting,
+    completeTribal,
+    resetTribal,
+    recordWinner,
+    startNewGame,
+
     // Utilities
     validateGameState,
     shuffleArray,

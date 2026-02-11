@@ -2357,7 +2357,7 @@ if __name__=='__main__':
         start_time = time.time()
         game_state = GameState()
         IP = get_local_ip()
-        port = find_available_port()
+        port = int(os.environ.get('PORT', 0)) or find_available_port()
         
         if not port:
             print("Error: Could not find an available port. Please check network settings.")
