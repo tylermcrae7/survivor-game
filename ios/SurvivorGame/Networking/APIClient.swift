@@ -1,0 +1,292 @@
+import Foundation
+
+actor APIClient {
+    let baseURL: URL
+    private let session: URLSession
+    private let decoder: JSONDecoder
+
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        self.session = URLSession(configuration: config)
+        self.decoder = JSONDecoder()
+    }
+
+    // MARK: - Generic Request
+
+    private func request<T: Decodable>(
+        _ method: String,
+        path: String,
+        body: [String: Any]? = nil
+    ) async throws -> T {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let message = errorBody?["message"] as? String ?? "Request failed"
+            throw APIError.serverError(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try decoder.decode(T.self, from: data)
+    }
+
+    private func post<T: Decodable>(path: String, body: [String: Any] = [:]) async throws -> T {
+        try await request("POST", path: path, body: body)
+    }
+
+    private func get<T: Decodable>(path: String) async throws -> T {
+        try await request("GET", path: path)
+    }
+
+    // MARK: - Game Management
+
+    func createGame() async throws -> CreateGameResponse {
+        try await post(path: "/api/game/create")
+    }
+
+    func joinGame(gameId: String, name: String, color: String?) async throws -> JoinGameResponse {
+        var body: [String: Any] = ["gameId": gameId, "name": name]
+        if let color { body["color"] = color }
+        return try await post(path: "/api/player/join", body: body)
+    }
+
+    func rejoinGame(gameId: String, playerId: String) async throws -> RejoinGameResponse {
+        try await post(path: "/api/player/rejoin", body: ["gameId": gameId, "playerId": playerId])
+    }
+
+    func startGame(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/game/start_full", body: ["gameId": gameId])
+    }
+
+    func resetGame(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/game/reset", body: ["gameId": gameId])
+    }
+
+    func finishGame(gameId: String, winnerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/game/finish", body: ["gameId": gameId, "winnerId": winnerId])
+    }
+
+    func getGameState(gameId: String) async throws -> GameState {
+        try await get(path: "/api/game/\(gameId)/state")
+    }
+
+    // MARK: - Turn Actions
+
+    func steal(gameId: String, thiefId: String, targetId: String) async throws -> ActionResponse {
+        try await post(path: "/api/turn/steal", body: [
+            "gameId": gameId, "thiefId": thiefId, "targetId": targetId
+        ])
+    }
+
+    func playCard(gameId: String, playerId: String, cardIdx: Int) async throws -> PlayCardResponse {
+        try await post(path: "/api/turn/play_card", body: [
+            "gameId": gameId, "playerId": playerId, "cardIdx": cardIdx
+        ])
+    }
+
+    func draw(gameId: String, playerId: String) async throws -> DrawResponse {
+        try await post(path: "/api/turn/draw", body: [
+            "gameId": gameId, "playerId": playerId
+        ])
+    }
+
+    func advanceTurn(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/turn/advance", body: ["gameId": gameId])
+    }
+
+    // MARK: - Reactive
+
+    func playReactiveCard(gameId: String, playerId: String, cardIdx: Int, theftContext: [String: Any]) async throws -> ActionResponse {
+        try await post(path: "/api/reactive/play_card", body: [
+            "gameId": gameId, "playerId": playerId, "cardIdx": cardIdx, "theftContext": theftContext
+        ])
+    }
+
+    func completeTheft(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/reactive/complete_theft", body: ["gameId": gameId])
+    }
+
+    // MARK: - Tribal Council
+
+    func startVoting(gameId: String, voteType: String) async throws -> ActionResponse {
+        try await post(path: "/api/vote/start", body: ["gameId": gameId, "voteType": voteType])
+    }
+
+    func castVote(gameId: String, voterId: String, votesData: [[String: Any]]) async throws -> ActionResponse {
+        try await post(path: "/api/vote/cast", body: [
+            "gameId": gameId, "voterId": voterId, "votesData": votesData
+        ])
+    }
+
+    func revealVotes(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/vote/reveal", body: ["gameId": gameId])
+    }
+
+    func tieBreak(gameId: String, leaderId: String, chosenId: String) async throws -> ActionResponse {
+        try await post(path: "/api/vote/tiebreak", body: [
+            "gameId": gameId, "leaderId": leaderId, "chosenId": chosenId
+        ])
+    }
+
+    func completeTribial(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/complete", body: ["gameId": gameId])
+    }
+
+    func advanceTribal(gameId: String, phase: String) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/advance", body: ["gameId": gameId, "phase": phase])
+    }
+
+    func playAdvantage(gameId: String, playerId: String, advantageType: String, targetId: String?) async throws -> ActionResponse {
+        var body: [String: Any] = [
+            "gameId": gameId, "playerId": playerId, "advantageType": advantageType
+        ]
+        if let targetId { body["targetId"] = targetId }
+        return try await post(path: "/api/tribal/advantage", body: body)
+    }
+
+    func playImmunity(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/immunity/play", body: ["gameId": gameId, "playerId": playerId])
+    }
+
+    func blockImmunity(gameId: String, playerId: String, targetId: String) async throws -> ActionResponse {
+        try await post(path: "/api/immunity/block", body: [
+            "gameId": gameId, "playerId": playerId, "targetId": targetId
+        ])
+    }
+
+    func resetTribal(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/reset", body: ["gameId": gameId])
+    }
+
+    func changeLeader(gameId: String, newLeaderId: String) async throws -> ActionResponse {
+        try await post(path: "/api/leader/change", body: ["gameId": gameId, "newLeaderId": newLeaderId])
+    }
+
+    func enhancedTieBreak(gameId: String, leaderId: String, eliminationType: String, tiedPlayers: [String], chosenIds: [String]) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/tie_enhanced", body: [
+            "gameId": gameId, "leaderId": leaderId, "eliminationType": eliminationType,
+            "tiedPlayers": tiedPlayers, "chosenIds": chosenIds
+        ])
+    }
+
+    // MARK: - Final Tribal
+
+    func advanceFinal(gameId: String, phase: String) async throws -> ActionResponse {
+        try await post(path: "/api/final/advance", body: ["gameId": gameId, "phase": phase])
+    }
+
+    func castFinalVote(gameId: String, juryMemberId: String, finalistId: String) async throws -> ActionResponse {
+        try await post(path: "/api/final/vote", body: [
+            "gameId": gameId, "juryMemberId": juryMemberId, "finalistId": finalistId
+        ])
+    }
+
+    func finalTieBreak(gameId: String, leaderId: String, chosenWinner: String) async throws -> ActionResponse {
+        try await post(path: "/api/final/tie_break", body: [
+            "gameId": gameId, "leaderId": leaderId, "chosenWinner": chosenWinner
+        ])
+    }
+
+    func signalReady(gameId: String, juryMemberId: String) async throws -> ActionResponse {
+        try await post(path: "/api/final/ready", body: ["gameId": gameId, "juryMemberId": juryMemberId])
+    }
+
+    // MARK: - Health
+
+    func ping() async throws -> PingResponse {
+        try await get(path: "/api/ping")
+    }
+
+    func fetchCards() async throws -> [String: Any] {
+        let url = baseURL.appendingPathComponent("/api/cards")
+        let (data, _) = try await session.data(from: url)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw APIError.invalidResponse
+        }
+        return json
+    }
+}
+
+// MARK: - Response Types
+
+struct CreateGameResponse: Codable {
+    let success: Bool
+    let gameId: String
+}
+
+struct JoinGameResponse: Codable {
+    let success: Bool
+    let playerId: String
+    let gameState: GameState
+}
+
+struct RejoinGameResponse: Codable {
+    let success: Bool
+    let gameState: GameState
+    let playerName: String?
+}
+
+struct ActionResponse: Codable {
+    let success: Bool
+    let message: String?
+}
+
+struct PlayCardResponse: Codable {
+    let success: Bool
+    let message: String?
+    let tribalTriggered: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case success, message
+        case tribalTriggered = "tribal_triggered"
+    }
+}
+
+struct DrawResponse: Codable {
+    let success: Bool
+    let message: String?
+    let tribalTriggered: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case success, message
+        case tribalTriggered = "tribal_triggered"
+    }
+}
+
+struct PingResponse: Codable {
+    let success: Bool
+    let timestamp: Double?
+}
+
+// MARK: - Errors
+
+enum APIError: LocalizedError {
+    case invalidResponse
+    case serverError(statusCode: Int, message: String)
+    case decodingFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "Invalid response from server"
+        case .serverError(_, let message):
+            return message
+        case .decodingFailed(let error):
+            return "Failed to decode response: \(error.localizedDescription)"
+        }
+    }
+}

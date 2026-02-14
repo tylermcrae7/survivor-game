@@ -1,0 +1,292 @@
+{
+  "metadata": {
+    "version": "1.1",
+    "source": "Official Survivor Board Game PDF",
+    "total_cards": 74,
+    "last_updated": "2026-02-07"
+  },
+  "cards": {
+    "vote": {
+      "type": "vote",
+      "category": "vote",
+      "name": "Vote",
+      "description": "Your basic vote at Tribal Council",
+      "playable_phases": ["tribal_voting"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 6
+    },
+    "extra_vote": {
+      "type": "extra_vote", 
+      "category": "vote",
+      "name": "Extra Vote",
+      "description": "Gain an additional vote at the next Tribal Council",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 7
+    },
+    "control_the_vote": {
+      "type": "control_the_vote",
+      "category": "tribal_advantage", 
+      "name": "Control The Vote",
+      "description": "Choose who the next Tribal Council Leader will be",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 2
+    },
+    "goodwill_gamble": {
+      "type": "goodwill_gamble",
+      "category": "tribal_advantage",
+      "name": "Goodwill Gamble", 
+      "description": "Give away cards to gain influence at Tribal Council",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "im_the_leader_now": {
+      "type": "im_the_leader_now",
+      "category": "tribal_advantage",
+      "name": "I'm The Leader Now",
+      "description": "Become the Tribal Council Leader immediately",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 1
+    },
+    "immunity_idol": {
+      "type": "immunity_idol",
+      "category": "tribal_advantage",
+      "name": "Hidden Immunity Idol",
+      "description": "Negate all votes against you at Tribal Council",
+      "playable_phases": ["tribal_immunity"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 4
+    },
+    "idol_nullifier": {
+      "type": "idol_nullifier",
+      "category": "tribal_advantage",
+      "name": "Idol Nullifier",
+      "description": "Nullify someone's immunity idol at Tribal Council",
+      "playable_phases": ["tribal_immunity"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 2
+    },
+    "steal_vote": {
+      "type": "steal_vote",
+      "category": "tribal_advantage",
+      "name": "Steal A Vote",
+      "description": "Steal another player's vote at Tribal Council - they cannot vote and you vote twice",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 2
+    },
+    "block_vote": {
+      "type": "block_vote",
+      "category": "tribal_advantage",
+      "name": "Block A Vote",
+      "description": "Prevent another player from voting at this Tribal Council",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 2
+    },
+    "grant_immunity": {
+      "type": "grant_immunity",
+      "category": "tribal_advantage",
+      "name": "Grant Immunity",
+      "description": "Grant temporary immunity to another player - votes against them do not count",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
+    "sorry_for_you": {
+      "type": "sorry_for_you",
+      "category": "action",
+      "name": "Sorry For You",
+      "description": "REACTIVE: Play when someone tries to take cards from you - they get nothing and must discard 1 card",
+      "playable_phases": ["reactive_theft"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": true,
+      "count": 7
+    },
+    "the_spy_shack": {
+      "type": "the_spy_shack",
+      "category": "action",
+      "name": "The Spy Shack",
+      "description": "Look at target player's hand",
+      "playable_phases": ["turn_play"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "knowledge_is_power": {
+      "type": "knowledge_is_power",
+      "category": "action",
+      "name": "Knowledge Is Power",
+      "description": "Choose a card type - if target has it, they must give it to you",
+      "playable_phases": ["turn_play"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "camp_raid": {
+      "type": "camp_raid",
+      "category": "action", 
+      "name": "Camp Raid",
+      "description": "Steal 2 random cards from target player",
+      "playable_phases": ["turn_play"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "inheritance": {
+      "type": "inheritance",
+      "category": "action",
+      "name": "Inheritance",
+      "description": "Choose a target player - when they are eliminated, you inherit all their cards",
+      "playable_phases": ["turn_play"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 6
+    },
+    "lets_form_an_alliance": {
+      "type": "lets_form_an_alliance",
+      "category": "action",
+      "name": "Let's Form An Alliance",
+      "description": "You and a teammate each steal a card from a victim",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": true,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 4
+    },
+    "reward_challenge_do_or_die": {
+      "type": "reward_challenge_do_or_die",
+      "category": "action",
+      "name": "Reward Challenge: Do Or Die",
+      "description": "Challenge someone to Rock/Paper/Scissors - winner steals 2 cards",
+      "playable_phases": ["turn_play"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "reward_challenge_power_pair": {
+      "type": "reward_challenge_power_pair",
+      "category": "action",
+      "name": "Reward Challenge: Power Pair",
+      "description": "Three players show fingers, pairs give you their cards",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "reward_challenge_its_a_numbers_game": {
+      "type": "reward_challenge_its_a_numbers_game",
+      "category": "action",
+      "name": "Reward Challenge: It's A Numbers Game",
+      "description": "Each player picks a number 1-3, closest to your number gives you a card",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 3
+    },
+    "tribal_council_single": {
+      "type": "tribal_council_single",
+      "category": "tribal_council",
+      "name": "Tribal Council - Single Elimination",
+      "description": "Tribal Council - Single Elimination",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 4
+    },
+    "tribal_council_double": {
+      "type": "tribal_council_double", 
+      "category": "tribal_council",
+      "name": "Tribal Council - Double Elimination",
+      "description": "Tribal Council - Double Elimination",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 5
+    }
+  },
+  "categories": {
+    "vote": {
+      "name": "Vote Cards",
+      "description": "Basic voting cards for Tribal Council",
+      "total_cards": 13
+    },
+    "tribal_advantage": {
+      "name": "Tribal Advantage Cards",
+      "description": "Special advantages for Tribal Council",
+      "total_cards": 17
+    },
+    "action": {
+      "name": "Action Cards",
+      "description": "Cards playable during player turns",
+      "total_cards": 35
+    },
+    "tribal_council": {
+      "name": "Tribal Council Cards",
+      "description": "Cards that trigger Tribal Council",
+      "total_cards": 9
+    }
+  },
+  "validation": {
+    "total_expected_cards": 74,
+    "required_fields": [
+      "type", "category", "name", "description", "playable_phases",
+      "requires_target", "requires_multiple_targets", "requires_confirmation", 
+      "reactive_only", "count"
+    ]
+  }
+}
