@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Survivor Voting App</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Survivor: The Tribe Has Spoken</h1>
+    </header>
+
+    <main id="main-content">
+      <section id="setup-section" class="active">
+        <div class="card">
+          <h2>Create New Game</h2>
+          <label for="player-count">Number of Players:</label>
+          <select id="player-count">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select>
+
+          <div id="players-setup"></div>
+
+          <div style="margin-top: 1rem;">
+            <label for="elimination-mode">Elimination Mode:</label>
+            <select id="elimination-mode">
+              <option value="single">Single Elimination</option>
+              <option value="double">Double Elimination</option>
+            </select>
+          </div>
+          <div style="margin-top: 0.5rem;">
+            <label for="tie-breaker">Tie Breaker Rule:</label>
+            <select id="tie-breaker">
+              <option value="random">Random elimination</option>
+              <option value="none">No elimination on tie</option>
+            </select>
+          </div>
+
+          <button id="start-game-btn">Start Game</button>
+          <a href="?viewer=true" style="display: block; text-align: center; margin-top: 1rem; color: var(--primary-color);">Go to Viewer Mode</a>
+        </div>
+      </section>
+
+      <section id="viewer-section" class="hidden">
+        <div class="card">
+          <h2>Viewer Mode</h2>
+          <p>You are viewing the game in read-only mode.</p>
+          <div id="viewer-status" style="margin-top: 1rem; font-size: 1.2rem; text-align: center;">
+            Waiting for game to start...
+          </div>
+        </div>
+       </section>
+
+      <section id="game-section" class="hidden">
+        <div class="status-bar">
+          <div id="status-info"></div>
+          <div>
+            <button id="call-council-btn">Call Tribal Council</button>
+            <button id="next-round-btn" class="hidden">Next Round</button>
+            <button id="manage-advantages-btn">Manage Advantages</button>
+            <button id="stats-btn">Stats</button>
+            <button id="export-btn">Export History</button>
+            <button id="theater-btn">Theater Mode</button>
+          </div>
+        </div>
+
+        <div id="player-list"></div>
+
+        <div id="history-container">
+          <h3>Tribal Councils</h3>
+          <ul id="history-list"></ul>
+        </div>
+      </section>
+
+      <section id="council-section" class="hidden">
+        <div id="council-status"></div>
+
+        <div id="discussion-phase" class="hidden">
+          <h3>Discussion Time</h3>
+          <p>Take a moment to discuss with your tribe.</p>
+          <p id="discussion-timer"></p>
+          <div style="margin-top: 0.5rem;">
+            <label for="confessional-notes" style="display:block; margin-bottom:0.25rem;">Your Notes (private):</label>
+            <textarea id="confessional-notes" rows="3" placeholder="Type your confessional notes here..." style="width:100%;"></textarea>
+          </div>
+          <button id="start-voting-btn">Start Voting</button>
+        </div>
+
+        <div id="voting-phase" class="hidden">
+          <h3>Voting</h3>
+          <p id="vote-instructions"></p>
+          <div id="vote-options"></div>
+          <button id="cast-vote-btn" disabled>Cast Vote</button>
+        </div>
+
+        <div id="idol-phase" class="hidden">
+          <h3>Immunity Idol</h3>
+          <p>If anyone has an idol and wishes to play it, select the player to protect.</p>
+          <div id="idol-container" style="margin-top:0.5rem;">
+            <select id="idol-select"></select>
+            <button id="play-idol-btn">Play Idol</button>
+            <button id="skip-idol-btn">No Idol</button>
+          </div>
+        </div>
+
+        <div id="reveal-phase" class="hidden">
+          <h3>Vote Reveal</h3>
+          <div id="reveal-container"></div>
+          <button id="council-complete-btn" class="hidden">Continue</button>
+        </div>
+        <div id="final-phase" class="hidden">
+          <h3>Final Tribal Council</h3>
+          <p id="final-instructions"></p>
+          <div id="final-votes-container"></div>
+          <button id="reveal-final-btn" class="hidden">Reveal Winner</button>
+          <div id="final-result" style="margin-top:1rem; font-weight:bold;"></div>
+        </div>
+      </section>
+
+      <div id="advantages-modal" class="modal hidden">
+        <div class="modal-content">
+          <h3>Manage Advantages</h3>
+          <label for="adv-player-select">Select Player:</label>
+          <select id="adv-player-select"></select>
+          <div style="margin-top:0.5rem;">
+            <button id="give-extra-btn">Give Extra Vote</button>
+            <button id="give-idol-btn">Give Idol</button>
+          </div>
+          <h4 style="margin-top:1rem;">Advantage Counts</h4>
+          <ul id="adv-list"></ul>
+          <button id="close-adv-btn" style="margin-top:1rem;">Close</button>
+        </div>
+      </div>
+
+      <div id="stats-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
+          <h3>Statistics &amp; History</h3>
+          <div id="stats-content"></div>
+          <button id="close-stats-btn" style="margin-top:1rem;">Close</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/gamestate.js"></script>
+  <script src="js/voting.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    // PeerJS Viewer Mode Logic
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('viewer') === 'true') {
+        // Hide other sections and show viewer mode
+        document.getElementById('setup-section').classList.add('hidden');
+        document.getElementById('game-section').classList.add('hidden');
+        document.getElementById('council-section').classList.add('hidden');
+        document.getElementById('viewer-section').classList.remove('hidden');
+
+        const viewerStatus = document.getElementById('viewer-status');
+        const peer = new Peer('survivor-viewer-client');
+
+        peer.on('open', id => {
+          console.log('Viewer PeerJS ID:', id);
+          viewerStatus.textContent = 'Connected and waiting for game updates...';
+        });
+
+        peer.on('connection', conn => {
+          conn.on('data', data => {
+            console.log('Received data:', data);
+            if (data.type === 'VOTER_UPDATE') {
+              viewerStatus.innerHTML = `It is currently <strong style="color: var(--primary-color);">${data.voterName}</strong>'s turn to vote.`;
+            } else if (data.type === 'COUNCIL_START') {
+                viewerStatus.textContent = 'Tribal council has begun!';
+            }
+          });
+        });
+
+        peer.on('error', err => {
+            viewerStatus.textContent = 'Error connecting to the host. Please ensure the host is running the game.';
+            console.error('PeerJS error:', err);
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+/*
+ * Animations to enhance the dramatic reveal of votes and other UI elements.
+ */
+
+/* Fade in with upward motion. Used for vote reveal cards */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Apply the animation to vote cards */
+.vote-card {
+  opacity: 0;
+  animation: fadeInUp 0.8s forwards;
+}

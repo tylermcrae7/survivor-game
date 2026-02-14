@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Survivor Winners Scorecard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <img src="images/header.png" alt="Tropical survivor island" class="hero-img">
+    <div class="hero-overlay">
+      <h1>Survivor Winners Scorecard</h1>
+      <p class="subtitle">Track wins and see who outlasts the rest</p>
+      <p class="quote">“In this game, fire represents your life. When your fire's gone, so are you.” – Jeff Probst</p>
+    </div>
+  </header>
+
+  <main>
+    <section id="host-controls" class="controls">
+      <h2>Manage Players</h2>
+      <div class="add-player-form">
+        <input id="player-name" type="text" placeholder="Player name" aria-label="Player name">
+        <input id="player-score" type="number" min="0" value="0" placeholder="Starting score" aria-label="Starting score">
+        <button id="add-player" class="btn">Add Player</button>
+      </div>
+
+      <div class="reset-row">
+        <button id="reset-board" class="btn danger">Reset Scoreboard</button>
+      </div>
+    </section>
+
+    <section class="table-wrapper">
+      <table id="scoreboard" class="score-table">
+        <thead>
+          <tr><th>Player</th><th>Score</th><th class="actions">Actions</th></tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="share-section" class="share">
+      <h3>Share this scorecard</h3>
+      <p>If you're the host, copy and send this link to your friends so they can follow along:</p>
+      <div class="share-row">
+        <input id="share-link" type="text" readonly>
+        <button id="copy-link" class="btn small">Copy</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Outwit · Outplay · Outlast</p>
+  </footer>
+
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

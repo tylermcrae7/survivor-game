@@ -1,0 +1,17 @@
+{
+  "exampleGame": {
+    "players": [
+      { "name": "Alice", "color": "#e63946" },
+      { "name": "Bob", "color": "#2a9d8f" },
+      { "name": "Charlie", "color": "#e9c46a" },
+      { "name": "Dana", "color": "#f4a261" }
+    ],
+    "leader": 0,
+    "votes": [
+      { "voter": 0, "target": 1 },
+      { "voter": 1, "target": 2 },
+      { "voter": 2, "target": 1 },
+      { "voter": 3, "target": 1 }
+    ]
+  }
+}

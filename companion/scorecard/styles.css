@@ -1,0 +1,203 @@
+/* Survivor Winners Scorecard styles */
+:root {
+  --bg: #fcefd6;
+  --primary: #5c3e26;
+  --accent: #c7672d;
+  --highlight: #f3c672;
+  --text-dark: #2f2219;
+}
+
+body {
+  margin: 0;
+  font-family: 'Trebuchet MS', 'Verdana', sans-serif;
+  background-color: var(--bg);
+  color: var(--text-dark);
+}
+
+/* Hero section */
+.hero {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  height: 0;
+  padding-bottom: 35%;
+}
+
+.hero-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+}
+
+.hero-overlay h1 {
+  margin: 0;
+  font-size: 2.4rem;
+  letter-spacing: 1px;
+}
+.hero-overlay .subtitle {
+  margin-top: 0.3rem;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+.hero-overlay .quote {
+  margin-top: 0.7rem;
+  font-size: 0.9rem;
+  font-style: italic;
+  max-width: 90%;
+}
+
+/* Controls section */
+.controls {
+  max-width: 700px;
+  margin: 1.5rem auto 0.5rem;
+  padding: 1rem;
+  background: #fffaf2;
+  border: 2px solid var(--primary);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+.controls h2 {
+  margin-top: 0;
+}
+.add-player-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.add-player-form input {
+  flex: 1 1 150px;
+  padding: 0.5rem;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+.btn {
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.btn:hover {
+  background: var(--primary);
+}
+.btn.small {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+/* Danger style for reset button */
+.btn.danger {
+  background: #c0392b;
+}
+.btn.danger:hover {
+  background: #992d22;
+}
+
+/* Score table */
+.table-wrapper {
+  max-width: 700px;
+  margin: 0 auto;
+  overflow-x: auto;
+}
+.score-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  background: #fffdf6;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.score-table th, .score-table td {
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--primary);
+}
+.score-table th {
+  background: var(--primary);
+  color: #fff;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+}
+.score-table td {
+  font-size: 0.95rem;
+}
+.score-table td.actions {
+  width: 120px;
+  text-align: center;
+}
+.score-table button {
+  margin: 0 0.25rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.score-table button:hover {
+  background: var(--accent);
+}
+.score-table tr.leader {
+  background: var(--highlight);
+  font-weight: bold;
+}
+
+/* Share section */
+.share {
+  max-width: 700px;
+  margin: 0.5rem auto 2rem;
+  padding: 1rem;
+  background: #fffaf2;
+  border: 2px solid var(--primary);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+.share-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.share-row input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: #fffdf6;
+}
+
+footer {
+  text-align: center;
+  padding: 1rem;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 600px) {
+  .hero-overlay h1 { font-size: 1.8rem; }
+  .hero-overlay .subtitle { font-size: 0.95rem; }
+  .hero-overlay .quote { font-size: 0.8rem; }
+  .score-table td.actions { width: 100px; }
+}
