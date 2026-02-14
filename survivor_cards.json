@@ -1,9 +1,9 @@
 {
   "metadata": {
-    "version": "1.0",
+    "version": "1.1",
     "source": "Official Survivor Board Game PDF",
-    "total_cards": 69,
-    "last_updated": "2024-01-01"
+    "total_cards": 74,
+    "last_updated": "2026-02-07"
   },
   "cards": {
     "vote": {
@@ -89,6 +89,42 @@
       "requires_confirmation": true,
       "reactive_only": false,
       "count": 2
+    },
+    "steal_vote": {
+      "type": "steal_vote",
+      "category": "tribal_advantage",
+      "name": "Steal A Vote",
+      "description": "Steal another player's vote at Tribal Council - they cannot vote and you vote twice",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 2
+    },
+    "block_vote": {
+      "type": "block_vote",
+      "category": "tribal_advantage",
+      "name": "Block A Vote",
+      "description": "Prevent another player from voting at this Tribal Council",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 2
+    },
+    "grant_immunity": {
+      "type": "grant_immunity",
+      "category": "tribal_advantage",
+      "name": "Grant Immunity",
+      "description": "Grant temporary immunity to another player - votes against them do not count",
+      "playable_phases": ["tribal_discussion"],
+      "requires_target": true,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
     },
     "sorry_for_you": {
       "type": "sorry_for_you",
@@ -232,7 +268,7 @@
     "tribal_advantage": {
       "name": "Tribal Advantage Cards",
       "description": "Special advantages for Tribal Council",
-      "total_cards": 12
+      "total_cards": 17
     },
     "action": {
       "name": "Action Cards",
@@ -246,7 +282,7 @@
     }
   },
   "validation": {
-    "total_expected_cards": 69,
+    "total_expected_cards": 74,
     "required_fields": [
       "type", "category", "name", "description", "playable_phases",
       "requires_target", "requires_multiple_targets", "requires_confirmation", 

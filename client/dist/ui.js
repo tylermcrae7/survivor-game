@@ -1,6 +1,7 @@
 /**
  * Survivor Game - UI Management Module
  * Handles all user interface rendering, interactions, and screen management
+ * Enhanced 2026: Haptic feedback, micro-interactions, tropical theme
  */
 
 // UI State
@@ -12,6 +13,48 @@ let cardTooltip = null;
 
 // Animation state
 let isAnimating = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HAPTIC FEEDBACK SYSTEM (2026 Enhancement)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Haptics = {
+    patterns: {
+        light: 10,
+        medium: 25,
+        heavy: 50,
+        success: [10, 50, 10],
+        error: [50, 30, 50],
+        warning: [30, 20, 30],
+        select: 15,
+        vote: [20, 40, 20, 40, 80]
+    },
+
+    /**
+     * Trigger haptic feedback if supported
+     * @param {string} type - Type of haptic pattern
+     */
+    trigger(type = 'light') {
+        if ('vibrate' in navigator) {
+            const pattern = this.patterns[type] || this.patterns.light;
+            navigator.vibrate(pattern);
+        }
+    },
+
+    /**
+     * Check if haptics are supported
+     */
+    isSupported() {
+        return 'vibrate' in navigator;
+    }
+};
+
+// Add haptic feedback to all button clicks
+document.addEventListener('click', (e) => {
+    if (e.target.matches('.btn, .card-button, .vote-option, .player-card')) {
+        Haptics.trigger('select');
+    }
+}, { passive: true });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CARD TOOLTIP SYSTEM
@@ -868,22 +911,27 @@ async function playCard(cardIndex) {
 async function castVote(targetId) {
     const gameId = window.SurvivorGame?.localGameState.gameId;
     const voterId = window.SurvivorGame?.localGameState.playerId;
-    
+
     if (!gameId || !voterId || !targetId) {
         showToast('Vote error', 'error');
+        Haptics.trigger('error');
         return;
     }
-    
+
     try {
+        // Dramatic vote haptic feedback
+        Haptics.trigger('vote');
         showLoading('Casting vote...');
         const votesData = { [targetId]: 1 }; // Basic single vote
         const result = await window.SurvivorNetwork?.GameAPI.castVote(gameId, voterId, votesData);
-        
+
         if (result && result.success) {
             showToast('Vote cast successfully', 'success');
+            Haptics.trigger('success');
         }
     } catch (error) {
         showToast(error.message || 'Failed to cast vote', 'error');
+        Haptics.trigger('error');
     } finally {
         hideLoading();
     }
