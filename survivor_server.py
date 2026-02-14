@@ -810,17 +810,20 @@ class GameState:
         else:
             # Return to normal game play
             game["phase"] = "playing"
-            
+
             # Clear tribal council state
             if "currentVote" in game:
                 del game["currentVote"]
-                
+
+            # Rotate tribal council leader to next active player
+            self._rotate_tribal_leader(game)
+
             # Advance turn to next player if needed
             if "turnOrder" in game and game["turnOrder"]:
                 # Find next active player
                 current_index = game.get("currentTurnIndex", 0)
                 turn_order = game["turnOrder"]
-                
+
                 # Find next active player
                 attempts = 0
                 while attempts < len(turn_order):
@@ -829,9 +832,9 @@ class GameState:
                     if not game["players"][next_player_id].get("isEliminated", False):
                         break
                     attempts += 1
-                    
+
                 game["currentTurnIndex"] = current_index
-                
+
             message = f"Tribal council completed - {len(eliminated_players)} eliminated. Game continues with {len(active_players)} players."
             
         # Record elimination in game history
@@ -858,8 +861,57 @@ class GameState:
         result = {"success": True, "message": message}
         if inheritance_messages:
             result["inheritance_messages"] = inheritance_messages
-            
+
         return result
+
+    def _rotate_tribal_leader(self, game):
+        """
+        Rotate the tribal council leader to the next active player in turn order.
+
+        Per rules, the player who draws the Tribal Council card becomes the leader.
+        After tribal ends, leadership rotates for the next tribal.
+        """
+        turn_order = game.get("turnOrder", [])
+        if not turn_order:
+            return
+
+        # Find current leader
+        current_leader_id = None
+        for pid, player in game["players"].items():
+            if player.get("isCouncilLeader", False):
+                current_leader_id = pid
+                break
+
+        if not current_leader_id:
+            # No current leader, assign first active player
+            for pid in turn_order:
+                player = game["players"].get(pid)
+                if player and not player.get("isEliminated", False):
+                    player["isCouncilLeader"] = True
+                    logger.info(f"Assigned {pid} as initial council leader")
+                    return
+
+        # Find current leader's position in turn order
+        try:
+            current_index = turn_order.index(current_leader_id)
+        except ValueError:
+            current_index = 0
+
+        # Clear old leader status
+        for player in game["players"].values():
+            player["isCouncilLeader"] = False
+
+        # Find next active player
+        attempts = 0
+        while attempts < len(turn_order):
+            current_index = (current_index + 1) % len(turn_order)
+            next_leader_id = turn_order[current_index]
+            next_leader = game["players"].get(next_leader_id)
+            if next_leader and not next_leader.get("isEliminated", False):
+                next_leader["isCouncilLeader"] = True
+                logger.info(f"Rotated council leader to {next_leader_id}")
+                return
+            attempts += 1
 
     def _trigger_tribal_council(self, game, elimination_type):
         """
@@ -952,11 +1004,39 @@ class GameState:
             
         return success
 
-    def play_tribal_advantage(self, gid, **kwargs):
-        """Play tribal advantage card."""
+    def play_tribal_advantage(self, gid, playerId=None, advantageType=None, targetId=None, **kwargs):
+        """
+        Play a tribal advantage card during tribal council.
+
+        Args:
+            gid: Game ID
+            playerId: ID of the player playing the advantage
+            advantageType: Type of advantage card (e.g., 'steal_vote', 'block_vote', 'extra_vote', 'grant_immunity')
+            targetId: Optional target player ID for targeted advantages
+        """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        return {"success": True, "message": "Feature not yet implemented"}
+
+        if not playerId:
+            return {"success": False, "message": "playerId is required"}
+
+        if not advantageType:
+            return {"success": False, "message": "advantageType is required"}
+
+        game = self.games[gid]
+
+        # Validate player exists
+        if playerId not in game["players"]:
+            return {"success": False, "message": "Invalid player ID"}
+
+        # Delegate to rules engine
+        result = self.rules_engine.play_tribal_advantage(game, playerId, advantageType, targetId)
+
+        if result.get("success"):
+            self._save()
+            logger.info(f"Tribal advantage {advantageType} played by {playerId} in game {gid}")
+
+        return result
 
     def enhanced_tie_break(self, gid, **kwargs):
         """Handle enhanced tie break."""
@@ -1003,6 +1083,42 @@ class GameState:
         
         logger.info(f"Final tribal council started with finalists: {finalists}, jury: {jury_members}, leader: {leader_id}")
 
+    def _determine_final_winner(self, game, final_tribal):
+        """
+        Tally final tribal votes and determine the winner or if a tie-break is needed.
+
+        Per rules: The player with the most votes is declared the Sole Survivor.
+        If tied, the Final Tribal Council Leader breaks the tie.
+        """
+        votes = final_tribal.get("votes", {})
+        finalists = final_tribal.get("finalists", [])
+
+        # Tally votes for each finalist
+        vote_counts = {finalist: 0 for finalist in finalists}
+        for jury_member_id, voted_for in votes.items():
+            if voted_for in vote_counts:
+                vote_counts[voted_for] += 1
+
+        final_tribal["voteCounts"] = vote_counts
+
+        # Find the winner(s)
+        max_votes = max(vote_counts.values()) if vote_counts else 0
+        winners = [fid for fid, count in vote_counts.items() if count == max_votes]
+
+        if len(winners) == 1:
+            # Clear winner
+            winner_id = winners[0]
+            final_tribal["winner"] = winner_id
+            final_tribal["tieBreakNeeded"] = False
+            game["phase"] = "finished"
+            game["winner"] = winner_id
+            logger.info(f"Final tribal winner determined: {winner_id} with {max_votes} votes")
+        else:
+            # Tie - leader must break
+            final_tribal["tieBreakNeeded"] = True
+            final_tribal["tiedFinalists"] = winners
+            logger.info(f"Final tribal tie between {winners}, leader must break tie")
+
     # ═══════════════════════════ Final Tribal Methods ═══════════════════════════
     def advance_final_phase(self, gid, target_phase):
         """
@@ -1029,8 +1145,9 @@ class GameState:
         current_phase = final_tribal.get("phase", "questions")
         
         # Valid phase transitions for final tribal
+        # Allow skipping deliberation (go directly to voting from questions)
         valid_transitions = {
-            "questions": ["deliberation"],
+            "questions": ["deliberation", "voting"],
             "deliberation": ["voting"],
             "voting": ["reveal"],
             "reveal": []
@@ -1050,30 +1167,192 @@ class GameState:
             final_tribal["votes"] = {}
             final_tribal["juryReady"] = []
         elif target_phase == "reveal":
-            # No additional setup needed for reveal
-            pass
-            
+            # Tally votes and determine winner
+            self._determine_final_winner(game, final_tribal)
+
         self._save()
         logger.info(f"Advanced final tribal phase to {target_phase} in game {gid}")
         return True
 
-    def cast_final_vote(self, gid, **kwargs):
-        """Cast final tribal vote."""
-        if gid not in self.games:
-            return {"success": False, "message": "Game not found"}
-        return {"success": True, "message": "Feature not yet implemented"}
+    def cast_final_vote(self, gid, juryMemberId=None, finalistId=None, **kwargs):
+        """
+        Cast final tribal vote from a jury member for a finalist.
 
-    def break_final_tie(self, gid, **kwargs):
-        """Break final tribal tie."""
-        if gid not in self.games:
-            return {"success": False, "message": "Game not found"}
-        return {"success": True, "message": "Feature not yet implemented"}
+        In Survivor, the jury votes for who they think should WIN (not who should be eliminated).
+        All jury members point simultaneously at their chosen finalist.
 
-    def signal_jury_ready(self, gid, **kwargs):
-        """Signal jury member ready."""
+        Args:
+            gid: Game ID
+            juryMemberId: ID of the jury member casting the vote
+            finalistId: ID of the finalist they're voting FOR (to win)
+
+        Returns:
+            Boolean indicating success
+        """
         if gid not in self.games:
-            return {"success": False, "message": "Game not found"}
-        return {"success": True, "message": "Feature not yet implemented"}
+            return False
+
+        if not juryMemberId or not finalistId:
+            return False
+
+        game = self.games[gid]
+
+        # Validate game is in final tribal phase
+        if game.get("phase") not in ["final", "final_tribal"]:
+            return False
+
+        final_tribal = game.get("finalTribal", {})
+
+        # Validate we're in voting phase
+        if final_tribal.get("phase") != "voting":
+            return False
+
+        # Validate jury member is actually a jury member
+        jury = final_tribal.get("jury", [])
+        if juryMemberId not in jury:
+            return False
+
+        # Validate finalist is actually a finalist
+        finalists = final_tribal.get("finalists", [])
+        if finalistId not in finalists:
+            return False
+
+        # Record the vote
+        if "votes" not in final_tribal:
+            final_tribal["votes"] = {}
+
+        final_tribal["votes"][juryMemberId] = finalistId
+
+        # Track that this jury member is ready (has voted)
+        if "juryReady" not in final_tribal:
+            final_tribal["juryReady"] = []
+        if juryMemberId not in final_tribal["juryReady"]:
+            final_tribal["juryReady"].append(juryMemberId)
+
+        logger.info(f"Final vote cast in game {gid}: jury member {juryMemberId} voted for {finalistId}")
+
+        # Check if all jury members have voted - auto-advance to reveal
+        all_voted = len(final_tribal["votes"]) >= len(jury)
+        if all_voted:
+            final_tribal["phase"] = "reveal"
+            self._determine_final_winner(game, final_tribal)
+
+        self._save()
+        return True
+
+    def break_final_tie(self, gid, leaderId=None, winnerId=None, **kwargs):
+        """
+        Break a tie in the final tribal council.
+
+        Per rules: If both players get the same number of votes,
+        the Final Tribal Council Leader breaks the tie by choosing the winner.
+        They DON'T have to pick the player they originally voted for.
+
+        Args:
+            gid: Game ID
+            leaderId: ID of the Final Tribal Council Leader (must be the tie-breaker)
+            winnerId: ID of the finalist chosen to win
+
+        Returns:
+            Boolean indicating success
+        """
+        if gid not in self.games:
+            return False
+
+        if not leaderId or not winnerId:
+            return False
+
+        game = self.games[gid]
+
+        # Validate game is in final tribal phase
+        if game.get("phase") not in ["final", "final_tribal"]:
+            return False
+
+        final_tribal = game.get("finalTribal", {})
+
+        # Validate we're in reveal phase and tie-break is needed
+        if final_tribal.get("phase") != "reveal":
+            return False
+
+        if not final_tribal.get("tieBreakNeeded", False):
+            return False
+
+        # Validate leader is the Final Tribal Council Leader
+        if leaderId != final_tribal.get("leader"):
+            return False
+
+        # Validate winner is a finalist
+        finalists = final_tribal.get("finalists", [])
+        if winnerId not in finalists:
+            return False
+
+        # Record the winner
+        final_tribal["winner"] = winnerId
+        final_tribal["tieBreakNeeded"] = False
+        final_tribal["tieBreakBy"] = leaderId
+
+        # Mark game as finished
+        game["phase"] = "finished"
+        game["winner"] = winnerId
+
+        self._save()
+        logger.info(f"Final tie broken in game {gid}: leader {leaderId} chose {winnerId} as winner")
+        return True
+
+    def signal_jury_ready(self, gid, juryMemberId=None, **kwargs):
+        """
+        Signal that a jury member is ready to vote (finger raised).
+
+        Per rules: When each member of the Jury is ready to vote, they raise a finger.
+        When every member has a finger raised, voting proceeds.
+
+        Args:
+            gid: Game ID
+            juryMemberId: ID of the jury member signaling readiness
+
+        Returns:
+            Boolean indicating success
+        """
+        if gid not in self.games:
+            return False
+
+        if not juryMemberId:
+            return False
+
+        game = self.games[gid]
+
+        # Validate game is in final tribal phase
+        if game.get("phase") not in ["final", "final_tribal"]:
+            return False
+
+        final_tribal = game.get("finalTribal", {})
+
+        # Can signal ready during deliberation phase (before voting)
+        if final_tribal.get("phase") not in ["deliberation", "questions"]:
+            return False
+
+        # Validate player is a jury member
+        jury = final_tribal.get("jury", [])
+        if juryMemberId not in jury:
+            return False
+
+        # Track readiness
+        if "juryReady" not in final_tribal:
+            final_tribal["juryReady"] = []
+
+        if juryMemberId not in final_tribal["juryReady"]:
+            final_tribal["juryReady"].append(juryMemberId)
+
+        logger.info(f"Jury member {juryMemberId} signaled ready in game {gid}")
+
+        # Check if all jury members are ready - auto-advance to voting
+        all_ready = len(final_tribal["juryReady"]) >= len(jury)
+        if all_ready:
+            final_tribal["phase"] = "voting"
+            final_tribal["juryReady"] = []  # Reset for voting phase
+
+        self._save()
+        return True
 
     # ═══════════════════════════ Game Management Methods ═══════════════════════════
     def change_leader(self, gid, newLeaderId=None, **kwargs):
