@@ -1,338 +1,242 @@
 # Survivor: The Digital Board Game
 
-A real-time multiplayer web adaptation of the official Survivor board game. Play with friends remotely from any device - no physical cards required!
+A real-time multiplayer web adaptation of **Survivor: The Tribe Has Spoken** — the official board game — faithful to the official Survival Guide. Play with friends from any phone; no physical cards required.
+
+Runs as a mobile-first PWA against a small Flask + Socket.IO server. One household hosts; everyone else just opens a link.
+
+---
 
 ## Quick Start (For Players)
 
-### Joining a Game
-1. **One player creates the game** and receives a 6-character code
-2. **Share the code** with friends (2-6 players total)
-3. **Everyone visits** the game URL
-4. **Enter the code + your name** and you're in!
+1. **One player creates the game** — pick a deck, optionally add the *Let's Go To Rocks* Challenges — and receives a fire code
+2. **Share the code** (2–6 players total)
+3. Everyone opens the game URL, taps **Join a Tribe**, and enters the code, a name, and a buff color
+4. You can **change your name** any time in the lobby (pencil next to your name) — names lock when the game starts
+5. The leader taps **Begin the Game**
 
-### Creating a Game
-1. Open the game in your browser
-2. Click **"Create Game"**
-3. Enter your name
-4. Share the game code with friends
-5. Once everyone joins, the leader starts the game
+If the server is code-locked (see *Access gate* below), everyone enters the shared island code once per device first.
+
+### The camp menu (☰ in the header)
+- **Hall of Fame** — every Sole Survivor ever recorded, ranked by wins. Wins record automatically when a game finishes, and the record is hand-editable (add a win from an off-app game night, fix a name or date, strike an entry)
+- **Leave this game** — just you; the game continues without you
+- **Burn it down** — wipes the game for *everyone* (with confirmation) and returns every phone to the start screen
 
 ---
 
-## Game Rules
+## Game Rules (as implemented)
 
-### Overview
-Survivor is about making alliances, outwitting opponents, and surviving Tribal Councils. The last player standing (or one of the final two) wins!
+### Setup — per the official Survival Guide
+- The official box holds **67 Action Cards**. Setup removes the 9 Tribal Council Cards and 6 Vote Cards, deals each player **3 Action Cards** and **1 Vote Card** (extra Vote Cards leave the game), *then* assembles the Draw Pile with the Tribal Council Cards spaced through it (one guaranteed at the bottom) — so a Tribal can never be dealt into an opening hand
+- Each player has **2 Survivor Character Cards** (lives)
+- One player is randomly the first **Council Leader**
 
-### Setup
-- Each player starts with **5 cards** (3 action cards + 1 vote card + initial draws)
-- One player is randomly chosen as the first **Council Leader**
-- The deck contains **Tribal Council cards** that trigger elimination votes
+### Deck modes
+| Mode | Contents |
+|------|----------|
+| **Official** | The 67-card box, exactly as printed |
+| **Extended** | +7 house cards: Idol Nullifier ×2, Steal A Vote ×2, Block A Vote ×2, Grant Immunity ×1 |
 
-### Turn Structure
-Each turn has 3 parts - **Steal, Play, Draw**:
-
-1. **Steal a Card** - Take a random card from any other player
-2. **Play a Card** (Optional) - Use one action card from your hand
-3. **Draw a Card** - Take the top card from the deck
-
-If you draw a **Tribal Council card**, a Tribal Council immediately begins!
+### Turn structure — Steal, Play, Draw
+1. **Steal** — take a random card from any other player (the target may interrupt with *Sorry For You*)
+2. **Play** (optional) — play one Action Card
+3. **Draw** — take the top card of the Draw Pile. Drawing a **Tribal Council Card** starts a Tribal Council immediately
 
 ### Tribal Council
-When a Tribal Council is triggered:
+Announcement → Advantage play → Discussion → Voting → Reveal, run by the Council Leader.
 
-1. **Announcement Phase** - Council Leader announces the tribal
-2. **Advantage Phase** - Players may play Tribal Advantage cards
-3. **Discussion Phase** - Debate who should be eliminated
-4. **Voting Phase** - All players secretly vote
-5. **Immunity Phase** - Players may reveal Hidden Immunity Idols
-6. **Reveal Phase** - Votes are revealed one by one
+**The vote economy (official):**
+- **Vote Cards** and a **Goodwill Gamble** played on you **must** be cast at that Tribal
+- **Extra Vote** *may* be cast, or saved
+- A player wearing the **Immunity Idol Necklace** cannot be voted for
+- **Hidden Immunity Idol** negates all votes against you; **Idol Nullifier** (extended) cancels an idol
 
-#### Tribal Council Types
-- **Single Elimination** - One player is voted out
-- **Double Elimination** - Two players are voted out
+**Elimination & ties (official):**
+- *Single Elimination* — most votes is voted out
+- *Double Elimination* — most votes **and** second-most votes are both voted out
+- Tied or unclear results resolve through the official ladder, ending with the Council Leader's decision where the Guide says so
 
-#### Ties
-The Council Leader breaks all ties by choosing who is eliminated.
+Being voted out turns over one Survivor Character Card. Lose both and you're eliminated — and join the **Jury**.
 
-### Character Lives
-- Each player has **2 lives** (represented by Survivor Character Cards)
-- Being voted out removes **1 life**
-- Lose both lives = **Eliminated from the game**
-- Eliminated players join the **Jury** for Final Tribal Council
+### Reward Challenges — real multiplayer minigames
+These resolve as live interactions on everyone's phones, not dice rolls:
+- **Do Or Die** — actual rock-paper-scissors throws between you and your target; winner steals 2 cards
+- **Power Pair** — three players secretly show 1–5 fingers; anyone pairing with you hands over cards
+- **It's A Numbers Game** — everyone secretly picks a number; the odd one out pays the price
 
-### Winning the Game
-When only **2 players remain**, the Final Tribal Council begins:
-1. Both finalists make their case to the Jury
-2. The Jury votes for who they think **should WIN**
-3. Most votes wins - **Sole Survivor!**
+### Final Tribal & winning
+When **2 players remain**, Final Tribal begins: the Jury asks its questions, then votes for who **should win**. Most jury votes = **Sole Survivor**, carved into the Hall of Fame.
 
 ---
 
-## Card Reference (All 69 Official Cards)
+## Let's Go To Rocks (expansion)
 
-### Vote Cards (13 total)
+Toggle on at game creation. Adds the **5 orange Challenge Cards** and the **Immunity Idol Necklace**:
 
-| Card | Count | Effect |
-|------|-------|--------|
-| **Vote** | 6 | Your basic vote at Tribal Council |
-| **Extra Vote** | 7 | Gain an additional vote at the next Tribal Council |
+| Challenge | How it plays digitally |
+|-----------|------------------------|
+| Lowest Score Loses | Every player pulls rocks from a shared bag — lowest total loses |
+| Pull or Steal | Pull from the bag, or steal a rival's pull |
+| 1 Now or 2 Later | Take one rock now, or gamble on two later |
+| Highest Bidder | Open bidding on the bag's contents |
+| Hide 'n' Seek | *Not available digitally* (physical sleight-of-hand) — the card explains itself |
 
-### Tribal Advantage Cards (12 total)
-
-| Card | Count | Effect |
-|------|-------|--------|
-| **Control The Vote** | 2 | Choose who the next Tribal Council Leader will be |
-| **Goodwill Gamble** | 3 | Give away cards to gain influence at Tribal Council |
-| **I'm The Leader Now** | 1 | Become the Tribal Council Leader immediately |
-| **Hidden Immunity Idol** | 4 | Negate all votes against you at Tribal Council |
-| **Idol Nullifier** | 2 | Nullify someone's immunity idol at Tribal Council |
-
-### Action Cards (35 total)
-
-| Card | Count | Effect |
-|------|-------|--------|
-| **Sorry For You** | 7 | REACTIVE: When someone tries to take cards from you - they get nothing and must discard 1 card |
-| **The Spy Shack** | 3 | Look at target player's hand |
-| **Knowledge Is Power** | 3 | Choose a card type - if target has it, they must give it to you |
-| **Camp Raid** | 3 | Steal 2 random cards from target player |
-| **Inheritance** | 6 | Choose a target - when they are eliminated, you inherit all their cards |
-| **Let's Form An Alliance** | 4 | You and a teammate each steal a card from a victim |
-| **Reward Challenge: Do Or Die** | 3 | Rock/Paper/Scissors - winner steals 2 cards |
-| **Reward Challenge: Power Pair** | 3 | Three players show fingers, pairs give you their cards |
-| **Reward Challenge: It's A Numbers Game** | 3 | Players pick 1-3, closest to your number gives you a card |
-
-### Tribal Council Cards (9 total)
-
-| Card | Count | Effect |
-|------|-------|--------|
-| **Single Elimination** | 4 | Triggers Tribal Council - 1 player voted out |
-| **Double Elimination** | 5 | Triggers Tribal Council - 2 players voted out |
-
-#### Tribal Cards by Player Count
-The deck uses different tribal card distributions based on player count:
-
-| Players | Single Elimination | Double Elimination |
-|---------|-------------------|-------------------|
-| 3 | 4 | 0 |
-| 4 | 2 | 2 |
-| 5 | 2 | 3 |
-| 6 | 0 | 5 |
+The Challenge winner **wears the Necklace** (immune to votes) until the next Tribal Council ends. Win a Challenge while already wearing it and you take **3 cards from the Draw Pile** instead. Secret information (bag contents, hidden pulls) never leaves the server.
 
 ---
 
-## Sharing the Game with Friends
+## Card Reference
 
-### Method 1: Share the Game Code
-After creating a game, you'll see a 6-character code (e.g., `ABC123`).
+Counts are per the card registry (`survivor_cards.json`). *(Extended)* marks house cards outside the official 67.
 
-**Send this to your friends:**
-> "Join my Survivor game! Go to [your-game-url] and enter code: ABC123"
+### Vote Cards
+| Card | Count | Effect |
+|------|-------|--------|
+| Vote | 6 | Dealt 1 per player at setup. MUST be cast at Tribal Council |
+| Extra Vote | 7 | An additional vote — cast it or save it |
 
-Friends then:
-1. Open the URL in their browser
-2. Click "Join Game"
-3. Enter the code and their name
-4. They're in!
+### Tribal Advantage Cards
+| Card | Count | Effect |
+|------|-------|--------|
+| Hidden Immunity Idol | 4 | Negate all votes against you at Tribal Council |
+| Goodwill Gamble | 3 | Give to another player before voting; counts as 1 vote and MUST be used at that Tribal |
+| Control The Vote | 2 | Choose the next Council Leader |
+| I'm The Leader Now | 1 | Become the Council Leader immediately |
+| Idol Nullifier *(Extended)* | 2 | Cancel someone's played idol |
+| Steal A Vote *(Extended)* | 2 | Take another player's vote; they can't vote, you vote twice |
+| Block A Vote *(Extended)* | 2 | Block a player's vote at this Tribal |
+| Grant Immunity *(Extended)* | 1 | Make a player immune this Tribal |
 
-### Method 2: Copy & Share (Mobile)
-1. Create a game
-2. Tap the **Copy Code** button
-3. Paste into your messaging app
-4. Friends click the link or enter the code manually
+### Action Cards
+| Card | Count | Effect |
+|------|-------|--------|
+| Sorry For You | 7 | REACTIVE — when someone tries to take your cards: they get nothing and discard 1 |
+| Inheritance | 6 | Mark a player — when they're eliminated, you inherit their cards |
+| Let's Form An Alliance | 4 | You and an ally each steal a card from a victim |
+| Camp Raid | 3 | Steal 2 random cards from a target |
+| The Spy Shack | 3 | Look at a player's hand and take one card |
+| Knowledge Is Power | 3 | Name a card type — if the target holds it, it's yours |
+| Reward Challenge: Do Or Die | 3 | Live rock-paper-scissors; winner steals 2 |
+| Reward Challenge: Power Pair | 3 | Live finger match with two rivals |
+| Reward Challenge: It's A Numbers Game | 3 | Live secret number pick |
 
-### Method 3: Native Share (iOS/Android)
-1. Create a game
-2. Tap the **Share** button
-3. Choose your messaging app
-4. Friends receive a direct link to join
+### Tribal Council Cards
+| Card | Count |
+|------|-------|
+| Single Elimination | 4 |
+| Double Elimination | 5 |
 
-### Tips for Remote Play
-- Use a **video call** (Zoom, FaceTime, Discord) for discussions
-- The **in-game narrator** announces important events
-- All players see the **same game state** in real-time
-- Games auto-reconnect if you lose connection briefly
+Distribution scales by player count (3 players: 4 single / 0 double … 6 players: 0 single / 5 double).
+
+---
+
+## The Interface
+
+- **TORCHLIT design** — a night-on-the-island look (Fraunces + Alegreya Sans, OKLCH fire palette). The whole app shifts atmosphere with the game: ember-red for Tribal Council, jury gold for Final Tribal, dawn for victory
+- **Hand grid + card sheet** — your whole hand is visible at once as named mini-cards; playable cards glow **NOW**. Tap a card for its full rules, timing, and the *Play This Card* button — no card ever leaves your hand on a single stray tap
+- **Narrator** — dramatic, optional-sound commentary on every major event
+- **Phase guidance** — a strip at the top always says whose moment it is and what to do
+- **PWA** — add to home screen (the icon is the torch); runs standalone, auto-reconnects, keeps working through brief drops
 
 ---
 
 ## Hosting Your Own Server
 
-### Local Development
+### Local / LAN play
 ```bash
-# Clone the repository
 git clone https://github.com/tylermcrae7/survivor-game.git
 cd survivor-game
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the server
-python survivor_server.py
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python survivor_server.py        # serves on http://localhost:8080
 ```
+`PORT` overrides the port. Anyone on your Wi-Fi can join via your machine's LAN IP.
 
-The server runs on `http://localhost:8080` by default.
+### Production (always-on Mac + Cloudflare Tunnel)
+The `deploy/` folder holds the full pattern used for the live deployment:
 
-### Exposing to the Internet with Cloudflare Tunnel
+- **`deploy/setup.sh`** — one-time install: creates a named Cloudflare Tunnel to your domain, installs two LaunchAgents (server + tunnel) so both start at boot, and generates an access code
+- **`deploy/redeploy.sh`** — every subsequent release: rsyncs the repo to `~/srv/survivor-game` (excluding live game state) and bounces the server
 
-To let friends connect from anywhere, use a Cloudflare Tunnel:
+> **macOS note:** launchd services cannot read `~/Documents` (TCC privacy protection blocks them silently — the server just hangs). That's why the live copy runs from `~/srv/`, and why you should too.
 
-#### 1. Install cloudflared
-```bash
-# macOS
-brew install cloudflare/cloudflare/cloudflared
+### Access gate (optional, recommended for public URLs)
+Set `SURVIVOR_ACCESS_CODE` in the server's environment to code-lock the island:
 
-# Windows
-winget install --id Cloudflare.cloudflared
+- Every device enters the code once ("Speak the code to come ashore"); a signed HttpOnly cookie remembers it
+- Every API call **and** websocket handshake is refused without it; per-IP rate limiting slows guessing
+- Change the env value to instantly revoke every device
+- Leave it unset and the gate disappears entirely — LAN play and development are unaffected
 
-# Linux
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
-chmod +x cloudflared
-sudo mv cloudflared /usr/local/bin/
-```
-
-#### 2. Login to Cloudflare
-```bash
-cloudflared tunnel login
-```
-
-#### 3. Create a Tunnel
-```bash
-cloudflared tunnel create survivor-game
-```
-
-#### 4. Run the Tunnel
-```bash
-# Quick tunnel (temporary URL)
-cloudflared tunnel --url http://localhost:8080
-
-# Or with your custom domain
-cloudflared tunnel run --url http://localhost:8080 survivor-game
-```
-
-#### 5. Share the URL
-Cloudflare provides a URL like `https://random-name.trycloudflare.com` - share this with friends!
-
-### Running on iOS (Pythonista)
-This app was specifically designed to run on iOS using Pythonista 3:
-
-1. Copy all files to Pythonista's Documents folder
-2. Open `survivor_server.py`
-3. Run the script
-4. Access via your device's local IP address
+No accounts, no passwords, nothing stored about players.
 
 ---
 
 ## Technical Architecture
 
-### Stack
-- **Backend**: Python Flask + Flask-SocketIO
-- **Frontend**: Vanilla JavaScript (no framework)
-- **Real-time**: WebSocket via Socket.IO
-- **Storage**: JSON file persistence
+- **Backend:** Python Flask + Flask-SocketIO (gevent), JSON-file persistence with atomic writes and corruption recovery
+- **Frontend:** vanilla JavaScript modules, no build step — what's in `client/dist/` is what ships
+- **Real-time:** Socket.IO room per game; every state change pushes to every phone
+- **Secrecy:** hidden information (Challenge bags, secret picks, pending interactions) lives in server-only state that is stripped before any client ever sees it
 
-### Key Files
 ```
-SurvivorApp/
-├── survivor_server.py      # Main Flask server
-├── rules_engine.py         # Game logic & card effects
-├── survivor_cards.json     # All 69 card definitions
-├── client/dist/
-│   ├── index-optimized.html  # Main app entry
-│   ├── game.js              # Core game module
-│   ├── network.js           # Socket.IO handling
-│   ├── ui.js                # UI rendering
-│   ├── narrator.js          # Game event narrator
-│   ├── state-manager.js     # State management
-│   ├── styles.css           # Mobile-first CSS
-│   ├── sw.js                # Service Worker (PWA)
-│   └── manifest.json        # PWA manifest
-├── tests/                   # 150+ automated tests
-└── docs/                    # Game rules & documentation
+survivor-game/
+├── survivor_server.py       # Flask server: routes, GameState, persistence, access gate
+├── rules_engine.py          # Official rules: deck building, card effects, vote economy, ties
+├── challenges.py            # Let's Go To Rocks challenge engine
+├── interactions.py          # Reward Challenge multiplayer interaction engine
+├── survivor_cards.json      # Card registry (single source of truth)
+├── client/dist/             # The whole frontend (HTML/CSS/JS/PWA, no build step)
+├── deploy/                  # Production setup + redeploy scripts, LaunchAgent templates
+├── tests/                   # 19 suites, ~200 tests + live end-to-end harnesses
+├── ios/                     # Native SwiftUI companion app (Xcode project)
+└── docs/                    # Rules reference, design docs, progress log, screenshots
 ```
-
-### Features
-- **Real-time multiplayer** - All players see updates instantly
-- **Mobile-first design** - Optimized for phone screens
-- **PWA support** - Add to home screen, offline capability
-- **Auto-reconnect** - Seamless recovery from network issues
-- **Narrator system** - Dramatic game commentary
-- **Phase guidance** - Always know what actions are available
 
 ---
 
-## Game Strategy Tips
+## Testing
 
-### Early Game
-- Build alliances before the first Tribal Council
-- **Sorry For You** cards are valuable protection - don't waste them
-- Track who has **Hidden Immunity Idols**
+```bash
+.venv/bin/python run_all_tests.py          # 19 suites, ~200 tests
+```
 
-### Mid Game
-- Use **The Spy Shack** to identify threats
-- **Inheritance** on a likely elimination target = free cards
-- Save your idols for when you're really in danger
+End-to-end harnesses drive a real running server through complete games (turns, thefts, Tribals, ties, Challenges, Final Tribal):
 
-### Late Game
-- **Idol Nullifier** can blindside idol holders
-- **Control The Vote** to become leader and break ties your way
-- In Final Tribal, own your gameplay - the Jury respects bold moves
+```bash
+PORT=8099 .venv/bin/python survivor_server.py &          # scratch server
+SURVIVOR_TEST_BASE=http://localhost:8099 \
+  .venv/bin/python tests/e2e/e2e_api_live_test.py
+SURVIVOR_TEST_BASE=http://localhost:8099 \
+  .venv/bin/python tests/e2e/scripted_full_games.py
+```
 
-### Social Strategy
-- Promises can be broken - but remember who broke them
-- Whisper privately (in your video call) to form secret alliances
-- The quiet player often makes it to the end
+Run e2e against a **scratch server**, not your live one — the harnesses play games to completion. (They do scrub their own recorded wins from the Hall of Fame afterwards, so test victories never pollute the real record.)
+
+---
+
+## Remote Play Tips
+
+- Share the fire code straight from the lobby (**Copy** / **Share** buttons)
+- Pair the game with a video call for alliance whispering — the app runs the cards and votes, the call runs the scheming
+- All phones stay in sync in real time; a phone that sleeps through something catches up the moment it wakes
 
 ---
 
 ## Troubleshooting
 
-### "Connection lost" / Game not updating
-- Check your internet connection
-- Refresh the page - the game auto-reconnects
-- If hosting: ensure the server is still running
-
-### "Game not found"
-- Double-check the 6-character code
-- Games expire after 24 hours of inactivity
-- The host may need to create a new game
-
-### Cards not appearing
-- Pull down to refresh on mobile
-- Check that JavaScript is enabled
-- Try a different browser (Chrome/Safari recommended)
-
-### Can't steal/play cards
-- Read the **phase indicator** - you may be in the wrong phase
-- Some cards are **reactive only** (like Sorry For You)
-- You must complete actions in order: Steal → Play → Draw
-
----
-
-## Contributing
-
-Found a bug or have a suggestion? Open an issue on GitHub!
-
-### Running Tests
-```bash
-python run_all_tests.py
-```
-
-The test suite includes 150+ tests covering:
-- All 69 card effects
-- Tribal Council mechanics
-- Edge cases and error handling
-- Rules compliance verification
+| Symptom | Fix |
+|---------|-----|
+| "Connection lost" | It auto-reconnects; refresh if it lingers |
+| "Game not found" | Check the code — or someone burned the game down |
+| Stuck on an old look after an update | Refresh once; the service worker hands over the new version in the background |
+| Old app icon on your home screen | Remove and re-add the bookmark (iOS caches icons with the bookmark) |
+| Can't play a card | Tap it — the card sheet tells you exactly when it's playable |
+| Access code rejected | Codes are case-insensitive; ask your host — they can read it from the server config |
 
 ---
 
 ## Credits
 
-Based on **Survivor: The Tribe Has Spoken** board game by Exploding Kittens.
-
-Survivor TM & © 2024 Survivor Productions, LLC
-
----
-
-## License
+Based on **Survivor: The Tribe Has Spoken** by Exploding Kittens.
+Survivor TM & © Survivor Productions, LLC.
 
 This is a fan project for personal use. All Survivor intellectual property belongs to its respective owners.
