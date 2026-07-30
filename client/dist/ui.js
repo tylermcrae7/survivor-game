@@ -15,6 +15,14 @@ let cardTooltip = null;
 let isAnimating = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ICON SYSTEM — inline SVG sprite (see index-optimized.html). No emoji chrome.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function icon(name, cls = '') {
+    return `<svg class="icon ${cls}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HAPTIC FEEDBACK SYSTEM (2026 Enhancement)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -243,69 +251,12 @@ function showScreen(screenId) {
 }
 
 function setupScreen(screenId) {
-    switch (screenId) {
-        case 'lobbyScreen':
-            setupLobbyScreen();
-            break;
-        case 'playingScreen':
-            setupPlayingScreen();
-            break;
-        case 'votingScreen':
-            setupVotingScreen();
-            break;
-        case 'resultsScreen':
-            setupResultsScreen();
-            break;
-        case 'immunityScreen':
-            setupImmunityScreen();
-            break;
-        default:
-            // No specific setup needed
-            break;
+    // Render-on-show: a freshly shown screen must paint from the current state
+    // immediately, not wait for the next socket update to arrive.
+    const gameState = window.SurvivorGame?.fullGameState;
+    if (gameState && Object.keys(gameState).length) {
+        updateCurrentScreen(gameState);
     }
-}
-
-/**
- * Screen Setup Functions
- */
-function setupLobbyScreen() {
-    const gameState = window.SurvivorGame?.fullGameState;
-    if (!gameState) return;
-    
-    renderPlayerList(gameState);
-    updateGameInfo(gameState);
-    setupLeaderControls();
-}
-
-function setupPlayingScreen() {
-    const gameState = window.SurvivorGame?.fullGameState;
-    if (!gameState) return;
-    
-    renderPlayerHand(gameState);
-    renderTurnInfo(gameState);
-    updatePhaseIndicator(gameState);
-}
-
-function setupVotingScreen() {
-    const gameState = window.SurvivorGame?.fullGameState;
-    if (!gameState) return;
-    
-    renderVoteTargets(gameState);
-    updateVotingInfo(gameState);
-}
-
-function setupResultsScreen() {
-    const gameState = window.SurvivorGame?.fullGameState;
-    if (!gameState) return;
-    
-    renderVoteResults(gameState);
-}
-
-function setupImmunityScreen() {
-    const gameState = window.SurvivorGame?.fullGameState;
-    if (!gameState) return;
-    
-    renderImmunityPlayers(gameState);
 }
 
 function setupLeaderControls() {
@@ -347,11 +298,8 @@ function updateGameInfo(gameState) {
         }
     }
 
-    // Update phase indicator if visible
-    const phaseIndicator = document.getElementById('phaseIndicator');
-    if (phaseIndicator && gameState.phase === 'lobby') {
-        phaseIndicator.style.display = 'block';
-    }
+    // (The legacy fixed phase indicator stays hidden — the phase guidance strip
+    //  and ceremony modes carry that information now.)
 }
 
 function updatePhaseIndicator(gameState) {
@@ -373,34 +321,73 @@ function updatePhaseIndicator(gameState) {
 
 function updateVotingInfo(gameState) {
     if (!gameState) return;
-    
+
     const votingInfo = document.getElementById('votingInfo');
-    if (votingInfo && gameState.currentVote) {
-        const voteCount = Object.keys(gameState.currentVote.votes || {}).length;
-        const playerCount = Object.keys(gameState.players || {}).filter(id => !gameState.players[id].isEliminated).length;
-        votingInfo.innerHTML = `<p>Votes cast: ${voteCount}/${playerCount}</p>`;
+    if (!votingInfo || !gameState.currentVote) return;
+
+    const voteCount = Object.keys(gameState.currentVote.votes || {}).length;
+    const playerCount = Object.keys(gameState.players || {}).filter(id => !gameState.players[id].isEliminated).length;
+
+    // My parchment: how many votes I must place in the box
+    const me = gameState.players?.[window.SurvivorGame?.localGameState?.playerId];
+    let chips = '';
+    if (me && !me.isEliminated) {
+        const mandatory = me.mandatoryVotes ?? 1;
+        const extra = me.extraVotes ?? 0;
+        const voted = me.hasVoted;
+        const chipEls = [];
+        for (let i = 0; i < mandatory; i++) {
+            chipEls.push(`<span class="vote-chip ${voted ? 'spent' : ''}">${icon('ballot')} Vote</span>`);
+        }
+        for (let i = 0; i < extra; i++) {
+            chipEls.push(`<span class="vote-chip ${voted ? 'spent' : ''}">${icon('ballot')} Extra</span>`);
+        }
+        if (!chipEls.length) chipEls.push(`<span class="vote-chip spent">No Vote Card</span>`);
+        chips = `<div class="my-votes"><span>Your parchment</span>${chipEls.join('')}</div>`;
     }
+
+    votingInfo.innerHTML = `
+        ${chips}
+        <p class="panel-sub" style="text-align:center; margin-bottom: 0.9rem;">
+            ${voteCount} of ${playerCount} ballots in the box
+        </p>
+    `;
 }
 
 function renderTurnInfo(gameState) {
     if (!gameState) return;
-    
-    const turnInfo = document.getElementById('turnInfo');
+
     const currentPlayerIndicator = document.getElementById('currentPlayerIndicator');
     const turnPhaseIndicator = document.getElementById('turnPhaseIndicator');
-    
-    if (turnInfo && gameState.turnOrder && gameState.currentTurnIndex !== undefined) {
-        const currentPlayerId = gameState.turnOrder[gameState.currentTurnIndex];
-        const currentPlayer = gameState.players[currentPlayerId];
-        
-        if (currentPlayerIndicator && currentPlayer) {
-            currentPlayerIndicator.innerHTML = `<p>Current Player: ${escapeHtml(currentPlayer.name)}</p>`;
-            announce(`It is ${currentPlayer.name}'s turn`);
-        }
+    if (!currentPlayerIndicator || !gameState.turnOrder || gameState.currentTurnIndex === undefined) return;
 
-        if (turnPhaseIndicator && gameState.phase) {
-            turnPhaseIndicator.innerHTML = `<p>Phase: ${escapeHtml(gameState.phase)}</p>`;
-        }
+    const currentPlayerId = gameState.turnOrder[gameState.currentTurnIndex];
+    const currentPlayer = gameState.players[currentPlayerId];
+    if (!currentPlayer) return;
+
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    const isMine = currentPlayerId === myId;
+
+    currentPlayerIndicator.innerHTML = `
+        <div class="turn-who ${isMine ? 'mine' : ''}">
+            ${isMine ? 'Your torch burns' : escapeHtml(currentPlayer.name) + '’s turn'}
+        </div>
+    `;
+    announce(`It is ${currentPlayer.name}'s turn`);
+
+    // STEAL → PLAY → DRAW tracker for the player whose turn it is
+    if (turnPhaseIndicator) {
+        const stolen = !!currentPlayer.hasStolen;
+        const step = (label, state) => `<span class="step ${state}">${label}</span>`;
+        turnPhaseIndicator.innerHTML = `
+            <div class="turn-steps" aria-label="Turn order: steal, then play, then draw">
+                ${step('Steal', stolen ? 'done' : 'now')}
+                <span class="sep">→</span>
+                ${step('Play', stolen ? 'now' : '')}
+                <span class="sep">→</span>
+                ${step('Draw', '')}
+            </div>
+        `;
     }
 }
 
@@ -409,48 +396,54 @@ function renderVoteResults(gameState) {
 
     const voteResults = document.getElementById('voteResults');
     const eliminationResults = document.getElementById('eliminationResults');
+    let resultCount = 0;
 
-    if (voteResults && gameState.currentVote && gameState.currentVote.votes) {
-        const votes = gameState.currentVote.votes;
-        const voteCounts = {};
+    if (voteResults && gameState.currentVote) {
+        const currentVote = gameState.currentVote;
+
+        // Prefer the server's tally (post-immunity); fall back to summing the
+        // raw ballots, which are shaped voterId -> { targetId: count }.
+        let voteCounts = currentVote.voteResults;
+        if (!voteCounts || !Object.keys(voteCounts).length) {
+            voteCounts = {};
+            Object.values(currentVote.votes || {}).forEach(ballot => {
+                Object.entries(ballot || {}).forEach(([targetId, count]) => {
+                    voteCounts[targetId] = (voteCounts[targetId] || 0) + (count || 0);
+                });
+            });
+        }
+
+        // Who voted for whom (for the "voted by" line)
         const votersByTarget = {};
-
-        // Count votes and track who voted for whom
-        Object.entries(votes).forEach(([voterId, targetId]) => {
-            voteCounts[targetId] = (voteCounts[targetId] || 0) + 1;
-            if (!votersByTarget[targetId]) votersByTarget[targetId] = [];
-            votersByTarget[targetId].push(voterId);
+        Object.entries(currentVote.votes || {}).forEach(([voterId, ballot]) => {
+            Object.keys(ballot || {}).forEach(targetId => {
+                (votersByTarget[targetId] = votersByTarget[targetId] || []).push(voterId);
+            });
         });
 
-        // Get total votes and max votes for scaling
         const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
-        const maxVotes = Math.max(...Object.values(voteCounts));
+        const sortedResults = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
+        resultCount = sortedResults.length;
 
-        // Sort by vote count (highest first)
-        const sortedResults = Object.entries(voteCounts)
-            .sort((a, b) => b[1] - a[1]);
-
-        // Build vote result cards
-        const resultsHtml = sortedResults.map(([playerId, count]) => {
+        // Ballots flip in one at a time — the reveal is a ceremony
+        const resultsHtml = sortedResults.map(([playerId, count], i) => {
             const player = gameState.players[playerId];
             const playerName = escapeHtml(player?.name || 'Unknown');
             const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
-            const isEliminated = gameState.currentVote?.eliminated?.includes(playerId);
-            const voters = votersByTarget[playerId] || [];
-            const voterNames = voters.map(vid => {
-                const v = gameState.players[vid];
-                return escapeHtml(v?.name || 'Unknown');
-            }).join(', ');
+            const isEliminated = currentVote.eliminated?.includes(playerId);
+            const voterNames = (votersByTarget[playerId] || []).map(vid =>
+                escapeHtml(gameState.players[vid]?.name || 'Unknown')).join(', ');
 
             return `
-                <div class="vote-result-card ${isEliminated ? 'eliminated' : ''}">
+                <div class="vote-result-card ${isEliminated ? 'eliminated' : ''}"
+                     style="animation-delay: ${i * 320}ms">
                     <div class="vote-result-header">
                         <div class="vote-result-player">
-                            <div class="vote-result-avatar" style="background: ${player?.color || '#666'}">
+                            <div class="vote-result-avatar" style="background: ${escapeHtml(player?.color || '#666')}">
                                 ${playerName.charAt(0).toUpperCase()}
                             </div>
                             <span class="vote-result-name">${playerName}</span>
-                            ${isEliminated ? '<span class="vote-result-eliminated-badge">🔥 ELIMINATED</span>' : ''}
+                            ${isEliminated ? `<span class="vote-result-eliminated-badge">${icon('torch-out')} VOTED OUT</span>` : ''}
                         </div>
                         <div class="vote-result-count">
                             <span class="vote-count-number">${count}</span>
@@ -462,17 +455,28 @@ function renderVoteResults(gameState) {
                              style="width: ${percentage}%"></div>
                     </div>
                     <div class="vote-result-voters">
-                        <span class="voters-label">Voted by:</span>
-                        <span class="voters-names">${voterNames || 'No votes'}</span>
+                        <span class="voters-label">Voted by</span>
+                        <span class="voters-names">${voterNames || 'no one'}</span>
                     </div>
                 </div>
             `;
         }).join('');
 
+        // A tie the Council Leader still has to break
+        let tieNote = '';
+        if (currentVote.tieBreakNeeded) {
+            const tied = (currentVote.tiedPlayers || []).map(pid =>
+                escapeHtml(gameState.players[pid]?.name || pid)).join(', ');
+            tieNote = `
+                <p class="panel-sub" style="text-align:center; margin-top: 0.8rem;">
+                    ${icon('alert')} Deadlocked — the Council Leader must choose between: <strong>${tied}</strong>
+                </p>`;
+        }
+
         voteResults.innerHTML = `
             <div class="vote-results-container">
-                <h3 class="vote-results-title">📊 Vote Results</h3>
-                <div class="vote-results-grid">${resultsHtml}</div>
+                <div class="vote-results-grid">${resultsHtml || '<p class="panel-sub" style="text-align:center">No votes were cast.</p>'}</div>
+                ${tieNote}
             </div>
         `;
     }
@@ -484,15 +488,21 @@ function renderVoteResults(gameState) {
         });
 
         if (eliminated.length > 0) {
+            // The announcement waits for the last ballot to flip
+            const delay = 500 + resultCount * 320;
             eliminationResults.innerHTML = `
-                <div class="elimination-announcement">
-                    <div class="torch-snuff-icon">🔥</div>
+                <div class="elimination-announcement" style="--announce-delay: ${delay}ms; animation-delay: ${delay}ms;">
+                    <div class="torch-snuff-icon" style="animation-delay: ${delay + 250}ms;">
+                        <svg><use href="#i-torch-out"></use></svg>
+                    </div>
                     <h3>The Tribe Has Spoken</h3>
                     <p class="eliminated-names">${eliminated.join(', ')}</p>
-                    <p class="elimination-subtext">Your torch has been snuffed.</p>
+                    <p class="elimination-subtext">The torch is turned. Bring your Vote Card back to camp.</p>
                 </div>
             `;
             announce(`Eliminated: ${eliminated.join(', ')}. The tribe has spoken.`);
+        } else {
+            eliminationResults.innerHTML = '';
         }
     }
 }
@@ -512,10 +522,10 @@ function renderImmunityPlayers(gameState) {
                 <span>${safeName}</span>
                 <div class="immunity-actions">
                     <button class="btn btn-sm btn-warning immunity-idol-btn" data-player-id="${safeId}">
-                        Play Immunity Idol
+                        ${icon('idol')} Play Idol
                     </button>
                     <button class="btn btn-sm btn-danger nullifier-btn" data-player-id="${safeId}">
-                        Play Nullifier
+                        ${icon('x')} Nullify
                     </button>
                 </div>
             </div>
@@ -556,15 +566,18 @@ function renderPlayerList(gameState) {
 }
 
 /**
- * Render a player's remaining Survivor Character Cards as torches.
- * 2 cards = 🔥🔥, 1 card = 🔥 (one turned over), 0 = eliminated.
+ * Render a player's remaining Survivor Character Cards as drawn torches.
+ * 2 = two lit torches; 1 = one lit, one smoking; 0 = a skull.
  */
 function renderLives(player) {
     const total = 2;
     const left = Math.max(0, Math.min(total, player.characterCards ?? total));
-    if (left === 0) return '<span class="lives lives-out" title="Both Survivor Character Cards turned over">💀</span>';
-    const lit = '🔥'.repeat(left);
-    const spent = '🕯️'.repeat(total - left);
+    if (left === 0) {
+        return `<span class="lives lives-out" title="Both Survivor Character Cards turned over"
+                      aria-label="Eliminated">${icon('skull')}</span>`;
+    }
+    const lit = icon('torch', 'torch-lit').repeat(left);
+    const spent = icon('torch-out', 'torch-spent').repeat(total - left);
     const label = `${left} of ${total} Survivor Character Cards left`;
     return `<span class="lives" title="${label}" aria-label="${label}">${lit}${spent}</span>`;
 }
@@ -578,17 +591,16 @@ function createPlayerCard(player, gameState) {
     return `
         <div class="player-card ${isLeader ? 'leader' : ''} ${isEliminated ? 'eliminated' : ''}"
              data-player-id="${player.id}">
-            <div class="player-avatar" style="background: ${player.color}">
-                ${player.name.charAt(0).toUpperCase()}
+            <div class="player-avatar" style="background: ${escapeHtml(player.color || '#666')}">
+                ${escapeHtml(player.name.charAt(0).toUpperCase())}
             </div>
             <div class="player-info">
-                <div class="player-name">${formatPlayerName(player)}</div>
+                <div class="player-name">${escapeHtml(formatPlayerName(player))}</div>
                 <div class="player-status">
                     ${renderLives(player)}
-                    ${isLeader ? '👑 Leader' : ''}
-                    ${hasNecklace ? '<span title="Wearing the Immunity Idol Necklace — cannot be voted for">📿 Immune</span>' : ''}
-                    ${isEliminated ? '💀 Eliminated' : ''}
-                    ${!isEliminated ? `🃏 ${cardCount}` : ''}
+                    ${isLeader ? `<span class="player-tag gold">${icon('crown')} Leader</span>` : ''}
+                    ${hasNecklace ? `<span class="player-tag gold" title="Wearing the Immunity Idol Necklace — cannot be voted for">${icon('necklace')} Immune</span>` : ''}
+                    ${!isEliminated ? `<span class="player-tag">${icon('cards')} ${cardCount}</span>` : ''}
                 </div>
             </div>
             ${createPlayerActions(player)}
@@ -597,12 +609,17 @@ function createPlayerCard(player, gameState) {
 }
 
 /**
- * Compact lives strip for the playing screen so everyone can see who is on their
- * last Survivor Character Card at a glance.
+ * The tribe panel (playing screen): every player's torches, card count and
+ * necklace at a glance — and, on YOUR steal step, the rows become steal targets.
  */
 function renderLivesTracker(gameState) {
     const container = document.getElementById('livesTracker');
     if (!container || !gameState || !gameState.players) return;
+
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    const turnPhase = window.SurvivorGame?.getCurrentTurnPhase?.(gameState, myId);
+    const stealTime = turnPhase === 'turn_steal';
+    const currentTurnId = gameState.turnOrder?.[gameState.currentTurnIndex];
 
     const order = gameState.turnOrder && gameState.turnOrder.length
         ? gameState.turnOrder.filter(id => gameState.players[id])
@@ -610,46 +627,77 @@ function renderLivesTracker(gameState) {
 
     const rows = order.map(id => {
         const player = gameState.players[id];
-        const necklace = gameState.necklaceHolder === id ? ' 📿' : '';
-        const cls = player.isEliminated ? 'lives-row eliminated' : 'lives-row';
+        const isMe = id === myId;
+        const stealable = stealTime && !isMe && !player.isEliminated;
+        const classes = [
+            'lives-row',
+            player.isEliminated ? 'eliminated' : '',
+            isMe ? 'me' : '',
+            id === currentTurnId && !player.isEliminated ? 'current-turn' : '',
+            stealable ? 'steal-target' : ''
+        ].filter(Boolean).join(' ');
+
+        const meta = stealable
+            ? `<span class="steal-hint">${icon('swap')} steal</span>`
+            : `<span class="row-meta">
+                   ${gameState.necklaceHolder === id ? `<span class="necklace" title="Immunity Idol Necklace">${icon('necklace')}</span>` : ''}
+                   <span title="Cards in hand">${icon('cards')} ${player.hand ? player.hand.length : 0}</span>
+               </span>`;
+
         return `
-            <div class="${cls}">
-                <span class="lives-dot" style="background: ${escapeHtml(player.color || '#666')}"></span>
-                <span class="lives-name">${escapeHtml(formatPlayerName(player, 12))}</span>
-                ${renderLives(player)}${necklace}
+            <div class="${classes}" data-player-id="${escapeHtml(id)}"
+                 ${stealable ? `data-steal-target="${escapeHtml(id)}" role="button" tabindex="0" aria-label="Steal a card from ${escapeHtml(player.name)}"` : ''}>
+                <span class="lives-dot" style="background: ${escapeHtml(player.color || '#666')}">${escapeHtml(player.name.charAt(0).toUpperCase())}</span>
+                <span class="lives-name">${escapeHtml(formatPlayerName(player, 12))}${isMe ? ' <small style="color:var(--text-faint)">(you)</small>' : ''}</span>
+                ${renderLives(player)}
+                ${meta}
             </div>
         `;
     }).join('');
 
-    container.innerHTML = `<div class="lives-strip">${rows}</div>`;
+    const hint = stealTime
+        ? `<p class="panel-sub" style="margin: 0.5rem 0 0;">Your turn opens with a raid — tap a player to steal a random card.</p>`
+        : '';
+
+    container.innerHTML = `
+        <p class="tribe-label">${icon('users')} The tribe</p>
+        <div class="lives-strip">${rows}</div>
+        ${hint}
+    `;
+
+    // Steal targets go through the same API path the old lobby buttons used
+    container.querySelectorAll('[data-steal-target]').forEach(row => {
+        const act = () => {
+            const targetId = row.dataset.stealTarget;
+            const gameId = window.SurvivorGame?.localGameState.gameId;
+            const thiefId = window.SurvivorGame?.localGameState.playerId;
+            if (gameId && thiefId && targetId) {
+                hapticFeedback('medium');
+                window.SurvivorNetwork?.GameAPI.stealCard(gameId, thiefId, targetId);
+            }
+        };
+        row.addEventListener('click', act);
+        row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); }
+        });
+    });
 }
 
 function createPlayerActions(player) {
-    const currentPlayerId = window.SurvivorGame?.localGameState.playerId;
-    const isCurrentPlayer = player.id === currentPlayerId;
+    // Stealing is a turn action — it lives on the playing screen's tribe panel,
+    // never in the lobby. The lobby only offers leadership handoff.
     const isLeader = window.SurvivorGame?.localGameState.isLeader;
-    
-    let actions = '';
-    
-    if (!isCurrentPlayer && !player.isEliminated) {
-        actions += `
-            <button class="btn btn-sm btn-secondary steal-btn" 
-                    data-target-id="${player.id}">
-                Steal
-            </button>
+
+    if (isLeader && !player.isCouncilLeader && !player.isEliminated) {
+        return `
+            <div class="player-actions">
+                <button class="btn btn-sm btn-secondary leader-btn" data-target-id="${escapeHtml(player.id)}">
+                    ${icon('crown')} Make Leader
+                </button>
+            </div>
         `;
     }
-    
-    if (isLeader && !player.isCouncilLeader) {
-        actions += `
-            <button class="btn btn-sm btn-warning leader-btn" 
-                    data-target-id="${player.id}">
-                Make Leader
-            </button>
-        `;
-    }
-    
-    return actions ? `<div class="player-actions">${actions}</div>` : '';
+    return '';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -728,6 +776,8 @@ function renderChallengePanel(gameState) {
         controls = `<button class="btn btn-success btn-enhanced touch-target" data-challenge-action="dismiss">Continue</button>`;
     }
 
+    const rockDot = (purple) => `<span class="rock ${purple ? 'purple' : ''}"></span>`;
+
     let scoreboard = '';
     if (ch.type === 'lowest_score_loses' && ch.lastRound && ch.lastRound.scores) {
         const rows = Object.entries(ch.lastRound.scores)
@@ -735,28 +785,33 @@ function renderChallengePanel(gameState) {
             .map(([pid, score]) => {
                 const pulls = (ch.lastRound.pulls || {})[pid] || {};
                 return `<li>${name(pid)}: <strong>${score > 0 ? '+' : ''}${score}</strong>
-                        (${pulls.grey || 0}⚪ ${pulls.purple || 0}🟣)</li>`;
+                        <span class="rock-tag">${pulls.grey || 0} ${rockDot(false)}</span>
+                        <span class="rock-tag">${pulls.purple || 0} ${rockDot(true)}</span></li>`;
             }).join('');
         scoreboard = `<ul class="challenge-scores">${rows}</ul>`;
     }
     if (ch.type === 'pull_or_steal' && ch.rocks && Object.keys(ch.rocks).length) {
         const rows = Object.entries(ch.rocks)
-            .map(([pid, rock]) => `<li>${name(pid)}: ${rock === 'purple' ? '🟣 Purple' : '⚪ Grey'}</li>`).join('');
+            .map(([pid, rock]) => `<li>${name(pid)}: <span class="rock-tag">${rockDot(rock === 'purple')} ${rock === 'purple' ? 'Purple' : 'Grey'}</span></li>`).join('');
         scoreboard = `<ul class="challenge-scores">${rows}</ul>`;
     }
+
+    // The bag, drawn: one dot per rock still inside (purple count is public setup info)
+    const bagDots = rockDot(false).repeat(Math.min(bag.grey || 0, 12)) +
+                    rockDot(true).repeat(Math.min(bag.purple || 0, 4));
 
     container.style.display = 'block';
     container.innerHTML = `
         <div class="challenge-header">
-            <h3>🪨 ${escapeHtml(ch.name || 'Challenge')}</h3>
+            <h3>${icon('rock')} ${escapeHtml(ch.name || 'Challenge')}</h3>
             <span class="challenge-round">Round ${ch.round || 1}</span>
         </div>
         <p class="challenge-goal">${escapeHtml(ch.goal || '')}</p>
-        <p class="challenge-prompt"><strong>${escapeHtml(ch.prompt || '')}</strong></p>
+        <p class="challenge-prompt">${escapeHtml(ch.prompt || '')}</p>
         <div class="challenge-meta">
-            <span>Bag: ${bagLeft} rock(s)</span>
-            ${ch.currentBid ? `<span>High bid: ${ch.currentBid} (${name(ch.highBidderId)})</span>` : ''}
-            ${knocked ? `<span>Knocked out: ${knocked}</span>` : ''}
+            <span class="bag-meter" title="${bagLeft} rock(s) in the bag">Bag ${bagDots || '— empty'}</span>
+            ${ch.currentBid ? `<span>High bid ${ch.currentBid} · ${name(ch.highBidderId)}</span>` : ''}
+            ${knocked ? `<span>Out: ${knocked}</span>` : ''}
         </div>
         ${scoreboard}
         ${controls}
@@ -793,52 +848,68 @@ function setupChallengeInteractions() {
     });
 }
 
-function renderPlayerHand(gameState) {
-    const container = document.getElementById('playerHand');
+function renderPlayerHand(gameState, containerId = 'playerHand') {
+    const container = document.getElementById(containerId);
     if (!container) return;
-    
+
     const playerId = window.SurvivorGame?.localGameState.playerId;
     const player = gameState.players?.[playerId];
-    
-    if (!player || !player.hand) {
-        container.innerHTML = '<p>No cards in hand</p>';
+
+    if (!player || !player.hand || !player.hand.length) {
+        container.innerHTML = `
+            <p class="tribe-label">${icon('cards')} Your hand</p>
+            <p class="empty-hand">No cards — the island provides at the next draw.</p>
+        `;
         return;
     }
-    
+
     const currentPhase = window.SurvivorGame?.getCurrentTurnPhase(gameState, playerId);
-    const html = player.hand.map((card, index) => 
+    const html = player.hand.map((card, index) =>
         createCardElement(card, index, currentPhase)
     ).join('');
-    
-    container.innerHTML = `<div class="hand-grid">${html}</div>`;
+
+    container.innerHTML = `
+        <p class="tribe-label">${icon('cards')} Your hand <span style="letter-spacing:0; color:var(--text-faint)">· ${player.hand.length}</span></p>
+        <div class="hand-rail">${html}</div>
+    `;
 
     // Animate cards entering the hand
-    const handGrid = container.querySelector('.hand-grid');
-    if (handGrid) animateCardEntrance(handGrid);
+    const handRail = container.querySelector('.hand-rail');
+    if (handRail) animateCardEntrance(handRail);
 
     // Setup card interactions
     setupCardInteractions();
 }
 
+const CATEGORY_LABELS = {
+    action: 'Action',
+    tribal_advantage: 'Tribal Advantage',
+    vote: 'Vote',
+    challenge: 'Challenge',
+    tribal_council: 'Tribal Council'
+};
+
 function createCardElement(card, index, currentPhase) {
     const cardInfo = window.SurvivorGame?.getCardInfo(card.type);
     const isPlayable = window.SurvivorGame?.canPlayCard(card, currentPhase);
     const requiresTarget = cardInfo?.requiresTarget;
+    const category = cardInfo?.category || 'action';
     const escapedName = escapeHtml(cardInfo?.name || card.type);
     const escapedDesc = escapeHtml(cardInfo?.description || '');
 
     return `
-        <div class="card-button ${isPlayable ? 'playable' : 'locked'} touch-target"
+        <div class="card-button card-cat-${escapeHtml(category)} ${isPlayable ? 'playable' : 'locked'} touch-target"
              data-card-index="${index}"
              data-card-type="${card.type}"
              data-requires-target="${requiresTarget}"
              data-card-name="${escapedName}"
-             data-card-category="${escapeHtml(cardInfo?.category || '')}"
+             data-card-category="${escapeHtml(category)}"
              data-card-phases="${escapeHtml(JSON.stringify(cardInfo?.playablePhases || []))}">
             <button class="card-info-btn" data-card-type="${card.type}" aria-label="Card info">?</button>
+            <div class="card-category">${escapeHtml(CATEGORY_LABELS[category] || category)}</div>
             <div class="card-name">${escapedName}</div>
             <div class="card-description">${escapedDesc}</div>
-            ${requiresTarget ? '<div class="card-target-indicator">🎯</div>' : ''}
+            ${requiresTarget ? `<div class="card-target-indicator">${icon('target')} needs a target</div>` : ''}
         </div>
     `;
 }
@@ -872,12 +943,13 @@ function createVoteTargetElement(player) {
     const initial = safeName.charAt(0).toUpperCase();
 
     return `
-        <div class="vote-target touch-target" data-player-id="${safeId}">
+        <div class="vote-target touch-target" data-player-id="${safeId}" role="button" tabindex="0"
+             aria-label="Vote to send ${safeName} home">
             <div class="vote-target-avatar" style="background: ${safeColor}">
                 ${initial}
             </div>
             <div class="vote-target-name">${escapeHtml(formatPlayerName(player))}</div>
-            <div class="vote-count">0 votes</div>
+            <div class="vote-count">write their name</div>
         </div>
     `;
 }
@@ -1071,19 +1143,20 @@ function handleLeaderClick(event) {
 /**
  * Game Actions
  */
-async function playCard(cardIndex) {
+async function playCard(cardIndex, targetId = null) {
     const gameId = window.SurvivorGame?.localGameState.gameId;
     const playerId = window.SurvivorGame?.localGameState.playerId;
-    
+
     if (!gameId || !playerId) {
         showToast('Game state error', 'error');
         return;
     }
-    
+
     try {
         showLoading('Playing card...');
-        const result = await window.SurvivorNetwork?.GameAPI.playCard(gameId, playerId, cardIndex);
-        
+        const params = targetId ? { targetId } : {};
+        const result = await window.SurvivorNetwork?.GameAPI.playCard(gameId, playerId, cardIndex, params);
+
         if (result && result.success) {
             showToast(result.message || 'Card played successfully', 'success');
         }
@@ -1107,12 +1180,17 @@ async function castVote(targetId) {
     try {
         // Dramatic vote haptic feedback
         Haptics.trigger('vote');
-        showLoading('Casting vote...');
-        const votesData = { [targetId]: 1 }; // Basic single vote
+        showLoading('Placing your parchment in the box…');
+
+        // Every Vote/Goodwill Gamble card in hand MUST be cast at this tribal;
+        // the server rejects partial ballots. Extra Votes may ride along too.
+        const me = window.SurvivorGame?.fullGameState?.players?.[voterId];
+        const votes = Math.max(1, me?.mandatoryVotes ?? 1);
+        const votesData = [{ targetId, votes }];
         const result = await window.SurvivorNetwork?.GameAPI.castVote(gameId, voterId, votesData);
 
         if (result && result.success) {
-            showToast('Vote cast successfully', 'success');
+            showToast(result.message || 'The parchment is in the box', 'success');
             Haptics.trigger('success');
         }
     } catch (error) {
@@ -1319,10 +1397,10 @@ function showToast(message, type = 'info', duration = 3000) {
 
 function getToastIcon(type) {
     const icons = {
-        success: '✅',
-        error: '❌',
-        warning: '⚠️',
-        info: 'ℹ️'
+        success: icon('check'),
+        error: icon('x'),
+        warning: icon('alert'),
+        info: icon('info')
     };
     return icons[type] || icons.info;
 }
@@ -1571,135 +1649,325 @@ function updateFromDiff(diff) {
  * Provides contextual help based on current game phase
  */
 const PHASE_GUIDANCE = {
-    'lobby': {
-        icon: '👥',
-        text: 'Waiting for players to join...',
-        action: 'Share the game code with friends!'
-    },
-    'turn_steal': {
-        icon: '🎯',
-        text: 'Steal Phase',
-        action: 'Click a player to steal one of their cards'
-    },
-    'turn_play': {
-        icon: '🃏',
-        text: 'Play Phase',
-        action: 'Play a card from your hand, or click "Skip" to draw'
-    },
-    'turn_draw': {
-        icon: '📥',
-        text: 'Draw Phase',
-        action: 'Drawing a card...'
-    },
-    'playing': {
-        icon: '⏳',
-        text: 'Game in Progress',
-        action: 'Wait for your turn'
-    },
-    'tribal_announcement': {
-        icon: '🔥',
-        text: 'Tribal Council!',
-        action: 'Someone drew a Tribal Council card. Time to vote someone out!'
-    },
-    'tribal_advantage_play': {
-        icon: '🎭',
-        text: 'Advantage Play',
-        action: 'Play any Tribal Advantage cards NOW, before voting starts!'
-    },
-    'tribal_discussion': {
-        icon: '💬',
-        text: 'Tribal Discussion',
-        action: 'Discuss strategy. Council Leader will advance when ready.'
-    },
-    'tribal_voting': {
-        icon: '🗳️',
-        text: 'Voting Time',
-        action: 'Click on a player to cast your vote'
-    },
-    'voting': {
-        icon: '🗳️',
-        text: 'Voting Time',
-        action: 'Click on a player to cast your vote'
-    },
-    'tribal_immunity': {
-        icon: '🛡️',
-        text: 'Immunity Phase',
-        action: 'Play Immunity Idol now or forever hold your peace!'
-    },
-    'immunity': {
-        icon: '🛡️',
-        text: 'Immunity Phase',
-        action: 'Play Immunity Idol now or forever hold your peace!'
-    },
-    'tribal_reveal': {
-        icon: '📊',
-        text: 'Vote Reveal',
-        action: 'Revealing the votes...'
-    },
-    'results': {
-        icon: '📊',
-        text: 'Results',
-        action: 'The votes have been counted.'
-    },
-    'final_tribal': {
-        icon: '🏆',
-        text: 'Final Tribal Council',
-        action: 'The jury will decide the Sole Survivor!'
-    },
-    'finished': {
-        icon: '🎉',
-        text: 'Game Over',
-        action: 'Congratulations to the Sole Survivor!'
-    }
+    'lobby':       { icon: 'users',  text: 'Gathering the tribe', action: 'Share the fire code and wait for everyone to arrive.' },
+    'turn_steal':  { icon: 'swap',   text: 'Steal', action: 'Tap a tribe member to steal a random card.' },
+    'turn_play':   { icon: 'cards',  text: 'Play', action: 'Play a card if you like, then draw to end your turn.' },
+    'turn_draw':   { icon: 'draw',   text: 'Draw', action: 'Take the top card of the Draw Pile.' },
+    'playing':     { icon: 'hourglass', text: 'On the island', action: 'Wait for the torch to come around.' },
+    'tribal_council': { icon: 'torch', text: 'Tribal Council', action: 'Someone drew a Tribal Council card. The tribe must vote.' },
+    'voting':      { icon: 'ballot', text: 'The vote', action: 'Tap a name to write it on your parchment.' },
+    'immunity':    { icon: 'idol',   text: 'Idols', action: 'Play a Hidden Immunity Idol now — or hold your peace.' },
+    'results':     { icon: 'eye',    text: 'The reveal', action: 'The Council Leader reads the votes.' },
+    'final':       { icon: 'crown',  text: 'Final Tribal', action: 'The jury decides the Sole Survivor.' },
+    'final_tribal':{ icon: 'crown',  text: 'Final Tribal', action: 'The jury decides the Sole Survivor.' },
+    'finished':    { icon: 'crown',  text: 'Sole Survivor', action: 'The game is won.' }
 };
 
 function renderPhaseGuidance(gameState) {
     if (!gameState) return;
 
-    // Find or create guidance container
+    // Find or create guidance container (mounted at the top of <main>)
     let guidanceEl = document.getElementById('phaseGuidance');
     if (!guidanceEl) {
+        const main = document.querySelector('.main');
+        if (!main) return;
         guidanceEl = document.createElement('div');
         guidanceEl.id = 'phaseGuidance';
         guidanceEl.className = 'phase-guidance';
-
-        // Insert at top of game container
-        const gameContainer = document.querySelector('.game-container');
-        if (gameContainer) {
-            gameContainer.insertBefore(guidanceEl, gameContainer.firstChild);
-        }
+        main.insertBefore(guidanceEl, main.firstChild);
     }
 
-    const phase = gameState.phase || 'lobby';
-    const guidance = PHASE_GUIDANCE[phase] || PHASE_GUIDANCE['playing'];
+    // The guidance strip earns its place only once a game exists
+    if (!window.SurvivorGame?.localGameState?.gameId) {
+        guidanceEl.style.display = 'none';
+        return;
+    }
+    guidanceEl.style.display = '';
 
-    // Check if it's the current player's turn
-    const localPlayerId = window.SurvivorGame?.localGameState?.playerId;
-    const isMyTurn = gameState.currentPlayerId === localPlayerId;
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    const currentTurnId = gameState.turnOrder?.[gameState.currentTurnIndex];
+    const isMyTurn = !!myId && currentTurnId === myId;
 
-    // Customize action text for current player
+    // Resolve the most specific phase we can
+    let key = gameState.phase || 'lobby';
+    if (key === 'playing' && isMyTurn) {
+        const turnPhase = window.SurvivorGame?.getCurrentTurnPhase?.(gameState, myId);
+        if (turnPhase === 'turn_steal' || turnPhase === 'turn_play') key = turnPhase;
+    } else if (key === 'tribal_council') {
+        const sub = gameState.currentVote?.phase;
+        if (sub === 'voting') key = 'voting';
+        else if (sub === 'immunity') key = 'immunity';
+        else if (sub === 'reveal') key = 'results';
+    }
+
+    const guidance = PHASE_GUIDANCE[key] || PHASE_GUIDANCE['playing'];
+
     let actionText = guidance.action;
-    if (phase.startsWith('turn_') && !isMyTurn) {
-        const currentPlayer = gameState.players?.[gameState.currentPlayerId];
-        actionText = `Waiting for ${currentPlayer?.name || 'another player'}...`;
-    } else if (phase.startsWith('turn_') && isMyTurn) {
-        actionText = `YOUR TURN! ${guidance.action}`;
+    if (gameState.phase === 'playing' && !isMyTurn) {
+        const currentPlayer = gameState.players?.[currentTurnId];
+        actionText = `The torch is with ${currentPlayer?.name || 'another player'}.`;
     }
 
     guidanceEl.innerHTML = `
-        <span class="phase-guidance-icon">${guidance.icon}</span>
+        <span class="phase-guidance-icon">${icon(guidance.icon)}</span>
         <div class="phase-guidance-content">
-            <strong class="phase-guidance-text">${guidance.text}</strong>
+            <strong class="phase-guidance-text">${isMyTurn && gameState.phase === 'playing' ? 'Your turn — ' : ''}${guidance.text}</strong>
             <span class="phase-guidance-action">${actionText}</span>
         </div>
     `;
 
     // Add pulse effect when it's your turn
-    if (isMyTurn && phase.startsWith('turn_')) {
+    if (isMyTurn && gameState.phase === 'playing') {
         guidanceEl.classList.add('your-turn');
     } else {
         guidanceEl.classList.remove('your-turn');
     }
+}
+
+/**
+ * Ceremony modes — the whole app shifts atmosphere with the game phase.
+ */
+function setBodyMode(gameState) {
+    const phase = gameState?.phase;
+    let mode = null;
+    if (phase === 'tribal_council') mode = 'council';
+    else if (phase === 'final' || phase === 'final_tribal') mode = 'final';
+    else if (phase === 'finished') mode = 'victory';
+
+    if (mode) document.body.dataset.mode = mode;
+    else delete document.body.dataset.mode;
+}
+
+/**
+ * Phase-driven navigation: the island decides which screen you're on.
+ * (Without this, the tribal ceremony screens are unreachable.)
+ */
+function desiredScreenFor(gameState) {
+    if (!window.SurvivorGame?.localGameState?.gameId) return null;
+    switch (gameState.phase) {
+        case 'lobby':   return 'lobbyScreen';
+        case 'playing': return 'playingScreen';
+        case 'tribal_council': {
+            const sub = gameState.currentVote?.phase || 'announcement';
+            return {
+                announcement: 'tribalAnnouncementScreen',
+                advantage_play: 'tribalAdvantageScreen',
+                discussion: 'tribalDiscussionScreen',
+                voting: 'votingScreen',
+                immunity: 'immunityScreen',
+                reveal: 'resultsScreen'
+            }[sub] || 'tribalAnnouncementScreen';
+        }
+        case 'final':
+        case 'final_tribal': return 'finalTribalScreen';
+        case 'finished': return 'gameOverScreen';
+        default: return null;
+    }
+}
+
+let isRouting = false;
+function routeToPhase(gameState) {
+    if (isRouting) return false;
+    const target = desiredScreenFor(gameState);
+    if (!target || target === currentScreen) return false;
+    isRouting = true;
+    try {
+        showScreen(target);   // showScreen -> setupScreen -> updateCurrentScreen
+    } finally {
+        isRouting = false;
+    }
+    return true;
+}
+
+/**
+ * Tribal ceremony screens — leader phrases and leader-only controls.
+ * Tribal advantage cards remain playable via the ordinary hand rail.
+ */
+function renderTribalCeremony(gameState) {
+    const currentVote = gameState.currentVote || {};
+    const leaderId = currentVote.councilLeaderId;
+    const leader = gameState.players?.[leaderId];
+    const iAmLeader = leaderId === window.SurvivorGame?.localGameState?.playerId;
+    const leaderName = escapeHtml(leader?.name || 'The Council Leader');
+
+    const leaderBar = (label, action, iconName) => iAmLeader
+        ? `<div class="game-actions" style="margin-top:1rem">
+               <button class="btn btn-enhanced touch-target" data-action="${action}">
+                   ${icon(iconName)} ${label}
+               </button>
+           </div>`
+        : `<p class="panel-sub" style="text-align:center; margin-top:1rem">
+               ${leaderName} leads this council…
+           </p>`;
+
+    if (currentScreen === 'tribalAnnouncementScreen') {
+        const phraseEl = document.getElementById('tribalLeaderPhrase');
+        const contentEl = document.getElementById('tribalAnnouncementContent');
+        if (phraseEl) phraseEl.innerHTML = `
+            <p class="leader-phrase">Welcome to Tribal Council. If anyone has a Tribal
+            Advantage Card, you may play it now — or anytime before we vote.
+            <span style="display:block; margin-top:0.3rem; font-size:0.8em; color:var(--text-faint)">— ${leaderName}</span></p>
+        `;
+        if (contentEl) {
+            contentEl.innerHTML = `<div class="panel"><div id="ceremonyHandAnnouncement"></div>${leaderBar('Open the Discussion', 'openDiscussion', 'speech')}</div>`;
+            renderPlayerHand(gameState, 'ceremonyHandAnnouncement');
+        }
+    }
+
+    if (currentScreen === 'tribalAdvantageScreen') {
+        const contentEl = document.getElementById('tribalAdvantageContent');
+        if (contentEl) {
+            contentEl.innerHTML = `
+                <p class="panel-sub">Tribal Advantage cards must be played before the vote begins.</p>
+                <div id="ceremonyHandAdvantage"></div>
+                ${leaderBar('Open the Discussion', 'openDiscussion', 'speech')}
+            `;
+            renderPlayerHand(gameState, 'ceremonyHandAdvantage');
+        }
+    }
+
+    if (currentScreen === 'tribalDiscussionScreen') {
+        const phraseEl = document.getElementById('tribalDiscussionPhrase');
+        const contentEl = document.getElementById('tribalDiscussionContent');
+        if (phraseEl) phraseEl.innerHTML = `
+            <p class="leader-phrase">Now let's discuss who should be voted out. We can ask
+            questions, form alliances, tell the truth, lie, and speak in private.</p>
+        `;
+        if (contentEl) {
+            contentEl.innerHTML = `
+                <div id="ceremonyHandDiscussion"></div>
+                ${leaderBar('It Is Time to Vote', 'startVoting', 'ballot')}
+            `;
+            renderPlayerHand(gameState, 'ceremonyHandDiscussion');
+        }
+    }
+}
+
+/**
+ * Final tribal: the official three questions, the jury's vote, the tie-break.
+ */
+function renderFinalTribal(gameState) {
+    const container = document.getElementById('finalTribalContent');
+    if (!container) return;
+
+    const ft = gameState.finalTribal || {};
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    const finalists = ft.finalists || [];
+    const jury = ft.jury || [];
+    const name = pid => escapeHtml(gameState.players?.[pid]?.name || 'Unknown');
+    const iAmJuror = jury.includes(myId);
+    const iAmLeader = ft.leader === myId;
+
+    const finalistCards = finalists.map(pid => {
+        const player = gameState.players?.[pid] || {};
+        const votes = ft.voteCounts?.[pid];
+        return `
+            <div class="player-card" data-player-id="${escapeHtml(pid)}">
+                <div class="player-avatar" style="background: ${escapeHtml(player.color || '#666')}">${name(pid).charAt(0)}</div>
+                <div class="player-info">
+                    <div class="player-name">${name(pid)}</div>
+                    <div class="player-status">${renderLives(player)} <span class="player-tag gold">${icon('crown')} Finalist</span></div>
+                </div>
+                ${votes !== undefined ? `<span class="row-meta"><span class="vote-count-number" style="font-size:1.3rem">${votes}</span></span>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    const questions = (ft.questions || []).map((q, i) =>
+        `<p class="leader-phrase" style="margin:0.5rem auto">${i + 1}. ${escapeHtml(q)}</p>`).join('');
+
+    let action = '';
+    if (ft.phase === 'questions' || ft.phase === 'deliberation') {
+        action = iAmLeader
+            ? `<div class="game-actions"><button class="btn btn-enhanced touch-target" data-action="beginFinalVote">${icon('ballot')} Call for the Vote</button></div>`
+            : `<p class="panel-sub" style="text-align:center">${name(ft.leader)} leads the final council…</p>`;
+    } else if (ft.phase === 'voting') {
+        if (iAmJuror && !ft.votes?.[myId]) {
+            action = `
+                <p class="tribe-label">${icon('ballot')} Cast your jury vote — for the WINNER</p>
+                <div class="vote-targets">
+                    ${finalists.map(pid => `
+                        <div class="vote-target touch-target final-vote-target" data-finalist-id="${escapeHtml(pid)}" role="button" tabindex="0">
+                            <div class="vote-target-avatar" style="background: ${escapeHtml(gameState.players?.[pid]?.color || '#666')}">${name(pid).charAt(0)}</div>
+                            <div class="vote-target-name">${name(pid)}</div>
+                            <div class="vote-count">deserves to win</div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        } else if (iAmJuror) {
+            action = `<p class="panel-sub" style="text-align:center">Your vote is in. ${Object.keys(ft.votes || {}).length} of ${jury.length} jurors have spoken.</p>`;
+        } else {
+            action = `<p class="panel-sub" style="text-align:center">The jury is voting… ${Object.keys(ft.votes || {}).length} of ${jury.length} fingers raised.</p>`;
+        }
+    } else if (ft.phase === 'reveal' && ft.tieBreakNeeded) {
+        action = iAmLeader
+            ? `
+                <p class="tribe-label">${icon('alert')} Dead even — you break the tie</p>
+                <div class="vote-targets">
+                    ${(ft.tiedFinalists || finalists).map(pid => `
+                        <div class="vote-target touch-target final-tiebreak-target" data-finalist-id="${escapeHtml(pid)}" role="button" tabindex="0">
+                            <div class="vote-target-avatar" style="background: ${escapeHtml(gameState.players?.[pid]?.color || '#666')}">${name(pid).charAt(0)}</div>
+                            <div class="vote-target-name">${name(pid)}</div>
+                            <div class="vote-count">crown them</div>
+                        </div>
+                    `).join('')}
+                </div>`
+            : `<p class="panel-sub" style="text-align:center">A tie — ${name(ft.leader)} must choose the winner.</p>`;
+    }
+
+    container.innerHTML = `
+        <div class="player-grid" style="margin-top:0">${finalistCards}</div>
+        ${questions ? `<div style="margin-top: 0.8rem">${questions}</div>` : ''}
+        ${action}
+    `;
+
+    // Jury vote + tie-break taps
+    container.querySelectorAll('.final-vote-target').forEach(el => {
+        el.addEventListener('click', async () => {
+            const finalistId = el.dataset.finalistId;
+            hapticFeedback('heavy');
+            await window.SurvivorGame?.safeApiCall('/final/vote', {
+                gameId: window.SurvivorGame.localGameState.gameId,
+                juryMemberId: myId, finalistId
+            });
+        });
+    });
+    container.querySelectorAll('.final-tiebreak-target').forEach(el => {
+        el.addEventListener('click', async () => {
+            const finalistId = el.dataset.finalistId;
+            await window.SurvivorGame?.safeApiCall('/final/tie_break', {
+                gameId: window.SurvivorGame.localGameState.gameId,
+                leaderId: myId, chosenWinner: finalistId
+            });
+        });
+    });
+
+    // Leader "call for the vote" (questions -> voting)
+    const beginBtn = container.querySelector('[data-action="beginFinalVote"]');
+    if (beginBtn) {
+        beginBtn.addEventListener('click', async () => {
+            await window.SurvivorGame?.safeApiCall('/final/advance', {
+                gameId: window.SurvivorGame.localGameState.gameId, phase: 'voting'
+            });
+        });
+    }
+}
+
+/**
+ * Game over — dawn breaks for one player.
+ */
+function renderGameOver(gameState) {
+    const winnerInfo = document.getElementById('winnerInfo');
+    if (!winnerInfo) return;
+
+    const winner = gameState.winner;
+    const winnerId = typeof winner === 'object' ? winner?.playerId : winner;
+    const winnerName = (typeof winner === 'object' && winner?.playerName)
+        || gameState.players?.[winnerId]?.name
+        || gameState.finalTribal?.winner && gameState.players?.[gameState.finalTribal.winner]?.name
+        || '';
+
+    winnerInfo.textContent = winnerName ? winnerName : 'The tribe has spoken.';
 }
 
 /**
@@ -1708,35 +1976,62 @@ function renderPhaseGuidance(gameState) {
 function updateCurrentScreen(gameState) {
     if (!gameState) return;
 
-    // Always render phase guidance
+    // Atmosphere + navigation follow the game phase
+    setBodyMode(gameState);
+    if (routeToPhase(gameState)) return;   // routing re-enters with the new screen
+
+    // Always render phase guidance + header chips
     renderPhaseGuidance(gameState);
+    updateGameInfo(gameState);
 
     // Update UI based on current screen
     switch (currentScreen) {
         case 'lobbyScreen':
             renderPlayerList(gameState);
-            updateGameInfo(gameState);
             setupLeaderControls();
             break;
         case 'playingScreen':
-            renderPlayerHand(gameState);
             renderTurnInfo(gameState);
             updatePhaseIndicator(gameState);
             renderLivesTracker(gameState);
+            renderPlayerHand(gameState);
             renderChallengePanel(gameState);
+            break;
+        case 'tribalAnnouncementScreen':
+        case 'tribalAdvantageScreen':
+        case 'tribalDiscussionScreen':
+            renderTribalCeremony(gameState);
             break;
         case 'votingScreen':
             renderVoteTargets(gameState);
             updateVotingInfo(gameState);
+            setupTribalLeaderControls(gameState, 'leaderVotingControls');
             break;
         case 'resultsScreen':
             renderVoteResults(gameState);
+            setupTribalLeaderControls(gameState, 'leaderResultsControls');
             break;
         case 'immunityScreen':
             renderImmunityPlayers(gameState);
+            setupTribalLeaderControls(gameState, 'leaderImmunityControls');
+            break;
+        case 'finalTribalScreen':
+            renderFinalTribal(gameState);
+            break;
+        case 'gameOverScreen':
+            renderGameOver(gameState);
             break;
         // Add other screens as needed
     }
+}
+
+/** Leader-only control strips on the tribal screens. */
+function setupTribalLeaderControls(gameState, elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const leaderId = gameState.currentVote?.councilLeaderId;
+    const iAmLeader = leaderId && leaderId === window.SurvivorGame?.localGameState?.playerId;
+    el.style.display = iAmLeader ? 'flex' : 'none';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1983,6 +2278,9 @@ window.SurvivorUI = {
     renderLives,
     renderLivesTracker,
     renderChallengePanel,
+    renderTribalCeremony,
+    renderFinalTribal,
+    icon,
 
     // Modals and notifications
     showModal,

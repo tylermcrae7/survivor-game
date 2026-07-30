@@ -579,7 +579,30 @@ async function revealVotes() {
     }
 }
 
+// ── Tribal Council leader actions (server-side phase changes; the routing in
+//    ui.js moves everyone's screen when the state comes back) ──
+
+async function openDiscussion() {
+    if (!localGameState.gameId) return;
+    await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'discussion' });
+}
+
+async function startVotingPhase() {
+    if (!localGameState.gameId) return;
+    const result = await safeApiCall('/vote/start', { gameId: localGameState.gameId, voteType: 'elimination' });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('It is time to vote', 'info');
+    }
+}
+
+async function openImmunity() {
+    if (!localGameState.gameId) return;
+    await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'immunity' });
+}
+
 function proceedToVoting() {
+    // Leader control on the immunity screen: reveal comes next, not more voting.
+    // Kept for the existing button; it simply returns to the voting screen.
     const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
     showScreen('votingScreen');
 }
@@ -670,6 +693,9 @@ window.SurvivorGame = {
     drawCard,
     advanceTurn,
     challengeAction,
+    openDiscussion,
+    startVotingPhase,
+    openImmunity,
     revealVotes,
     proceedToVoting,
     completeTribal,

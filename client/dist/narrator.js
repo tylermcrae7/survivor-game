@@ -368,7 +368,8 @@ const AnimationManager = {
         container.className = 'confetti-container';
         container.id = 'confetti-container';
 
-        const colors = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff9f43', '#a55eea'];
+        // Embers and gold — victory at dawn, not a birthday party
+        const colors = ['#e89a4a', '#f2c14e', '#c96a2f', '#f6e3b4', '#a94e24', '#ffd98a'];
 
         for (let i = 0; i < 150; i++) {
             const confetti = document.createElement('div');
@@ -491,12 +492,11 @@ class GameNarrator {
         panel.className = 'narrator-panel';
         panel.innerHTML = `
             <div class="narrator-header">
-                <span class="narrator-avatar">🏝️</span>
+                <span class="narrator-avatar"><svg class="icon" aria-hidden="true"><use href="#i-torch"></use></svg></span>
                 <span class="narrator-title">Survivor Narrator</span>
-                <button id="narratorSoundToggle" class="narrator-sound-toggle" title="Toggle sound">
-                    ${SoundManager.isMuted() ? '🔇' : '🔊'}
-                </button>
-                <button id="narratorToggle" class="narrator-toggle" title="Minimize">▼</button>
+                <button id="narratorSoundToggle" class="narrator-sound-toggle" title="Toggle sound"
+                        aria-label="Toggle narrator sound">${SoundManager.isMuted() ? 'muted' : 'sound'}</button>
+                <button id="narratorToggle" class="narrator-toggle" title="Minimize" aria-label="Minimize narrator">–</button>
             </div>
             <div class="narrator-content">
                 <div class="narrator-text">
@@ -519,14 +519,14 @@ class GameNarrator {
         // Sound toggle button
         document.getElementById('narratorSoundToggle').addEventListener('click', () => {
             const isOn = SoundManager.toggle();
-            document.getElementById('narratorSoundToggle').textContent = isOn ? '🔊' : '🔇';
+            document.getElementById('narratorSoundToggle').textContent = isOn ? 'sound' : 'muted';
         });
 
         // Minimize toggle
         document.getElementById('narratorToggle').addEventListener('click', () => {
             panel.classList.toggle('minimized');
             document.getElementById('narratorToggle').textContent =
-                panel.classList.contains('minimized') ? '▲' : '▼';
+                panel.classList.contains('minimized') ? '+' : '–';
         });
     }
 

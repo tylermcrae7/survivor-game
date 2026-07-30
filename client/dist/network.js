@@ -636,8 +636,10 @@ const GameAPI = {
         return apiCall('/turn/steal', { gameId, thiefId, targetId });
     },
     
-    async playCard(gameId, playerId, cardIdx) {
-        return apiCall('/turn/play_card', { gameId, playerId, cardIdx });
+    async playCard(gameId, playerId, cardIdx, params = {}) {
+        // Extra params (targetId, allyId, cardType, ...) ride along to the server,
+        // which reads them as card-effect kwargs.
+        return apiCall('/turn/play_card', { gameId, playerId, cardIdx, ...params });
     },
     
     async drawCard(gameId, playerId) {

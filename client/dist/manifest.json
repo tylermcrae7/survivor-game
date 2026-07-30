@@ -5,9 +5,12 @@
   "start_url": "/",
   "display": "fullscreen",
   "orientation": "portrait",
-  "theme_color": "#1d4d3d",
-  "background_color": "#0e1916",
-  "categories": ["games", "entertainment"],
+  "theme_color": "#141d1a",
+  "background_color": "#0d1412",
+  "categories": [
+    "games",
+    "entertainment"
+  ],
   "icons": [
     {
       "src": "icon-192x192.png",

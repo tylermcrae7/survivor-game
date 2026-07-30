@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0,viewport-fit=cover">
     <meta name="description" content="Survivor Board Game - Digital Implementation">
-    <meta name="theme-color" content="#1d4d3d">
+    <meta name="theme-color" content="#141d1a">
     <meta name="color-scheme" content="dark">
     <meta name="format-detection" content="telephone=no,email=no,address=no">
 
@@ -15,6 +15,9 @@
     <meta name="mobile-web-app-capable" content="yes">
 
     <title>Survivor: Digital Voting</title>
+
+    <!-- Favicon: a lit torch -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.6c.5 1.9 1.5 3 2.4 4.1.9 1.1 1.7 2.2 1.7 3.8a4.1 4.1 0 0 1-8.2 0c0-1.6.8-2.7 1.7-3.8.9-1.1 1.9-2.2 2.4-4.1Z' fill='%23e89a4a'/%3E%3Cpath d='M12 14.8V21M9.4 17h5.2' stroke='%23e89a4a' stroke-width='1.8' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
 
     <!--
         NOTE: there is deliberately no force-HTTPS redirect here.
@@ -35,9 +38,11 @@
     <link rel="preload" href="game.js" as="script">
     <link rel="preload" href="https://cdn.socket.io/4.7.5/socket.io.min.js" as="script" crossorigin>
 
-    <!-- Preload Google Fonts for Tribal Typography (2026 Enhancement) -->
+    <!-- Tribal typography: Fraunces (ceremony) + Alegreya Sans (signage & body).
+         display=swap so the offline PWA degrades to the serif/sans fallbacks. -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Alegreya+Sans+SC:wght@500;700;800&display=swap">
 
     <!-- Critical CSS -->
     <link rel="stylesheet" href="styles.css">
@@ -64,7 +69,7 @@
                 };
             }
         }, 2000);
-        
+
         // Emergency loading overlay removal
         setTimeout(() => {
             const loadingOverlay = document.getElementById('loading-overlay');
@@ -76,31 +81,118 @@
     </script>
 </head>
 <body>
+    <!-- ══ Icon sprite — hand-cut marks, no emoji chrome ══ -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="i-torch" viewBox="0 0 24 24">
+            <path d="M12 2.6c.5 1.9 1.5 3 2.4 4.1.9 1.1 1.7 2.2 1.7 3.8a4.1 4.1 0 0 1-8.2 0c0-1.6.8-2.7 1.7-3.8.9-1.1 1.9-2.2 2.4-4.1Z" fill="currentColor"/>
+            <path d="M12 14.8V21M9.4 17h5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        </symbol>
+        <symbol id="i-torch-out" viewBox="0 0 24 24">
+            <path d="M12 14.8V21M9.4 17h5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path d="M12 12.5c-1.8-1.2-1.8-2.7 0-3.9s1.8-2.7 0-3.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.8"/>
+        </symbol>
+        <symbol id="i-ballot" viewBox="0 0 24 24">
+            <rect x="6" y="3.5" width="12" height="17" rx="1.5" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <path d="M9.8 9.8l4.4 4.4M14.2 9.8l-4.4 4.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="i-idol" viewBox="0 0 24 24">
+            <path d="M8.5 3.5h7V8l2 2.2V18a2.5 2.5 0 0 1-2.5 2.5H9A2.5 2.5 0 0 1 6.5 18v-7.8L8.5 8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+            <path d="M9.3 12.5h2M12.7 12.5h2M10 16.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="i-necklace" viewBox="0 0 24 24">
+            <path d="M4.5 4a7.5 7.5 0 0 0 15 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path d="M12 11.8l2.3 3.2-2.3 3.2-2.3-3.2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/>
+        </symbol>
+        <symbol id="i-rock" viewBox="0 0 24 24">
+            <path d="M8 5.5 15.5 4l4.5 6-2.5 8.5-9.5 1L4 13Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+            <path d="M8 5.5 10.5 12l-6.5 1M10.5 12l7 7.5M10.5 12 20 10" stroke="currentColor" stroke-width="1.2" opacity="0.5" fill="none"/>
+        </symbol>
+        <symbol id="i-skull" viewBox="0 0 24 24">
+            <path d="M12 3a7.2 7.2 0 0 0-7.2 7.2c0 2.5 1.3 4.4 3.2 5.6v2.4A1.8 1.8 0 0 0 9.8 20h4.4a1.8 1.8 0 0 0 1.8-1.8v-2.4c1.9-1.2 3.2-3.1 3.2-5.6A7.2 7.2 0 0 0 12 3Z" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <circle cx="9.3" cy="11" r="1.4" fill="currentColor"/>
+            <circle cx="14.7" cy="11" r="1.4" fill="currentColor"/>
+            <path d="M12 13.6l1 2h-2Z" fill="currentColor"/>
+        </symbol>
+        <symbol id="i-crown" viewBox="0 0 24 24">
+            <path d="M4 18.5 3 7.5l5 3.8L12 5l4 6.3 5-3.8-1 11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+        </symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24">
+            <path d="M2.8 12S6.5 5.8 12 5.8 21.2 12 21.2 12 17.5 18.2 12 18.2 2.8 12 2.8 12Z" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <circle cx="12" cy="12" r="2.6" stroke="currentColor" stroke-width="1.8" fill="none"/>
+        </symbol>
+        <symbol id="i-cards" viewBox="0 0 24 24">
+            <rect x="3.8" y="6.2" width="9" height="13" rx="1.5" transform="rotate(-8 8.3 12.7)" stroke="currentColor" stroke-width="1.7" fill="none"/>
+            <rect x="11" y="4.8" width="9" height="13" rx="1.5" transform="rotate(8 15.5 11.3)" stroke="currentColor" stroke-width="1.7" fill="none"/>
+        </symbol>
+        <symbol id="i-swap" viewBox="0 0 24 24">
+            <path d="M4 8.5h12.5L13 5M20 15.5H7.5L11 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </symbol>
+        <symbol id="i-target" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <circle cx="12" cy="12" r="1" fill="currentColor"/>
+        </symbol>
+        <symbol id="i-draw" viewBox="0 0 24 24">
+            <path d="M12 3.5v10M8.5 10 12 13.5 15.5 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M4.5 17.5h15M6.5 20.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24">
+            <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        </symbol>
+        <symbol id="i-share" viewBox="0 0 24 24">
+            <path d="M12 3v11M8 6.5 12 3l4 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M5 11v7a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 18v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+            <path d="M4.5 12.6l5 5L19.5 6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </symbol>
+        <symbol id="i-x" viewBox="0 0 24 24">
+            <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        </symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24">
+            <path d="M12 3.5 21.5 20h-19Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+            <path d="M12 9.5v4.5M12 16.8v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <path d="M12 11v5M12 7.6v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="i-users" viewBox="0 0 24 24">
+            <circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8" fill="none"/>
+            <path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path d="M15.5 5.4a3.2 3.2 0 0 1 0 5.2M17.6 14.9c1.6.7 2.6 2.2 2.9 4.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        </symbol>
+        <symbol id="i-speech" viewBox="0 0 24 24">
+            <path d="M4 5.5h16v10.5H10L5 20l.5-4H4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+        </symbol>
+        <symbol id="i-hourglass" viewBox="0 0 24 24">
+            <path d="M6.5 3.5h11M6.5 20.5h11M7.5 3.5v3.2L12 12 7.5 17.3v3.2M16.5 3.5v3.2L12 12l4.5 5.3v3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </symbol>
+    </svg>
+
     <!-- Skip Navigation -->
     <a href="#app" class="skip-link sr-only" style="position:absolute;top:-40px;left:0;z-index:10000;background:var(--torch,#c17a2a);color:#fff;padding:8px 16px;transition:top 0.2s;" onfocus="this.style.top='0'" onblur="this.style.top='-40px'">Skip to content</a>
 
-    <!-- Phase Indicator (Fixed Header) -->
-    <div id="phaseIndicator" class="phase-indicator-container" style="display: none;">
+    <!-- Phase Indicator (legacy element, kept for JS references; never shown) -->
+    <div id="phaseIndicator" class="phase-indicator-container" style="display: none;" aria-hidden="true">
         <div class="phase-indicator">
-            <span class="phase-icon">🏝️</span>
+            <span class="phase-icon"></span>
             <span class="phase-text">Lobby</span>
         </div>
     </div>
 
     <!-- Main App Container -->
     <div id="app" class="app-container">
-        <!-- Header -->
+        <!-- Header: one slim ritual bar -->
         <header class="header">
-            <div class="torch"></div>
-            <div class="badge">
-                <div>SURVIVOR</div>
-                <div class="subline">Digital Voting</div>
-            </div>
-            <div class="torch right"></div>
-            
+            <div class="torch" aria-hidden="true"><svg><use href="#i-torch"></use></svg></div>
+            <div class="badge">SURVIVOR<span class="subline">Digital Voting</span></div>
+            <div class="torch right" aria-hidden="true"></div>
+
             <div class="game-info">
-                <div>Game: <span id="gameCode">-</span></div>
-                <div>Player: <span id="playerInfo">-</span></div>
+                <span class="chip" id="gameChip">FIRE <strong id="gameCode">—</strong></span>
+                <span class="chip" id="playerChip"><span id="playerInfo">—</span></span>
             </div>
         </header>
 
@@ -108,82 +200,101 @@
         <main class="main">
             <!-- Start Screen -->
             <div id="startScreen" class="screen active" role="region" aria-label="Start screen">
-                <div class="form-card">
-                    <h1>🏝️ Welcome to Survivor</h1>
-                    <p>Join an existing game or create a new one.</p>
-                    
+                <div class="wordmark">
+                    <div class="icon-torch-big" aria-hidden="true"><svg class="icon" style="width:100%;height:100%"><use href="#i-torch"></use></svg></div>
+                    <h1>Survivor</h1>
+                    <p class="tagline">The Tribe Has Spoken</p>
+                </div>
+
+                <div class="panel" style="margin-top: 1.4rem;">
                     <div class="form-group game-options">
-                        <label for="deckModeSelect">Deck:</label>
-                        <select id="deckModeSelect" class="form-input">
+                        <label id="deckModeLabel">Choose your deck</label>
+                        <div class="segmented" role="group" aria-labelledby="deckModeLabel">
+                            <button type="button" data-deck="official" aria-pressed="true">
+                                Official
+                                <small>the 67-card box</small>
+                            </button>
+                            <button type="button" data-deck="extended" aria-pressed="false">
+                                Extended
+                                <small>+7 house cards</small>
+                            </button>
+                        </div>
+                        <!-- The real control (kept for the API + tests), mirrored by the segmented buttons -->
+                        <select id="deckModeSelect" class="visually-hidden-input" tabindex="-1" aria-hidden="true">
                             <option value="official" selected>Official (67 cards)</option>
                             <option value="extended">Extended house deck (74 cards)</option>
                         </select>
-                        <label class="checkbox-row" for="expansionToggle">
+
+                        <label class="checkbox-row" for="expansionToggle" style="margin-top: 0.6rem;">
+                            <svg class="icon" aria-hidden="true"><use href="#i-rock"></use></svg>
+                            <span>Add <strong>Let's Go To Rocks</strong> Challenges</span>
                             <input type="checkbox" id="expansionToggle">
-                            <span>Add <strong>Let's Go To Rocks</strong> Challenge Cards</span>
                         </label>
                         <p class="form-hint">
-                            Official is the 67-card box. Extended adds 7 house cards (Idol Nullifier,
-                            Steal A Vote, Block A Vote, Grant Immunity). The expansion adds the 5
-                            Orange Challenge Cards and the Immunity Idol Necklace.
+                            Extended adds 7 house cards (Idol Nullifier, Steal A Vote, Block A Vote,
+                            Grant Immunity). Rocks adds the 5 Orange Challenge Cards and the
+                            Immunity Idol Necklace.
                         </p>
                     </div>
 
                     <div class="game-actions">
                         <button class="btn btn-enhanced touch-target" data-action="createGame">
-                            Create New Game
+                            <svg class="icon" aria-hidden="true"><use href="#i-torch"></use></svg>
+                            Light the Fire
                         </button>
                         <button class="btn btn-secondary btn-enhanced touch-target" data-action="showJoinForm">
-                            Join Existing Game
+                            Join a Tribe
                         </button>
                     </div>
+                </div>
 
-                    <div id="joinForm" style="display: none;">
-                        <div class="form-group">
-                            <label for="gameCodeInput">Game Code:</label>
-                            <input type="text" id="gameCodeInput" placeholder="Enter game code" class="form-input">
-                        </div>
-                        <div class="form-group">
-                            <label for="playerNameInput">Your Name:</label>
-                            <input type="text" id="playerNameInput" placeholder="Enter your name" class="form-input">
-                        </div>
-                        <div class="form-group">
-                            <label>Choose Your Color:</label>
-                            <div id="colorSelection" class="color-grid" role="radiogroup" aria-label="Player color selection">
-                                <div class="color-btn touch-target" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" aria-label="Red" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" aria-label="Teal" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#45B7D1" style="background: #45B7D1;" role="radio" aria-label="Blue" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#96CEB4" style="background: #96CEB4;" role="radio" aria-label="Sage" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#FFEAA7" style="background: #FFEAA7;" role="radio" aria-label="Yellow" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#DDA0DD" style="background: #DDA0DD;" role="radio" aria-label="Plum" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#98D8C8" style="background: #98D8C8;" role="radio" aria-label="Mint" aria-checked="false"></div>
-                                <div class="color-btn touch-target" data-color="#F7DC6F" style="background: #F7DC6F;" role="radio" aria-label="Gold" aria-checked="false"></div>
-                            </div>
-                        </div>
-                        <button class="btn btn-success btn-enhanced touch-target" data-action="joinGame">
-                            Join Game
-                        </button>
+                <div id="joinForm" class="panel" style="display: none;">
+                    <div class="form-group">
+                        <label for="gameCodeInput">Game Code</label>
+                        <input type="text" id="gameCodeInput" placeholder="········" class="form-input" autocomplete="off" autocapitalize="characters" spellcheck="false">
                     </div>
+                    <div class="form-group">
+                        <label for="playerNameInput">Your Name</label>
+                        <input type="text" id="playerNameInput" placeholder="What does the tribe call you?" class="form-input" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label>Your Buff</label>
+                        <div id="colorSelection" class="color-grid" role="radiogroup" aria-label="Player color selection">
+                            <div class="color-btn touch-target" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" aria-label="Red" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" aria-label="Teal" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#45B7D1" style="background: #45B7D1;" role="radio" aria-label="Blue" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#96CEB4" style="background: #96CEB4;" role="radio" aria-label="Sage" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#FFEAA7" style="background: #FFEAA7;" role="radio" aria-label="Yellow" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#DDA0DD" style="background: #DDA0DD;" role="radio" aria-label="Plum" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#98D8C8" style="background: #98D8C8;" role="radio" aria-label="Mint" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-color="#F7DC6F" style="background: #F7DC6F;" role="radio" aria-label="Gold" aria-checked="false"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-success btn-enhanced touch-target" data-action="joinGame" style="width:100%">
+                        Step Onto the Island
+                    </button>
                 </div>
             </div>
 
             <!-- Lobby Screen -->
             <div id="lobbyScreen" class="screen" role="region" aria-label="Game lobby">
-                <div class="phase-box">
-                    <h2>🏕️ Game Lobby</h2>
-
-                    <!-- Share Game Section -->
+                <div class="screen-head">
+                    <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg> Base camp</p>
+                    <h2 class="screen-title">The Fire Circle</h2>
+                </div>
+                <div class="phase-box"><div class="panel">
                     <div class="share-game-section">
-                        <p class="share-label">Share this game with friends:</p>
-                        <div class="share-code-display">
-                            <span id="lobbyGameCode" class="game-code-large">------</span>
+                        <div class="code-hero" data-action="copyGameCode" role="button" tabindex="0" aria-label="Tap to copy game code">
+                            <span class="code-label">Gather your tribe with this code</span>
+                            <span id="lobbyGameCode" class="game-code-large">······</span>
+                            <span class="code-hint">tap to copy</span>
                         </div>
                         <div class="share-buttons">
                             <button class="btn btn-secondary btn-enhanced touch-target" data-action="copyGameCode">
-                                📋 Copy Code
+                                <svg class="icon" aria-hidden="true"><use href="#i-copy"></use></svg> Copy
                             </button>
-                            <button class="btn btn-primary btn-enhanced touch-target" data-action="shareGame">
-                                📤 Share Game
+                            <button class="btn btn-enhanced touch-target" data-action="shareGame">
+                                <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg> Share
                             </button>
                         </div>
                     </div>
@@ -192,41 +303,43 @@
                         <!-- Players will be rendered here -->
                     </div>
 
-                    <div id="leaderControls" style="display: none;">
-                        <h3>Leader Controls</h3>
+                    <div id="leaderControls" class="game-actions" style="display: none;">
                         <button class="btn btn-success btn-enhanced touch-target" data-action="startFullGame">
-                            Start Game
+                            <svg class="icon" aria-hidden="true"><use href="#i-torch"></use></svg>
+                            Begin the Game
                         </button>
-                        <button class="btn btn-danger btn-enhanced touch-target" data-action="resetGame">
-                            Reset Game
+                        <button class="btn btn-ghost btn-enhanced touch-target" data-action="resetGame">
+                            Reset
                         </button>
                     </div>
-                </div>
+                </div></div>
             </div>
 
             <!-- Playing Screen -->
             <div id="playingScreen" class="screen" role="region" aria-label="Game play">
                 <div class="phase-box">
-                    <div id="turnInfo">
-                        <h3>Turn Phase</h3>
-                        <div id="currentPlayerIndicator" aria-live="polite"></div>
-                        <div id="turnPhaseIndicator"></div>
+                    <div class="panel" id="turnInfo" style="padding-top: 1.1rem;">
+                        <div class="turn-ribbon">
+                            <div id="currentPlayerIndicator" aria-live="polite"></div>
+                            <div id="turnPhaseIndicator"></div>
+                        </div>
                     </div>
-                    
+
                     <!-- Rocks expansion: active Challenge panel -->
                     <div id="challengePanel" class="challenge-panel" style="display: none;"
                          role="region" aria-label="Active challenge" aria-live="polite">
                     </div>
 
-                    <!-- Survivor Character Cards / lives for every player -->
+                    <!-- The tribe: lives, card counts — and steal targets on your turn -->
                     <div id="livesTracker" class="lives-tracker" aria-label="Survivor Character Cards"></div>
 
-                    <div id="playerHand">
+                    <div id="playerHand" class="hand-zone">
                         <!-- Player's cards will be rendered here -->
                     </div>
 
-                    <div id="gameActions" class="game-actions">
-                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="drawCard">
+                    <div id="gameActions" class="game-actions action-bar">
+                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="drawCard" id="drawCardBtn">
+                            <svg class="icon" aria-hidden="true"><use href="#i-draw"></use></svg>
                             Draw Card
                         </button>
                         <button class="btn btn-info btn-enhanced touch-target" data-action="advanceTurn">
@@ -236,88 +349,116 @@
                 </div>
             </div>
 
-            <!-- Tribal Council Screens -->
+            <!-- Tribal Council: Announcement -->
             <div id="tribalAnnouncementScreen" class="screen" role="region" aria-label="Tribal council announcement">
                 <div class="phase-box">
-                    <h2>⚖️ Tribal Council - Announcement</h2>
+                    <div class="ceremony">
+                        <div class="icon-ceremony" aria-hidden="true"><svg style="width:100%;height:100%"><use href="#i-torch"></use></svg></div>
+                        <h2 class="ceremony-title">Tribal Council</h2>
+                        <p class="ceremony-line">Fire represents your life. When your fire is gone, so are you.</p>
+                    </div>
                     <div id="tribalLeaderPhrase"></div>
                     <div id="tribalAnnouncementContent"></div>
                 </div>
             </div>
 
+            <!-- Tribal Council: Advantage -->
             <div id="tribalAdvantageScreen" class="screen" role="region" aria-label="Tribal advantage phase">
-                <div class="phase-box">
-                    <h2>🎯 Tribal Council - Advantage Phase</h2>
-                    <div id="tribalAdvantageContent"></div>
+                <div class="screen-head">
+                    <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-idol"></use></svg> Tribal council</p>
+                    <h2 class="screen-title">Advantages</h2>
                 </div>
+                <div class="phase-box"><div class="panel">
+                    <div id="tribalAdvantageContent"></div>
+                </div></div>
             </div>
 
+            <!-- Tribal Council: Discussion -->
             <div id="tribalDiscussionScreen" class="screen" role="region" aria-label="Tribal discussion">
-                <div class="phase-box">
-                    <h2>💭 Tribal Council - Discussion</h2>
+                <div class="screen-head">
+                    <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-speech"></use></svg> Tribal council</p>
+                    <h2 class="screen-title">The Discussion</h2>
+                </div>
+                <div class="phase-box"><div class="panel">
                     <div id="tribalDiscussionPhrase"></div>
                     <div id="tribalDiscussionContent"></div>
-                </div>
+                </div></div>
             </div>
 
             <!-- Voting Screen -->
             <div id="votingScreen" class="screen" role="region" aria-label="Voting">
-                <div class="phase-box">
-                    <h2>🗳️ Cast Your Vote</h2>
+                <div class="screen-head">
+                    <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-ballot"></use></svg> Tribal council</p>
+                    <h2 class="screen-title">It Is Time to Vote</h2>
+                </div>
+                <div class="phase-box"><div class="panel">
                     <div id="votingInfo"></div>
                     <div id="voteTargets">
                         <!-- Vote targets will be rendered here -->
                     </div>
-                    
-                    <div id="leaderVotingControls" style="display: none;">
+
+                    <div id="leaderVotingControls" class="game-actions" style="display: none;">
                         <button class="btn btn-warning btn-enhanced touch-target" data-action="revealVotes">
-                            Reveal Votes
+                            <svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg>
+                            Read the Votes
                         </button>
                     </div>
-                </div>
+                </div></div>
             </div>
 
             <!-- Immunity Screen -->
             <div id="immunityScreen" class="screen" role="region" aria-label="Immunity phase">
-                <div class="phase-box">
-                    <h2>🛡️ Immunity Phase</h2>
-                    <p>Players may play immunity idols or nullifiers.</p>
+                <div class="screen-head">
+                    <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-idol"></use></svg> Tribal council</p>
+                    <h2 class="screen-title">The Idols</h2>
+                </div>
+                <div class="phase-box"><div class="panel">
+                    <p class="panel-sub">If anyone has a Hidden Immunity Idol and wants to play it, now would be the time to do so.</p>
                     <div id="immunityPlayers">
                         <!-- Immunity actions will be rendered here -->
                     </div>
-                    
-                    <div id="leaderImmunityControls" style="display: none;">
+
+                    <div id="leaderImmunityControls" class="game-actions" style="display: none;">
                         <button class="btn btn-primary btn-enhanced touch-target" data-action="proceedToVoting">
                             Proceed to Voting
                         </button>
                     </div>
-                </div>
+                </div></div>
             </div>
 
             <!-- Results Screen -->
             <div id="resultsScreen" class="screen" role="region" aria-label="Tribal council results">
-                <div class="results-container">
-                    <h2>📊 Tribal Council Results</h2>
+                <div class="screen-head">
+                    <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg> Tribal council</p>
+                    <h2 class="screen-title">The Tribe Decides</h2>
+                </div>
+                <div class="results-container"><div class="panel">
                     <div id="voteResults" aria-live="polite"></div>
                     <div id="eliminationResults" aria-live="assertive"></div>
-                    
-                    <div id="leaderResultsControls" style="display: none;">
+
+                    <div id="leaderResultsControls" class="game-actions" style="display: none;">
                         <button class="btn btn-success btn-enhanced touch-target" data-action="completeTribal">
                             Continue Game
                         </button>
-                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="resetTribal">
+                        <button class="btn btn-ghost btn-enhanced touch-target" data-action="resetTribal">
                             Reset Tribal
                         </button>
                     </div>
-                </div>
+                </div></div>
             </div>
 
             <!-- Final Tribal Screen -->
             <div id="finalTribalScreen" class="screen" role="region" aria-label="Final tribal council">
                 <div class="phase-box">
-                    <h2>👑 Final Tribal Council</h2>
-                    <div id="finalTribalContent">
-                        <!-- Final tribal content will be rendered here -->
+                    <div class="ceremony">
+                        <div class="icon-ceremony" aria-hidden="true"><svg style="width:100%;height:100%"><use href="#i-crown"></use></svg></div>
+                        <h2 class="ceremony-title">Final Tribal</h2>
+                        <p class="ceremony-line">The jury will decide who outplayed, outwitted, and outlasted.</p>
+                    </div>
+                    <div class="panel">
+                        <div id="finalTribalContent">
+                            <!-- Final tribal content will be rendered here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -325,9 +466,12 @@
             <!-- Game Over Screen -->
             <div id="gameOverScreen" class="screen" role="region" aria-label="Game over">
                 <div class="victory-container">
-                    <h1 class="victory-title">🎉 Sole Survivor!</h1>
-                    <div id="winnerInfo" class="victory-subtitle"></div>
-                    <div id="gameOverActions" class="game-actions">
+                    <div class="victory-head">
+                        <div class="icon-crown" aria-hidden="true"><svg style="width:100%;height:100%"><use href="#i-crown"></use></svg></div>
+                        <h1 class="victory-title">Sole Survivor</h1>
+                        <div id="winnerInfo" class="victory-subtitle"></div>
+                    </div>
+                    <div id="gameOverActions" class="game-actions action-bar">
                         <button class="btn btn-success btn-enhanced touch-target" data-action="recordWinner">
                             Record Winner
                         </button>
@@ -348,7 +492,7 @@
     <!-- Loading Overlay (Initial) -->
     <div id="loading-overlay" class="loading-overlay">
         <div class="loading-spinner"></div>
-        <div class="loading-text">Initializing Survivor...</div>
+        <div class="loading-text">Lighting the torches…</div>
     </div>
 
     <!-- Modal Overlay (native dialog) -->
@@ -379,7 +523,7 @@
     <!-- Error Boundary -->
     <div id="errorBoundary" style="display: none;">
         <div class="error-container">
-            <div class="error-icon">⚠️</div>
+            <div class="error-icon"><svg class="icon" style="width:100%;height:100%"><use href="#i-alert"></use></svg></div>
             <div class="error-message">
                 <h3>Something went wrong</h3>
                 <p>Please refresh the page to continue.</p>
@@ -394,7 +538,7 @@
     <script src="ui.js" defer></script>
     <script src="state-manager.js" defer></script>
     <script src="narrator.js" defer></script>
-    
+
     <!-- Slim Initialization Script -->
     <script>
         // ── Global Config ──
@@ -429,7 +573,7 @@
             let o = document.getElementById('app-loading');
             if (!o) {
                 o = document.createElement('div'); o.id = 'app-loading';
-                o.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:oklch(0.14 0.02 180/0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(5px);';
+                o.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:oklch(0.09 0.012 175/0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;';
                 o.innerHTML = '<div class="loading-spinner"></div><div class="loading-text">' + (msg||'Loading...') + '</div>';
                 document.body.appendChild(o);
             }
@@ -470,6 +614,9 @@
             startNewGame:     () => window.SurvivorGame?.startNewGame(),
             copyGameCode:     () => window.SurvivorUI?.copyGameCode(),
             shareGame:        () => window.SurvivorUI?.shareGame(),
+            openDiscussion:   () => window.SurvivorGame?.openDiscussion(),
+            startVoting:      () => window.SurvivorGame?.startVotingPhase(),
+            openImmunity:     () => window.SurvivorGame?.openImmunity(),
         };
 
         document.getElementById('app').addEventListener('click', function(e) {
@@ -517,6 +664,28 @@
                     if (window.SurvivorGame) window.SurvivorGame.localGameState.playerColor = this.dataset.color;
                 });
             });
+
+            // Deck mode segmented control mirrors the real <select id="deckModeSelect">
+            const deckSelect = document.getElementById('deckModeSelect');
+            document.querySelectorAll('.segmented [data-deck]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.segmented [data-deck]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+                    this.setAttribute('aria-pressed', 'true');
+                    if (deckSelect) deckSelect.value = this.dataset.deck;
+                });
+            });
+
+            // Code hero copied flash
+            const codeHero = document.querySelector('.code-hero');
+            if (codeHero) {
+                codeHero.addEventListener('click', () => {
+                    codeHero.classList.add('copied');
+                    setTimeout(() => codeHero.classList.remove('copied'), 1200);
+                });
+                codeHero.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); codeHero.click(); }
+                });
+            }
 
             // Form enter keys
             const gci = document.getElementById('gameCodeInput');
@@ -589,7 +758,7 @@
         window.onUIModuleReady = () => checkModuleReady('ui');
         window.onStateManagerModuleReady = () => checkModuleReady('stateManager');
     </script>
-    
+
     <!-- Service Worker Registration -->
     <script>
         if ('serviceWorker' in navigator) {
