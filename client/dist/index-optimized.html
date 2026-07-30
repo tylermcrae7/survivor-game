@@ -16,16 +16,16 @@
 
     <title>Survivor: Digital Voting</title>
 
-    <!-- HTTPS redirect for production (skip for localhost development) -->
-    <script>
-        if (location.protocol !== 'https:' &&
-            location.hostname !== 'localhost' &&
-            location.hostname !== '127.0.0.1' &&
-            !location.hostname.startsWith('192.168.') &&
-            !location.hostname.startsWith('10.')) {
-            location.replace('https:' + location.href.substring(location.protocol.length));
-        }
-    </script>
+    <!--
+        NOTE: there is deliberately no force-HTTPS redirect here.
+
+        The game server speaks plain HTTP; TLS is terminated upstream (Cloudflare
+        tunnel), so that URL is already https://. An unconditional client-side
+        redirect black-holed every other hostname — Tailscale IPs (100.x), *.local,
+        and any public IP redirected to a dead TLS port and rendered a blank page
+        with no error. PWA installability is unaffected: it needs a secure context
+        (https:// or localhost), which this redirect never provided anyway.
+    -->
 
     <!-- Preconnect to external CDN -->
     <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
@@ -112,6 +112,23 @@
                     <h1>🏝️ Welcome to Survivor</h1>
                     <p>Join an existing game or create a new one.</p>
                     
+                    <div class="form-group game-options">
+                        <label for="deckModeSelect">Deck:</label>
+                        <select id="deckModeSelect" class="form-input">
+                            <option value="official" selected>Official (67 cards)</option>
+                            <option value="extended">Extended house deck (74 cards)</option>
+                        </select>
+                        <label class="checkbox-row" for="expansionToggle">
+                            <input type="checkbox" id="expansionToggle">
+                            <span>Add <strong>Let's Go To Rocks</strong> Challenge Cards</span>
+                        </label>
+                        <p class="form-hint">
+                            Official is the 67-card box. Extended adds 7 house cards (Idol Nullifier,
+                            Steal A Vote, Block A Vote, Grant Immunity). The expansion adds the 5
+                            Orange Challenge Cards and the Immunity Idol Necklace.
+                        </p>
+                    </div>
+
                     <div class="game-actions">
                         <button class="btn btn-enhanced touch-target" data-action="createGame">
                             Create New Game
@@ -120,7 +137,7 @@
                             Join Existing Game
                         </button>
                     </div>
-                    
+
                     <div id="joinForm" style="display: none;">
                         <div class="form-group">
                             <label for="gameCodeInput">Game Code:</label>
@@ -196,10 +213,18 @@
                         <div id="turnPhaseIndicator"></div>
                     </div>
                     
+                    <!-- Rocks expansion: active Challenge panel -->
+                    <div id="challengePanel" class="challenge-panel" style="display: none;"
+                         role="region" aria-label="Active challenge" aria-live="polite">
+                    </div>
+
+                    <!-- Survivor Character Cards / lives for every player -->
+                    <div id="livesTracker" class="lives-tracker" aria-label="Survivor Character Cards"></div>
+
                     <div id="playerHand">
                         <!-- Player's cards will be rendered here -->
                     </div>
-                    
+
                     <div id="gameActions" class="game-actions">
                         <button class="btn btn-secondary btn-enhanced touch-target" data-action="drawCard">
                             Draw Card

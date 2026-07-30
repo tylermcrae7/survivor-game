@@ -3,9 +3,11 @@
  * Provides offline functionality and performance optimization
  */
 
-const CACHE_NAME = 'survivor-v1.1.0';
-const STATIC_CACHE = 'survivor-static-v1.1.0';
-const DYNAMIC_CACHE = 'survivor-dynamic-v1.1.0';
+// Bump these on every client change — the static cache is cache-first, so a stale
+// cache name means installed PWAs keep running the old game.js/ui.js/styles.css.
+const CACHE_NAME = 'survivor-v2.0.0';
+const STATIC_CACHE = 'survivor-static-v2.0.0';
+const DYNAMIC_CACHE = 'survivor-dynamic-v2.0.0';
 
 // Assets to cache immediately
 const STATIC_ASSETS = [
@@ -90,11 +92,12 @@ self.addEventListener('fetch', event => {
         return;
     }
     
-    // Handle different types of requests
-    if (isStaticAsset(url)) {
-        event.respondWith(handleStaticAsset(request));
-    } else if (isAPIRequest(url)) {
+    // Handle different types of requests.
+    // API first: game state must NEVER be served cache-first.
+    if (isAPIRequest(url)) {
         event.respondWith(handleAPIRequest(request));
+    } else if (isStaticAsset(url)) {
+        event.respondWith(handleStaticAsset(request));
     } else if (isNavigationRequest(request)) {
         event.respondWith(handleNavigationRequest(request));
     } else {
@@ -150,9 +153,19 @@ self.addEventListener('push', event => {
  */
 
 function isStaticAsset(url) {
+    // NEVER treat an API call as a static asset — those are network-first.
+    if (isAPIRequest(url)) return false;
+
     const staticExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.json'];
-    return staticExtensions.some(ext => url.pathname.endsWith(ext)) ||
-           STATIC_ASSETS.some(asset => url.pathname === asset || url.href.includes(asset));
+    if (staticExtensions.some(ext => url.pathname.endsWith(ext))) return true;
+
+    // Match precached entries by exact pathname (for same-origin) or exact href
+    // (for the CDN entry). The old `url.href.includes(asset)` test matched EVERY
+    // request because STATIC_ASSETS contains '/', so live game state was served
+    // cache-first and every resync returned permanently stale data.
+    return STATIC_ASSETS.some(asset =>
+        asset.startsWith('http') ? url.href === asset : url.pathname === asset
+    );
 }
 
 function isAPIRequest(url) {
@@ -160,8 +173,9 @@ function isAPIRequest(url) {
 }
 
 function isNavigationRequest(request) {
-    return request.mode === 'navigate' || 
-           (request.method === 'GET' && request.headers.get('accept').includes('text/html'));
+    const accept = request.headers.get('accept') || '';
+    return request.mode === 'navigate' ||
+           (request.method === 'GET' && accept.includes('text/html'));
 }
 
 /**
@@ -195,9 +209,11 @@ async function handleStaticAsset(request) {
  */
 async function handleAPIRequest(request) {
     try {
-        // Try network first
-        const networkResponse = await fetch(request);
-        
+        // Try network first, bypassing the HTTP cache entirely — game state changes
+        // several times a second and a reused response silently desyncs the board.
+        const networkResponse = await fetch(new Request(request, { cache: 'no-store' }));
+
+
         if (networkResponse.ok) {
             // Cache successful GET requests for certain endpoints
             if (CACHEABLE_API_ENDPOINTS.some(endpoint => request.url.includes(endpoint))) {

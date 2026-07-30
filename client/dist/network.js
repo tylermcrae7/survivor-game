@@ -614,8 +614,9 @@ function setupNetworkMonitoring() {
  */
 const GameAPI = {
     // Game management
-    async createGame() {
-        return apiCall('/game/create', {});
+    async createGame(options = {}) {
+        const { deckMode = 'official', expansion = false } = options;
+        return apiCall('/game/create', { deckMode, expansion });
     },
     
     async joinGame(gameId, name, color) {
@@ -646,7 +647,17 @@ const GameAPI = {
     async advanceTurn(gameId) {
         return apiCall('/turn/advance', { gameId });
     },
-    
+
+    // Let's Go To Rocks challenges
+    async challengeAction(gameId, playerId, action, value = null) {
+        return apiCall('/challenge/action', { gameId, playerId, action, value });
+    },
+
+    // State sync — GET-only route on the server
+    async fetchGameState(gameId) {
+        return apiCall(`/game/${gameId}/state`, {}, 'GET');
+    },
+
     // Tribal council
     async startVoting(gameId, voteType) {
         return apiCall('/vote/start', { gameId, voteType });

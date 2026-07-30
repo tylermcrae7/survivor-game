@@ -433,7 +433,9 @@ class NetworkStateSyncer {
             const gameId = window.SurvivorGame?.localGameState?.gameId;
             if (!gameId) return;
 
-            const serverState = await this.networkManager.apiCall(`/game/${gameId}/state`);
+            // The state route is GET-only on the server — apiCall defaults to POST,
+            // which used to 405 on every single resync attempt.
+            const serverState = await this.networkManager.apiCall(`/game/${gameId}/state`, {}, 'GET');
             if (serverState) {
                 this.stateManager.updateState(serverState, 'sync');
             }

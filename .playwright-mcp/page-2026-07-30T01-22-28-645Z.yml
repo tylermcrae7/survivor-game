@@ -1,0 +1,39 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - generic [ref=f2e4]: 🏝️
+      - generic [ref=f2e5]: Survivor Narrator
+      - button "🔊" [ref=f2e6] [cursor=pointer]
+      - button "▼" [ref=f2e7] [cursor=pointer]
+    - generic [ref=f2e8]: ▋
+  - link "Skip to content" [ref=f2e11] [cursor=pointer]:
+    - /url: "#app"
+  - generic [ref=f2e12]:
+    - banner [ref=f2e13]:
+      - generic [ref=f2e15]:
+        - generic [ref=f2e16]: SURVIVOR
+        - generic [ref=f2e17]: Digital Voting
+      - generic [ref=f2e19]:
+        - generic [ref=f2e20]: "Game: -"
+        - generic [ref=f2e21]: "Player: -"
+        - generic [ref=f2e22]: Connected
+    - main [ref=f2e25]:
+      - region "Start screen" [ref=f2e26]:
+        - generic [ref=f2e27]:
+          - heading "🏝️ Welcome to Survivor" [level=1] [ref=f2e28]
+          - paragraph [ref=f2e29]: Join an existing game or create a new one.
+          - generic [ref=f2e30]:
+            - generic [ref=f2e31]: "Deck:"
+            - combobox "Deck:" [ref=f2e32]:
+              - option "Official (67 cards)" [selected]
+              - option "Extended house deck (74 cards)"
+            - generic [ref=f2e33] [cursor=pointer]:
+              - checkbox "Add Let's Go To Rocks Challenge Cards" [ref=f2e34]
+              - generic [ref=f2e35]:
+                - text: Add
+                - strong [ref=f2e36]: Let's Go To Rocks
+                - text: Challenge Cards
+            - paragraph [ref=f2e37]: Official is the 67-card box. Extended adds 7 house cards (Idol Nullifier, Steal A Vote, Block A Vote, Grant Immunity). The expansion adds the 5 Orange Challenge Cards and the Immunity Idol Necklace.
+          - generic [ref=f2e38]:
+            - button "Create New Game" [ref=f2e39] [cursor=pointer]
+            - button "Join Existing Game" [ref=f2e40] [cursor=pointer]

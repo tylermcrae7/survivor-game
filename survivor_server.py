@@ -2558,11 +2558,16 @@ def api_game_state(game_id):
     
     current_state = game_state.get_game_state(game_id)
     response = jsonify(current_state)
-    
-    # Add cache headers for frequent polling
-    response.headers['Cache-Control'] = 'no-cache, must-revalidate'
-    response.headers['ETag'] = f'state-{game_id}-{int(time.time())}'
-    
+
+    # Live game state must never be reused from any cache — not the browser's, not
+    # the service worker's, and not Cloudflare's. The previous headers advertised
+    # `no-cache` alongside a per-second ETag, which let clients serve a stale board
+    # to a reconnecting phone (exactly the resync path this route exists for).
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.headers.pop('ETag', None)
+
     return response
 
 @app.route('/api/batch', methods=['POST'])
@@ -3004,7 +3009,18 @@ def cleanup_handler(signum, frame):
     
 @app.errorhandler(Exception)
 def handle_unhandled_exception(e):
-    """Global handler for unhandled exceptions to prevent 500 errors."""
+    """
+    Global handler for unhandled exceptions to prevent bare 500 errors.
+
+    HTTP errors (404 Not Found, 405 Method Not Allowed, ...) are passed through
+    with their real status code — swallowing them into 500s made every client-side
+    routing mistake look like a server crash.
+    """
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        logger.warning(f"HTTP {e.code} on {request.method} {request.path}: {e.name}")
+        return jsonify(success=False, message=f"{e.code} {e.name}"), e.code
+
     logger.error(f"Unhandled Exception: {e}", exc_info=True)
     return jsonify(success=False, message=f"An internal server error occurred: {str(e)}"), 500
 

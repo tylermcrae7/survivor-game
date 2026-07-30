@@ -1926,3 +1926,201 @@
     -webkit-backdrop-filter: blur(5px);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SURVIVOR CHARACTER CARDS (lives) — F1
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.lives {
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+  font-size: 0.95em;
+}
+
+.lives-out {
+  opacity: 0.7;
+  filter: grayscale(0.6);
+}
+
+.lives-tracker {
+  margin: 0.75rem 0;
+}
+
+.lives-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.lives-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.lives-row.eliminated {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.lives-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.lives-name {
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GAME CREATION OPTIONS — F7 deck mode / expansion toggles
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.game-options {
+  text-align: left;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.game-options select.form-input {
+  width: 100%;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--torch);
+  flex: 0 0 auto;
+}
+
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LET'S GO TO ROCKS — active challenge panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.challenge-panel {
+  margin: 0.75rem 0 1rem;
+  padding: 1rem;
+  border: 1px solid oklch(0.65 0.18 55 / 0.45);
+  border-left: 4px solid var(--torch);
+  border-radius: 14px;
+  background: var(--glass-bg-light);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.challenge-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.challenge-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.challenge-round {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.challenge-goal {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0.35rem 0 0.6rem;
+  line-height: 1.4;
+}
+
+.challenge-prompt {
+  margin: 0 0 0.6rem;
+  line-height: 1.4;
+}
+
+.challenge-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.6rem;
+}
+
+.challenge-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.challenge-input-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.challenge-input-row .form-input {
+  width: auto;
+  min-width: 5.5rem;
+}
+
+.challenge-waiting {
+  font-style: italic;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.challenge-scores,
+.challenge-log {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.challenge-scores li {
+  padding: 0.15rem 0;
+}
+
+.challenge-log {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 0.5rem;
+  margin-top: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.challenge-log li {
+  padding: 0.1rem 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .challenge-panel { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}

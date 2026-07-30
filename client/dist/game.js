@@ -182,13 +182,16 @@ function getEligibleVoteTargets(gameState, voterId) {
     return Object.values(gameState.players).filter(player => {
         // Can't vote for eliminated players
         if (player.isEliminated) return false;
-        
+
         // Can't vote for yourself in most cases
         if (player.id === voterId) return false;
-        
+
         // Can't vote for players with immunity protection
         if (player.immunityIdolProtection || player.temporaryImmunity) return false;
-        
+
+        // Can't vote for whoever wears the Immunity Idol Necklace (Rocks expansion)
+        if (gameState.necklaceHolder && player.id === gameState.necklaceHolder) return false;
+
         return true;
     });
 }
@@ -385,8 +388,13 @@ async function safeApiCall(endpoint, data = {}, method = 'POST') {
 }
 
 async function createGame() {
-    console.log('Creating new game...');
-    const result = await safeApiCall('/game/create');
+    // Deck options (F7): official 67-card box by default, optional house deck and
+    // optional Let's Go To Rocks Challenge Cards.
+    const deckMode = document.getElementById('deckModeSelect')?.value || 'official';
+    const expansion = !!document.getElementById('expansionToggle')?.checked;
+
+    console.log('Creating new game...', { deckMode, expansion });
+    const result = await safeApiCall('/game/create', { deckMode, expansion });
 
     if (result && result.gameId) {
         if (window.SurvivorGame) {
@@ -399,7 +407,10 @@ async function createGame() {
         }
 
         document.getElementById('gameCode').textContent = result.gameId;
-        (window.SurvivorUI?.showToast || window.showToast)('Game created successfully!', 'success');
+        const deckLabel = result.deckMode === 'extended' ? 'extended deck' : 'official deck';
+        const expLabel = result.expansion ? ' + Rocks Challenges' : '';
+        (window.SurvivorUI?.showToast || window.showToast)(
+            `Game created (${deckLabel}${expLabel})!`, 'success');
         showJoinForm();
 
         const gameCodeInput = document.getElementById('gameCodeInput');
@@ -509,6 +520,37 @@ async function drawCard() {
     if (result && result.success) {
         (window.SurvivorUI?.showToast || window.showToast)('Card drawn successfully!', 'success');
     }
+}
+
+/**
+ * Take an action in the active Let's Go To Rocks Challenge.
+ * action: 'bid' | 'pass' | 'pull' | 'steal' | 'dismiss'
+ */
+async function challengeAction(action, value = null) {
+    const gameId = localGameState.gameId;
+    const playerId = localGameState.playerId;
+    const toast = window.SurvivorUI?.showToast || window.showToast;
+
+    if (!gameId || !playerId) {
+        toast('Game state error', 'error');
+        return;
+    }
+
+    if (action === 'bid' && !(Number.isInteger(value) && value > 0)) {
+        toast('Enter how many rocks you can pull', 'warning');
+        return;
+    }
+    if (action === 'steal' && !value) {
+        toast('Choose a player to steal from', 'warning');
+        return;
+    }
+
+    console.log('Challenge action:', action, value);
+    const result = await safeApiCall('/challenge/action', { gameId, playerId, action, value });
+    if (result && result.success && result.message) {
+        toast(result.message, 'info');
+    }
+    return result;
 }
 
 async function advanceTurn() {
@@ -627,6 +669,7 @@ window.SurvivorGame = {
     resetGame,
     drawCard,
     advanceTurn,
+    challengeAction,
     revealVotes,
     proceedToVoting,
     completeTribal,

@@ -545,7 +545,7 @@ function renderPlayerList(gameState) {
     if (!container || !gameState.players) return;
     
     const players = Object.values(gameState.players);
-    const html = players.map(player => createPlayerCard(player)).join('');
+    const html = players.map(player => createPlayerCard(player, gameState)).join('');
     
     container.innerHTML = html;
     
@@ -555,13 +555,28 @@ function renderPlayerList(gameState) {
     });
 }
 
-function createPlayerCard(player) {
+/**
+ * Render a player's remaining Survivor Character Cards as torches.
+ * 2 cards = 🔥🔥, 1 card = 🔥 (one turned over), 0 = eliminated.
+ */
+function renderLives(player) {
+    const total = 2;
+    const left = Math.max(0, Math.min(total, player.characterCards ?? total));
+    if (left === 0) return '<span class="lives lives-out" title="Both Survivor Character Cards turned over">💀</span>';
+    const lit = '🔥'.repeat(left);
+    const spent = '🕯️'.repeat(total - left);
+    const label = `${left} of ${total} Survivor Character Cards left`;
+    return `<span class="lives" title="${label}" aria-label="${label}">${lit}${spent}</span>`;
+}
+
+function createPlayerCard(player, gameState) {
     const isLeader = player.isCouncilLeader;
     const isEliminated = player.isEliminated;
     const cardCount = player.hand ? player.hand.length : 0;
-    
+    const hasNecklace = gameState && gameState.necklaceHolder === player.id;
+
     return `
-        <div class="player-card ${isLeader ? 'leader' : ''} ${isEliminated ? 'eliminated' : ''}" 
+        <div class="player-card ${isLeader ? 'leader' : ''} ${isEliminated ? 'eliminated' : ''}"
              data-player-id="${player.id}">
             <div class="player-avatar" style="background: ${player.color}">
                 ${player.name.charAt(0).toUpperCase()}
@@ -569,7 +584,9 @@ function createPlayerCard(player) {
             <div class="player-info">
                 <div class="player-name">${formatPlayerName(player)}</div>
                 <div class="player-status">
+                    ${renderLives(player)}
                     ${isLeader ? '👑 Leader' : ''}
+                    ${hasNecklace ? '<span title="Wearing the Immunity Idol Necklace — cannot be voted for">📿 Immune</span>' : ''}
                     ${isEliminated ? '💀 Eliminated' : ''}
                     ${!isEliminated ? `🃏 ${cardCount}` : ''}
                 </div>
@@ -577,6 +594,34 @@ function createPlayerCard(player) {
             ${createPlayerActions(player)}
         </div>
     `;
+}
+
+/**
+ * Compact lives strip for the playing screen so everyone can see who is on their
+ * last Survivor Character Card at a glance.
+ */
+function renderLivesTracker(gameState) {
+    const container = document.getElementById('livesTracker');
+    if (!container || !gameState || !gameState.players) return;
+
+    const order = gameState.turnOrder && gameState.turnOrder.length
+        ? gameState.turnOrder.filter(id => gameState.players[id])
+        : Object.keys(gameState.players);
+
+    const rows = order.map(id => {
+        const player = gameState.players[id];
+        const necklace = gameState.necklaceHolder === id ? ' 📿' : '';
+        const cls = player.isEliminated ? 'lives-row eliminated' : 'lives-row';
+        return `
+            <div class="${cls}">
+                <span class="lives-dot" style="background: ${escapeHtml(player.color || '#666')}"></span>
+                <span class="lives-name">${escapeHtml(formatPlayerName(player, 12))}</span>
+                ${renderLives(player)}${necklace}
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `<div class="lives-strip">${rows}</div>`;
 }
 
 function createPlayerActions(player) {
@@ -605,6 +650,147 @@ function createPlayerActions(player) {
     }
     
     return actions ? `<div class="player-actions">${actions}</div>` : '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROCKS EXPANSION — ACTIVE CHALLENGE PANEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Render the active Rocks Challenge, including the controls for whoever is up.
+ * All four playable challenges share this panel; the button set comes from the
+ * server's `challenge.actions` list so the UI can never offer an illegal move.
+ */
+function renderChallengePanel(gameState) {
+    const container = document.getElementById('challengePanel');
+    if (!container) return;
+
+    const ch = gameState && gameState.challenge;
+    if (!ch) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    const isMyMove = ch.currentPlayerId === myId && ch.phase !== 'complete';
+    const name = pid => escapeHtml(gameState.players?.[pid]?.name || 'Player');
+
+    const bag = ch.bag || { grey: 0, purple: 0 };
+    const bagLeft = (bag.grey || 0) + (bag.purple || 0);
+
+    const knocked = (ch.knockedOut || []).map(name).join(', ');
+    const log = (ch.log || []).slice(-5).map(l => `<li>${escapeHtml(l)}</li>`).join('');
+
+    let controls = '';
+    if (isMyMove) {
+        const actions = ch.actions || [];
+        const buttons = [];
+
+        if (actions.includes('bid')) {
+            buttons.push(`
+                <div class="challenge-input-row">
+                    <input type="number" id="challengeBidInput" class="form-input"
+                           min="${(ch.currentBid || 0) + 1}" max="${ch.maxBid || bagLeft}"
+                           value="${(ch.currentBid || 0) + 1}" aria-label="Bid amount">
+                    <button class="btn btn-enhanced touch-target" data-challenge-action="bid">Bid</button>
+                </div>
+            `);
+        }
+        if (actions.includes('pull') && ch.type === 'lowest_score_loses') {
+            buttons.push(`
+                <div class="challenge-input-row">
+                    <input type="number" id="challengePullInput" class="form-input"
+                           min="0" max="${ch.maxPull ?? bagLeft}" value="0" aria-label="Rocks to pull">
+                    <button class="btn btn-enhanced touch-target" data-challenge-action="pull">Pull secretly</button>
+                </div>
+            `);
+        } else if (actions.includes('pull')) {
+            buttons.push(`<button class="btn btn-enhanced touch-target" data-challenge-action="pull">Pull a rock</button>`);
+        }
+        if (actions.includes('pass')) {
+            buttons.push(`<button class="btn btn-secondary btn-enhanced touch-target" data-challenge-action="pass">Pass</button>`);
+        }
+        if (actions.includes('steal')) {
+            const options = (ch.stealTargets || [])
+                .map(pid => `<option value="${escapeHtml(pid)}">${name(pid)}</option>`).join('');
+            buttons.push(`
+                <div class="challenge-input-row">
+                    <select id="challengeStealTarget" class="form-input" aria-label="Steal from">${options}</select>
+                    <button class="btn btn-warning btn-enhanced touch-target" data-challenge-action="steal">Steal their rock</button>
+                </div>
+            `);
+        }
+        controls = `<div class="challenge-controls">${buttons.join('')}</div>`;
+    } else if (ch.phase !== 'complete' && ch.currentPlayerId) {
+        controls = `<p class="challenge-waiting">Waiting for ${name(ch.currentPlayerId)}…</p>`;
+    } else if (ch.phase === 'complete') {
+        controls = `<button class="btn btn-success btn-enhanced touch-target" data-challenge-action="dismiss">Continue</button>`;
+    }
+
+    let scoreboard = '';
+    if (ch.type === 'lowest_score_loses' && ch.lastRound && ch.lastRound.scores) {
+        const rows = Object.entries(ch.lastRound.scores)
+            .sort((a, b) => b[1] - a[1])
+            .map(([pid, score]) => {
+                const pulls = (ch.lastRound.pulls || {})[pid] || {};
+                return `<li>${name(pid)}: <strong>${score > 0 ? '+' : ''}${score}</strong>
+                        (${pulls.grey || 0}⚪ ${pulls.purple || 0}🟣)</li>`;
+            }).join('');
+        scoreboard = `<ul class="challenge-scores">${rows}</ul>`;
+    }
+    if (ch.type === 'pull_or_steal' && ch.rocks && Object.keys(ch.rocks).length) {
+        const rows = Object.entries(ch.rocks)
+            .map(([pid, rock]) => `<li>${name(pid)}: ${rock === 'purple' ? '🟣 Purple' : '⚪ Grey'}</li>`).join('');
+        scoreboard = `<ul class="challenge-scores">${rows}</ul>`;
+    }
+
+    container.style.display = 'block';
+    container.innerHTML = `
+        <div class="challenge-header">
+            <h3>🪨 ${escapeHtml(ch.name || 'Challenge')}</h3>
+            <span class="challenge-round">Round ${ch.round || 1}</span>
+        </div>
+        <p class="challenge-goal">${escapeHtml(ch.goal || '')}</p>
+        <p class="challenge-prompt"><strong>${escapeHtml(ch.prompt || '')}</strong></p>
+        <div class="challenge-meta">
+            <span>Bag: ${bagLeft} rock(s)</span>
+            ${ch.currentBid ? `<span>High bid: ${ch.currentBid} (${name(ch.highBidderId)})</span>` : ''}
+            ${knocked ? `<span>Knocked out: ${knocked}</span>` : ''}
+        </div>
+        ${scoreboard}
+        ${controls}
+        ${log ? `<ul class="challenge-log">${log}</ul>` : ''}
+    `;
+
+    setupChallengeInteractions();
+}
+
+function setupChallengeInteractions() {
+    const buttons = Array.from(document.querySelectorAll('[data-challenge-action]'));
+
+    buttons.forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const action = btn.dataset.challengeAction;
+            let value = null;
+            if (action === 'bid') {
+                value = parseInt(document.getElementById('challengeBidInput')?.value, 10);
+            } else if (action === 'pull') {
+                const input = document.getElementById('challengePullInput');
+                if (input) value = parseInt(input.value, 10);
+            } else if (action === 'steal') {
+                value = document.getElementById('challengeStealTarget')?.value;
+            }
+
+            // Guard against double-taps, but re-enable if the move was rejected so
+            // the panel never wedges (a rejected action emits no state update).
+            buttons.forEach(b => { b.disabled = true; });
+            const result = await window.SurvivorGame?.challengeAction(action, value);
+            if (!result || !result.success) {
+                buttons.forEach(b => { b.disabled = false; });
+            }
+        });
+    });
 }
 
 function renderPlayerHand(gameState) {
@@ -1357,16 +1543,26 @@ function updateFromDiff(diff) {
     // Update specific components based on diff
     if (diff.players) {
         renderPlayerList(window.SurvivorGame.fullGameState);
+        renderLivesTracker(window.SurvivorGame.fullGameState);
     }
-    
+
     if (diff.phase) {
         updatePhaseIndicator(window.SurvivorGame.fullGameState);
     }
-    
+
     if (diff.currentVote) {
         updateVotingInfo(window.SurvivorGame.fullGameState);
     }
-    
+
+    if (diff.challenge !== undefined) {
+        renderChallengePanel(window.SurvivorGame.fullGameState);
+    }
+
+    if (diff.necklaceHolder !== undefined) {
+        renderPlayerList(window.SurvivorGame.fullGameState);
+        renderLivesTracker(window.SurvivorGame.fullGameState);
+    }
+
     // Additional diff-based updates could be added here
 }
 
@@ -1526,6 +1722,8 @@ function updateCurrentScreen(gameState) {
             renderPlayerHand(gameState);
             renderTurnInfo(gameState);
             updatePhaseIndicator(gameState);
+            renderLivesTracker(gameState);
+            renderChallengePanel(gameState);
             break;
         case 'votingScreen':
             renderVoteTargets(gameState);
@@ -1782,6 +1980,9 @@ window.SurvivorUI = {
     renderPlayerList,
     renderPlayerHand,
     renderVoteTargets,
+    renderLives,
+    renderLivesTracker,
+    renderChallengePanel,
 
     // Modals and notifications
     showModal,
