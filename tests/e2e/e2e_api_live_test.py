@@ -53,7 +53,8 @@ def _unlock_gate(base):
         sys.exit(2)
     print("(access gate unlocked for this test run)")
 
-BASE = "http://localhost:8080"
+# Override with SURVIVOR_TEST_BASE to run against a scratch server instead of :8080
+BASE = os.environ.get("SURVIVOR_TEST_BASE", "http://localhost:8080").rstrip("/")
 _unlock_gate(BASE)
 results = []
 
@@ -622,6 +623,22 @@ st, resp = api(f"/api/game/{gid}/state", {}, method="POST")
 check("state_route_is_get_only", st == 405, st)
 st, resp = api("/api/ping", method="GET")
 check("ping", resp.get("success"), resp)
+
+# ── Wiping a game: gone for good, and every read path agrees ─────────────────
+st, resp = api("/api/game/create", {})
+wipe_gid = resp.get("gameId")
+api("/api/player/join", {"gameId": wipe_gid, "name": "Wanda", "color": "red"})
+api("/api/player/join", {"gameId": wipe_gid, "name": "Wes", "color": "blue"})
+api("/api/game/start", {"gameId": wipe_gid})
+st, resp = api("/api/game/delete", {"gameId": wipe_gid})
+check("wipe_reports_success", resp.get("success") and resp.get("wiped"), resp)
+check("wipe_counts_players", resp.get("playerCount") == 2, resp.get("playerCount"))
+st, resp = api(f"/api/game/{wipe_gid}/state", method="GET")
+check("wiped_game_state_is_gone", st == 404, st)
+st, resp = api("/api/game/delete", {"gameId": wipe_gid})
+check("wipe_twice_is_a_clean_error", resp.get("success") is False, resp)
+st, resp = api("/api/game/delete", {"gameId": "ZZZZZZZZ"})
+check("wipe_unknown_game_rejected", resp.get("success") is False, resp)
 
 print()
 p = sum(1 for _, ok, _ in results if ok)

@@ -5,9 +5,9 @@
 
 // Bump these on every client change — the static cache is cache-first, so a stale
 // cache name means installed PWAs keep running the old game.js/ui.js/styles.css.
-const CACHE_NAME = 'survivor-v3.3.0';
-const STATIC_CACHE = 'survivor-static-v3.3.0';
-const DYNAMIC_CACHE = 'survivor-dynamic-v3.3.0';
+const CACHE_NAME = 'survivor-v3.4.0';
+const STATIC_CACHE = 'survivor-static-v3.4.0';
+const DYNAMIC_CACHE = 'survivor-dynamic-v3.4.0';
 
 // Assets to cache immediately
 const STATIC_ASSETS = [
@@ -208,32 +208,21 @@ async function handleStaticAsset(request) {
  * API Request Handler (Network First with Cache Fallback)
  */
 async function handleAPIRequest(request) {
+    let networkResponse;
+
     try {
         // Try network first, bypassing the HTTP cache entirely — game state changes
         // several times a second and a reused response silently desyncs the board.
-        const networkResponse = await fetch(new Request(request, { cache: 'no-store' }));
-
-
-        if (networkResponse.ok) {
-            // Cache successful GET requests for certain endpoints
-            if (CACHEABLE_API_ENDPOINTS.some(endpoint => request.url.includes(endpoint))) {
-                const cache = await caches.open(DYNAMIC_CACHE);
-                cache.put(request, networkResponse.clone());
-            }
-            return networkResponse;
-        }
-        
-        throw new Error(`Network response not ok: ${networkResponse.status}`);
+        networkResponse = await fetch(new Request(request, { cache: 'no-store' }));
     } catch (error) {
+        // The request never reached the server — this is the only real offline case.
         console.log('API request failed, trying cache:', error.message);
-        
-        // Try cache fallback
+
         const cachedResponse = await caches.match(request);
         if (cachedResponse) {
             return cachedResponse;
         }
-        
-        // Return offline response
+
         return new Response(JSON.stringify({
             success: false,
             message: 'Offline - this action will be retried when connection is restored',
@@ -243,6 +232,16 @@ async function handleAPIRequest(request) {
             headers: { 'Content-Type': 'application/json' }
         });
     }
+
+    // Cache successful GET requests for certain endpoints
+    if (networkResponse.ok && CACHEABLE_API_ENDPOINTS.some(endpoint => request.url.includes(endpoint))) {
+        const cache = await caches.open(DYNAMIC_CACHE);
+        cache.put(request, networkResponse.clone());
+    }
+
+    // The server answered. Pass it through even when it's a 404 or a 500 — a wiped
+    // game must read as "gone", not as "you're offline".
+    return networkResponse;
 }
 
 /**

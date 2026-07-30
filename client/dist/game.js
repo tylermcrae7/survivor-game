@@ -372,6 +372,10 @@ async function safeApiCall(endpoint, data = {}, method = 'POST') {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
+            if (response.status === 404 && endpoint.startsWith('/game/')) {
+                // The game was wiped out from under us — don't keep pretending.
+                window.SurvivorNetwork?.handleGameGone?.();
+            }
             throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
         }
 
@@ -438,6 +442,70 @@ async function submitAccessCode() {
         }
     } catch (error) {
         toast('Could not reach the island — try again', 'error');
+    }
+}
+
+/**
+ * Clear every trace of a game from THIS device and return to the start screen.
+ * Three separate stores remember a game, and missing any one of them means the
+ * phone silently rejoins a game that's gone:
+ *   · localGameState / fullGameState (in memory)
+ *   · 'survivorState'               (join details, used to rejoin)
+ *   · the state manager's cache     (survivor-game-state + survivor-metadata)
+ */
+function wipeLocalGame() {
+    localGameState.gameId = null;
+    localGameState.playerId = null;
+    localGameState.isLeader = false;
+    localGameState.playerColor = null;
+    fullGameState = {};
+    if (window.SurvivorGame) window.SurvivorGame.fullGameState = {};
+
+    try {
+        localStorage.removeItem('survivorState');
+        window.SurvivorStateManager?.clearState();
+    } catch (error) {
+        console.warn('Could not clear stored game state:', error);
+    }
+
+    try {
+        window.SurvivorNetwork?.socketManager?.disconnect?.();
+    } catch (error) { /* not fatal */ }
+
+    // Header chips belong to the old game
+    document.getElementById('gameChip')?.setAttribute('hidden', '');
+    document.getElementById('playerChip')?.setAttribute('hidden', '');
+    document.body.removeAttribute('data-mode');
+
+    const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+    showScreen('startScreen');
+}
+
+/** Leave the game on this phone only — the game itself keeps going. */
+function leaveGame() {
+    wipeLocalGame();
+    (window.SurvivorUI?.showToast || window.showToast)('You have left the island', 'info');
+}
+
+/**
+ * Wipe the game for EVERYONE: the server deletes it and broadcasts game_wiped,
+ * so every connected phone clears itself and returns home.
+ */
+async function wipeGame() {
+    const gameId = localGameState.gameId;
+    const toast = window.SurvivorUI?.showToast || window.showToast;
+    if (!gameId) { wipeLocalGame(); return; }
+
+    try {
+        const result = await safeApiCall('/game/delete', { gameId });
+        if (result && result.success) {
+            toast(result.message || 'The camp is struck', 'success');
+        }
+    } catch (error) {
+        toast(error.message || 'Could not wipe the game', 'error');
+    } finally {
+        // Whatever the server said, this phone goes home
+        wipeLocalGame();
     }
 }
 
@@ -741,6 +809,9 @@ window.SurvivorGame = {
     safeApiCall,
     checkAccessGate,
     submitAccessCode,
+    wipeLocalGame,
+    leaveGame,
+    wipeGame,
     createGame,
     showJoinForm,
     joinGame,

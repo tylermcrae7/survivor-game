@@ -21,6 +21,20 @@ const REQUEST_TIMEOUT = 10000;
 const BATCH_DELAY = 100;
 
 /**
+ * The server says our game is gone — clear this device and head back to shore.
+ * Debounced because several in-flight requests can 404 at once.
+ */
+let gameGoneHandled = false;
+function handleGameGone() {
+    if (gameGoneHandled || !window.SurvivorGame?.localGameState?.gameId) return;
+    gameGoneHandled = true;
+    setTimeout(() => { gameGoneHandled = false; }, 5000);
+
+    showToast('That game is gone — back to the start screen', 'info');
+    window.SurvivorGame?.wipeLocalGame();
+}
+
+/**
  * Enhanced API call function with retry logic and error handling
  */
 async function apiCall(endpoint, data = {}, method = 'POST', options = {}) {
@@ -66,7 +80,15 @@ async function apiCall(endpoint, data = {}, method = 'POST', options = {}) {
             if (!response.ok) {
                 // Try to get error message from response
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+                if (response.status === 404 && endpoint.startsWith('/game/')) {
+                    // Our game no longer exists — someone wiped it while this phone
+                    // was asleep and missed the broadcast. Go home instead of
+                    // polling a dead game code forever.
+                    handleGameGone();
+                }
+                const httpError = new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+                httpError.status = response.status;
+                throw httpError;
             }
             
             const contentType = response.headers.get("content-type");
@@ -88,7 +110,8 @@ async function apiCall(endpoint, data = {}, method = 'POST', options = {}) {
             lastError = error;
             
             // Don't retry on certain errors
-            if (error.name === 'AbortError' || error.message.includes('400')) {
+            if (error.name === 'AbortError' || error.status === 404 ||
+                error.message.includes('400')) {
                 break;
             }
             
@@ -176,6 +199,8 @@ class SocketManager {
         this.latency = 0;
         this.latencyHistory = [];
         this.pendingEmits = []; // Queue events while disconnected
+        this.roomGameId = null; // Which game's broadcast room we're in
+        this.intentionalDisconnect = false; // We hung up on purpose (left/wiped)
     }
 
     /**
@@ -243,12 +268,25 @@ class SocketManager {
     }
     
     async connect(gameId = null) {
+        this.intentionalDisconnect = false;
         if (this.connectionPromise) {
+            // The socket is already up (or coming up) — players almost always pick
+            // their game *after* that, so the room still needs joining or every
+            // room broadcast silently misses this device.
+            if (gameId) this.joinRoom(gameId);
             return this.connectionPromise;
         }
-        
+
+        this.roomGameId = gameId || this.roomGameId;
         this.connectionPromise = this._doConnect(gameId);
         return this.connectionPromise;
+    }
+
+    /** Join (or re-join) a game's broadcast room; queued if the socket isn't up yet. */
+    joinRoom(gameId) {
+        if (!gameId) return;
+        this.roomGameId = gameId;
+        this.emit('join', { gameId });
     }
     
     async _doConnect(gameId) {
@@ -263,7 +301,17 @@ class SocketManager {
                 timeout: 20000,
                 forceNew: true
             });
-            
+
+            // Re-attach every handler registered through on() before this socket
+            // existed. Module setup runs at DOMContentLoaded, long before the first
+            // game is joined — without this, no server push ever reaches the app
+            // and everything silently falls back to HTTP polling.
+            for (const [storedEvent, handlers] of this.eventListeners) {
+                for (const handler of handlers) {
+                    this.socket.on(storedEvent, handler);
+                }
+            }
+
             // Set up event listeners
             this.socket.on('connect', () => {
                 this.isConnected = true;
@@ -289,8 +337,10 @@ class SocketManager {
                 this.startHeartbeat();
 
                 // Join game room if provided (or rejoin on reconnect)
-                const activeGameId = gameId || window.SurvivorGame?.localGameState?.gameId;
+                const activeGameId = gameId || this.roomGameId ||
+                                     window.SurvivorGame?.localGameState?.gameId;
                 if (activeGameId) {
+                    this.roomGameId = activeGameId;
                     this.socket.emit('join', { gameId: activeGameId });
 
                     // Request fresh state on reconnect
@@ -350,6 +400,12 @@ class SocketManager {
 
                 // Stop heartbeat on disconnect
                 this.stopHeartbeat();
+
+                // Leaving or wiping a game hangs up on purpose — no alarm, no
+                // reconnect loop dragging the player back into a dead game.
+                if (this.intentionalDisconnect || reason === 'io client disconnect') {
+                    return;
+                }
 
                 // Show disconnect notification
                 showToast('Connection lost. Attempting to reconnect...', 'warning');
@@ -484,12 +540,19 @@ class SocketManager {
     }
     
     disconnect() {
+        this.intentionalDisconnect = true;
+        this.stopHeartbeat();
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;
         }
         this.isConnected = false;
         this.reconnectAttempts = 0;
+        // Without clearing these, the next connect() returns the old promise and
+        // never opens a socket again.
+        this.connectionPromise = null;
+        this.roomGameId = null;
+        this.pendingEmits = [];
     }
 }
 
@@ -752,6 +815,15 @@ function setupSocketEventHandlers() {
         }
     });
     
+    // The game was wiped for everyone — clear this device completely.
+    socketManager.on('game_wiped', (data) => {
+        const localId = window.SurvivorGame?.localGameState?.gameId;
+        if (data && data.gameId && localId && data.gameId !== localId) return;
+        console.log('🔥 Game wiped');
+        showToast('The camp was struck — this game is gone', 'info');
+        window.SurvivorGame?.wipeLocalGame();
+    });
+
     socketManager.on('global_reset', (data) => {
         console.log('🔄 Global reset received');
         // Handle global reset if needed
@@ -778,6 +850,7 @@ window.SurvivorNetwork = {
     // API
     apiCall,
     GameAPI,
+    handleGameGone,
     
     // Socket management
     socketManager,

@@ -2259,3 +2259,181 @@
     text-transform: lowercase;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CAMP MENU + HALL OF FAME
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* Header menu trigger — a chip that behaves like a button */
+  .game-info .chip-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0.45rem;
+    max-width: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+  }
+  .game-info .chip-btn .icon { width: 1.05rem; height: 1.05rem; }
+  .game-info .chip-btn:hover,
+  .game-info .chip-btn:focus-visible {
+    color: var(--torch);
+    border-color: var(--torch);
+  }
+  .game-info .chip-btn:active { transform: scale(0.94); }
+
+  /* The menu itself */
+  .camp-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .camp-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.8rem 0.9rem;
+    text-align: left;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 160ms ease, background 160ms ease, transform 150ms ease;
+  }
+  .camp-menu-item:hover,
+  .camp-menu-item:focus-visible {
+    border-color: var(--torch);
+    background: var(--surface-raised);
+  }
+  .camp-menu-item:active { transform: scale(0.985); }
+
+  .camp-menu-item .icon {
+    flex: none;
+    width: 1.35rem;
+    height: 1.35rem;
+    color: var(--torch);
+  }
+  .camp-menu-item span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  .camp-menu-item strong {
+    font-family: var(--font-label);
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+  }
+  .camp-menu-item em {
+    font-style: normal;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+  }
+
+  .camp-menu-danger { border-color: color-mix(in oklch, var(--danger) 45%, var(--line)); }
+  .camp-menu-danger .icon,
+  .camp-menu-danger strong { color: var(--danger); }
+  .camp-menu-danger:hover,
+  .camp-menu-danger:focus-visible {
+    border-color: var(--danger);
+    background: color-mix(in oklch, var(--danger) 10%, var(--surface-sunken));
+  }
+
+  /* ── Hall of Fame ── */
+  .hof-list {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .hof-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+  }
+
+  .hof-rank {
+    flex: none;
+    width: 1.6rem;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-faint);
+    text-align: center;
+  }
+
+  .hof-name {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    font-family: var(--font-display);
+    font-size: 1.02rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .hof-date {
+    font-family: var(--font-label);
+    font-style: normal;
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--track-label);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+
+  .hof-wins {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: var(--font-label);
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .hof-wins strong {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    color: var(--torch);
+  }
+  .hof-crown { width: 1.1rem; height: 1.1rem; color: var(--torch); }
+
+  .hof-champion {
+    border-color: var(--torch);
+    background: linear-gradient(
+      100deg,
+      color-mix(in oklch, var(--torch) 14%, var(--surface-sunken)),
+      var(--surface-sunken) 65%
+    );
+  }
+  .hof-champion .hof-rank { color: var(--torch); }
+
+  .hof-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 1.75rem 1rem 1.25rem;
+    text-align: center;
+  }
+  .hof-empty-icon {
+    width: 2.4rem;
+    height: 2.4rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+}

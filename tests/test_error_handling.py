@@ -290,6 +290,51 @@ def test_advance_tribal_phase_errors():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_delete_game():
+    """Wiping a game removes it entirely and reports who was sent home."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing game wipe ===")
+
+        # Test: Unknown game
+        result = gs.delete_game("ZZZZ")
+        print(f"Unknown game: {result}")
+        assert result["success"] is False
+        assert "Game not found" in result["message"]
+
+        game_id = gs.create_game()
+        gs.add_player(game_id, "Alice", "red")
+        gs.add_player(game_id, "Bob", "blue")
+        gs.start_full_game(game_id)
+        assert game_id in gs.games
+
+        # Test: Wipe an in-progress game
+        result = gs.delete_game(game_id)
+        print(f"Wiped: {result}")
+        assert result["success"] is True
+        assert result["wiped"] is True
+        assert result["gameId"] == game_id
+        assert result["playerCount"] == 2
+        assert game_id not in gs.games
+
+        # Test: The game is really gone — the read path agrees
+        assert gs.get_game_state(game_id) is None
+
+        # Test: Wiping twice is a clean error, not a crash
+        again = gs.delete_game(game_id)
+        print(f"Wipe again: {again}")
+        assert again["success"] is False
+
+        # Test: A brand new game can take the same slot
+        next_id = gs.create_game()
+        assert next_id in gs.games
+
+        print("✅ game wipe tests passed!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     print("🧪 Testing GameState Error Handling")
     print("=" * 50)
@@ -299,6 +344,7 @@ if __name__ == "__main__":
         test_steal_card_errors()
         test_cast_vote_errors()
         test_advance_tribal_phase_errors()
+        test_delete_game()
 
         print("🎉 All error handling tests passed!")
         print("✅ Specific, user-friendly error messages are working correctly")

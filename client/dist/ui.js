@@ -2211,6 +2211,10 @@ function renderGameOver(gameState) {
 function updateCurrentScreen(gameState) {
     if (!gameState) return;
 
+    // The Hall of Fame is a deliberate detour — a background state update must
+    // not drag the player back into the game screens.
+    if (currentScreen === 'leaderboardScreen') return;
+
     // Atmosphere + navigation follow the game phase
     setBodyMode(gameState);
     if (routeToPhase(gameState)) return;   // routing re-enters with the new screen
@@ -2586,6 +2590,124 @@ function removeReactiveWaitBanner() {
     document.getElementById('reactiveWaitBanner')?.remove();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMP MENU — leaderboard, leave, and the full wipe
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Header menu: everything that isn't part of playing a turn. */
+function openCampMenu() {
+    const inGame = !!window.SurvivorGame?.localGameState?.gameId;
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+
+    const content = `
+        <div class="camp-menu">
+            ${inGame ? `<p class="picker-hint">Fire <strong>${escapeHtml(gameId)}</strong></p>` : ''}
+            <button class="camp-menu-item touch-target" data-camp="leaderboard">
+                ${icon('crown')}
+                <span><strong>Hall of Fame</strong><em>Every Sole Survivor so far</em></span>
+            </button>
+            ${inGame ? `
+                <button class="camp-menu-item touch-target" data-camp="leave">
+                    ${icon('swap')}
+                    <span><strong>Leave this game</strong><em>Just you — the game keeps going</em></span>
+                </button>
+                <button class="camp-menu-item camp-menu-danger touch-target" data-camp="wipe">
+                    ${icon('torch-out')}
+                    <span><strong>Burn it down</strong><em>Wipe the game for everyone and start fresh</em></span>
+                </button>
+            ` : ''}
+        </div>
+    `;
+
+    showModal(content, { title: 'Camp' });
+
+    setTimeout(() => {
+        document.querySelector('[data-camp="leaderboard"]')?.addEventListener('click', () => {
+            hideModal();
+            showLeaderboard();
+        });
+        document.querySelector('[data-camp="leave"]')?.addEventListener('click', () => {
+            hideModal();
+            window.SurvivorGame?.leaveGame();
+        });
+        document.querySelector('[data-camp="wipe"]')?.addEventListener('click', () => {
+            hideModal();
+            // Destructive and it hits everyone's phone — make them mean it.
+            setTimeout(() => showConfirm(
+                'Burn this game down for everyone? Every player is sent back to the start screen and the game is gone for good.',
+                () => window.SurvivorGame?.wipeGame()
+            ), 120);
+        });
+    }, 0);
+}
+
+/** Hall of Fame — the winners recorded in winners.json. */
+async function showLeaderboard() {
+    const list = document.getElementById('leaderboardList');
+    if (list) list.innerHTML = `<p class="picker-hint">Reading the tribe's history…</p>`;
+    showScreen('leaderboardScreen');
+
+    let winners = [];
+    try {
+        const response = await fetch('/api/winners', { cache: 'no-store' });
+        if (response.ok) winners = await response.json();
+    } catch (error) {
+        console.warn('Could not load winners:', error);
+        if (list) list.innerHTML = `<p class="picker-hint">Couldn't reach the island's records.</p>`;
+        return;
+    }
+
+    if (!list) return;
+    if (!Array.isArray(winners) || !winners.length) {
+        list.innerHTML = `
+            <div class="hof-empty">
+                ${icon('torch-out', 'hof-empty-icon')}
+                <p class="reveal-outcome">No Sole Survivor yet.</p>
+                <p class="picker-hint">Win a game and your name is carved here.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const ranked = [...winners].sort((a, b) =>
+        (b.victories || 0) - (a.victories || 0) ||
+        String(a.winner_name).localeCompare(String(b.winner_name))
+    );
+    const most = ranked[0].victories || 0;
+
+    list.innerHTML = `<ol class="hof-list">${ranked.map((w, i) => {
+        const wins = w.victories || 0;
+        const latest = (w.dates && w.dates[0]) ? w.dates[0] : '';
+        return `
+            <li class="hof-row ${i === 0 && most > 0 ? 'hof-champion' : ''}">
+                <span class="hof-rank">${i + 1}</span>
+                <span class="hof-name">
+                    ${escapeHtml(w.winner_name || 'Unknown')}
+                    ${latest ? `<em class="hof-date">last won ${escapeHtml(latest)}</em>` : ''}
+                </span>
+                <span class="hof-wins">
+                    ${i === 0 && most > 0 ? icon('crown', 'hof-crown') : ''}
+                    <strong>${wins}</strong><em>${wins === 1 ? 'win' : 'wins'}</em>
+                </span>
+            </li>
+        `;
+    }).join('')}</ol>`;
+}
+
+/** Back out of the Hall of Fame to wherever makes sense. */
+function leaveLeaderboard() {
+    const gameState = window.SurvivorGame?.fullGameState;
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    if (gameId && gameState?.phase) {
+        // Land somewhere real first — updateCurrentScreen ignores calls made from
+        // the Hall of Fame on purpose — then let the phase router refine it.
+        showScreen(gameState.phase === 'lobby' ? 'lobbyScreen' : 'playingScreen');
+        updateCurrentScreen(gameState);
+    } else {
+        showScreen('startScreen');
+    }
+}
+
 /** Leader-only control strips on the tribal screens. */
 function setupTribalLeaderControls(gameState, elementId) {
     const el = document.getElementById(elementId);
@@ -2839,6 +2961,9 @@ window.SurvivorUI = {
     renderReactiveTheft,
     renderInteraction,
     beginCardPlay,
+    openCampMenu,
+    showLeaderboard,
+    leaveLeaderboard,
     renderLives,
     renderLivesTracker,
     renderChallengePanel,

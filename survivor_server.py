@@ -2389,6 +2389,34 @@ class GameState:
             "winnerId": winnerId
         }
 
+    def delete_game(self, gid, **kwargs):
+        """
+        Wipe a game out of existence and send everyone back to shore.
+
+        Unlike reset_game (which keeps the tribe and returns them to the lobby),
+        this removes the game entirely so a brand new one can be started. The
+        socket broadcast in handle() tells every connected phone to clear its
+        local state and go home.
+        """
+        if gid not in self.games:
+            return {"success": False, "message": "Game not found"}
+
+        game = self.games[gid]
+        player_count = len(game.get("players", {}))
+        names = [p.get("name", "?") for p in game.get("players", {}).values()]
+
+        del self.games[gid]
+        self._save()
+        logger.info(f"Game {gid} wiped ({player_count} players: {', '.join(names)})")
+
+        return {
+            "success": True,
+            "message": "The camp is struck — this game is gone.",
+            "wiped": True,
+            "gameId": gid,
+            "playerCount": player_count,
+        }
+
     def reset_game(self, gid, **kwargs):
         """Reset game to lobby state."""
         if gid not in self.games:
@@ -2738,7 +2766,11 @@ def handle(action, required):
             return jsonify(success=False, message=f"Action '{action}' failed - invalid request"), 400
 
         try:
-            if action in ['reset_game', 'record_winner']:
+            if action == 'delete_game':
+                # The game no longer exists — tell every phone in the room to
+                # clear local state and return to the start screen.
+                socketio.emit('game_wiped', {'gameId': gid}, to=gid)
+            elif action in ['reset_game', 'record_winner']:
                 socketio.emit('game_reset', {'gameId': gid}, to=gid)
                 socketio.emit('global_reset', {'gameId': gid})
             else:
@@ -3128,6 +3160,8 @@ def api_tb():      return handle('tie_break',['leaderId','chosenId'])
 def api_done():    return handle('complete_tribal',[])
 @app.route('/api/game/reset',methods=['POST'])
 def api_reset():   return handle('reset_game',[])
+@app.route('/api/game/delete',methods=['POST'])
+def api_delete():  return handle('delete_game',[])
 @app.route('/api/game/finish',methods=['POST'])
 def api_finish():  return handle('record_winner',['winnerId'])
 @app.route('/api/tribal/reset',methods=['POST'])
@@ -3253,9 +3287,9 @@ def on_join(data):
         emit('error', {'message': 'Join failed'})
 
 @socketio.on('disconnect')
-def on_disconnect():
-    """Handle client disconnect with logging"""
-    logger.debug(f"Client disconnected: {request.sid}")
+def on_disconnect(reason=None):
+    """Handle client disconnect with logging. python-socketio passes a reason."""
+    logger.debug(f"Client disconnected: {request.sid} ({reason or 'no reason given'})")
 
 @socketio.on('connect')
 def on_connect():
