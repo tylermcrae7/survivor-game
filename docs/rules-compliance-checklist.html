@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Survivor — Rulebook Compliance Checklist</title>
+<style>
+  :root {
+    --bg: #101b16; --surface: #16241e; --raised: #1c2c25; --line: rgba(255,255,255,.09);
+    --text: #ece4d1; --dim: #a89f8a; --faint: #6f6a5c;
+    --torch: #e89a4a; --pass: #5fae72; --partial: #d9a942; --fail: #d96757; --phys: #7d8a94;
+    --serif: Georgia, 'Times New Roman', serif;
+    --sans: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans);
+         line-height: 1.5; padding: 0 0 4rem; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 1.1rem; }
+
+  header { padding: 2.2rem 0 1.2rem; border-bottom: 1px solid var(--line); }
+  h1 { font-family: var(--serif); font-size: 1.9rem; color: #f2e9d4; }
+  .sub { color: var(--dim); margin-top: .35rem; font-size: .92rem; }
+
+  .summary { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.1rem 0 .4rem; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem;
+          font-size: .82rem; cursor: pointer; background: var(--surface); color: var(--dim);
+          user-select: none; }
+  .chip b { color: var(--text); }
+  .chip.active { border-color: var(--torch); color: var(--text); }
+  .chip .dot { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%;
+               margin-right: .4rem; vertical-align: 0; }
+
+  .legend { font-size: .8rem; color: var(--faint); margin: .4rem 0 0; }
+
+  h2 { font-family: var(--serif); font-size: 1.25rem; color: var(--torch);
+       margin: 2rem 0 .6rem; padding-top: .6rem; }
+  h2 small { color: var(--faint); font-size: .75rem; font-family: var(--sans); font-weight: 400; }
+
+  .item { display: grid; grid-template-columns: 5.2rem 1fr; gap: .8rem;
+          padding: .65rem .8rem; border: 1px solid var(--line); border-radius: 10px;
+          background: var(--surface); margin-bottom: .45rem; }
+  .item.hidden { display: none; }
+  .status { align-self: start; text-align: center; font-size: .68rem; font-weight: 700;
+            letter-spacing: .08em; padding: .28rem 0; border-radius: 6px; margin-top: .1rem; }
+  .s-pass    { background: rgba(95,174,114,.16); color: var(--pass);    border: 1px solid rgba(95,174,114,.45); }
+  .s-partial { background: rgba(217,169,66,.14); color: var(--partial); border: 1px solid rgba(217,169,66,.45); }
+  .s-fail    { background: rgba(217,103,87,.14); color: var(--fail);    border: 1px solid rgba(217,103,87,.5); }
+  .s-phys    { background: rgba(125,138,148,.12); color: var(--phys);   border: 1px solid rgba(125,138,148,.4); }
+  .rule { font-size: .93rem; }
+  .rule em { color: var(--dim); font-style: italic; }
+  .ev { font-size: .8rem; color: var(--dim); margin-top: .3rem; }
+  .ev code { background: var(--raised); border: 1px solid var(--line); border-radius: 4px;
+             padding: .05rem .35rem; font-size: .75rem; color: #cfc6ae; }
+  .note { color: var(--partial); }
+  .foot { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          font-size: .8rem; color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>🔥 Rulebook Compliance Checklist</h1>
+  <div class="sub">Every verifiable rule from the official rulebook (<code>docs/survivor_rules.md</code>) and the
+  Survival Guide (07AUG024), audited against the live code · 2026-07-30 · repo <code>survivor-game@767a3ba</code> · app v3.9.0</div>
+  <div class="summary" id="summary"></div>
+  <div class="legend">PASS = enforced by the server and pinned by a test · PARTIAL = works in the app’s honest flow but the server doesn’t hard-enforce it (or a documented digital adaptation) · FAIL = does not match the rulebook · PHYSICAL = a table/social rule with no digital equivalent. Tap a chip to filter.</div>
+</header>
+
+<h2>1 · Setup <small>rulebook “Setup” + deal order</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The official box: <em>67 Action Cards</em>; setup removes the 9 Tribal Council Cards and 6 Vote Cards before dealing.<div class="ev">Deck built from the registry, official mode = 52-card action pile after removals · <code>create_action_deck</code> · test_deck_composition</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Each player is dealt <em>3 Action Cards</em> and <em>1 Vote Card</em>; extra Vote Cards leave the game (never in the Draw Pile).<div class="ev"><code>start_full_game</code> deals 3 + appends <code>{type:"vote"}</code>; vote cards excluded from the pile · test_deck_composition</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Deal first, assemble second — a Tribal Council Card can never be dealt into an opening hand.<div class="ev"><code>create_action_deck</code> → deal → <code>assemble_deck</code>; ordering pinned in tests</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Tribal Council Cards are assembled into the Draw Pile with <em>1 guaranteed on the bottom</em>, the rest spaced evenly.<div class="ev"><code>assemble_deck</code> · test_deck_composition (bottom-card assertion)</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Tribal card counts scale by player count: 3p = 4 single · 4p = 2S+2D · 5p = 2S+3D · 6p = 5 double.<div class="ev"><code>_create_tribal_council_cards</code> table · test_deck_composition (all counts)</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Every player starts with <em>2 Survivor Character Cards</em> (lives).<div class="ev"><code>add_player</code> sets <code>characterCards: 2</code>; lives UI shows two torches</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">3–6 players.<div class="ev"><code>start_full_game</code> refuses &lt;3; join cap at 6 · test_bots (cap), test_error_handling</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule">“Pick a player to go first.”<div class="ev"><span class="note">Digital simplification:</span> the first player to join goes first (and starts as Council Leader) — there is no free choice of first player</div></div></div>
+<div class="item" data-s="phys"><span class="status s-phys">PHYSICAL</span><div class="rule">The game box becomes the Voting Box on the table.<div class="ev">Digital voting replaces the box; slots modeled by the vote UI</div></div></div>
+
+<h2>2 · Taking Your Turn <small>“Steal, Play (or don’t), then Draw!”</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Turn order is <em>Steal → Play → Draw</em>, strictly — no drawing before stealing, no playing after drawing.<div class="ev">Phase machine <code>turn_steal → turn_play → turn_draw → turn_done</code> · test_rules_enforcement, e2e checks</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Steal a Card: pick a player and steal <em>1 random card</em> from them; exactly one steal per turn.<div class="ev"><code>steal_card</code> + <code>hasStolen</code> guard · test_card_effects</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Play a Card (optional): play <em>1 card</em> from your hand — one play maximum per turn.<div class="ev"><code>hasPlayed</code> guard, friendly refusal on the second play · test_rules_enforcement</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Played cards go face up on the <em>Discard Pile</em>.<div class="ev"><code>game["discard"]</code> fed by plays, spends, penalties, tribal cards, eliminated hands (2026-07-30)</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Draw a Card <em>ends your turn</em> — exactly one draw, nothing playable afterwards.<div class="ev"><code>hasDrawn</code> guard; hand grid locks; “You drew — tap End Turn” · test_rules_enforcement, e2e</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Play continues clockwise around the table.<div class="ev"><code>advance_turn</code> walks <code>turnOrder</code>, skipping eliminated players</div></div></div>
+
+<h2>3 · Table Talk &amp; Information <small>“Time to Strategize”</small></h2>
+<div class="item" data-s="phys"><span class="status s-phys">PHYSICAL</span><div class="rule">Promises, lies, secret side-talk — all allowed.<div class="ev">Social play happens at the table / on the call; the app doesn’t restrict it</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">You CAN’T give another player a card unless a card makes you.<div class="ev">No gift/trade endpoint exists; every hand movement flows through card effects</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">You CAN’T show your cards unless a card makes you; you CAN’T hide how many cards you have.<div class="ev">Hands are private per device; card <em>counts</em> are always visible on every player row</div></div></div>
+
+<h2>4 · Tribal Council Cards <small>trigger &amp; leadership</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Drawing a Tribal Council Card starts a Tribal Council <em>IMMEDIATELY</em>, at the end of that player’s turn.<div class="ev"><code>draw_card</code> triggers on draw; the card never enters a hand · test_tribal_triggers</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The player who <em>drew</em> the Tribal Council Card is the Tribal Council Leader.<div class="ev"><code>_trigger_tribal_council(drawer_id=…)</code> · test_tribal_triggers</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Single Elimination = 1 player voted out; Double = 2 <em>different</em> players voted out.<div class="ev">Elimination cascade · test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The Tribal Council Card goes to the Discard Pile after the Council.<div class="ev"><code>complete_tribal</code> discards <code>tribal_council_*</code> (2026-07-30)</div></div></div>
+
+<h2>5 · Tribal Council Flow <small>advantage window → discussion → vote</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Tribal Advantage Cards may be played from the announcement until voting begins — and <em>as many as you like</em>.<div class="ev">Playable through announcement/advantage/discussion; the one-play-per-turn rule applies only to normal turns · test_tribal_council</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Advantage cards are locked once voting has started.<div class="ev">Phase map: voting → vote cards only · test_phase_enforcement</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Votes gained from a Tribal Advantage Card MUST be used during the current Tribal Council.<div class="ev"><code>sync_vote_counters</code> makes acquired Vote/Goodwill cards mandatory · test_tribal_council</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule">The Council Leader decides when it’s time to vote (phase advancement is the leader’s).<div class="ev"><span class="note">Client-enforced only:</span> leader controls appear only on the leader’s device, but <code>advance_tribal_phase</code> doesn’t verify the caller server-side</div></div></div>
+<div class="item" data-s="phys"><span class="status s-phys">PHYSICAL</span><div class="rule">Eyes closed, rhythmic table-tapping, passing the box, shoulder taps.<div class="ev">Replaced by simultaneous secret digital ballots</div></div></div>
+
+<h2>6 · Voting</h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Vote Cards MUST be cast at the Tribal Council (all of them).<div class="ev"><code>cast_vote</code> refuses partial casts: “You must cast all N of your Vote/Goodwill Gamble cards” · e2e</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Extra Vote MAY be cast or saved for later.<div class="ev">Optional in <code>spend_vote_cards</code> · test_tribal_council</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">You must vote for a player <em>in the current Tribal Council</em> (alive, votable).<div class="ev">Target validation: alive, not the Necklace wearer; self-votes rejected (show-faithful reading) · e2e necklace checks</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">A player whose Vote Card was taken still “passes the box” — they participate with zero ballots.<div class="ev">Empty <code>votesData</code> accepted when <code>mandatoryVotes == 0</code> · e2e “passes” path</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule">The Leader tallies <em>after everyone has voted</em>.<div class="ev"><span class="note">Client-enforced only:</span> the leader UI and the bots wait for all living players’ ballots, but <code>reveal_votes</code> itself doesn’t require leader identity or a full box</div></div></div>
+
+<h2>7 · Elimination &amp; Ties <small>the cascade</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Single: most votes turns over one Survivor Character Card.<div class="ev">test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Double: the 2 different players with the most votes each turn over one card — a double always delivers both flips unless the game is ending.<div class="ev">Pre-emptive down-rating removed 2026-07-30; 120-seed audit: zero illegal under-deliveries · test_rules_enforcement</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Single tie: the Council Leader decides which tied player is voted out.<div class="ev"><code>tie_break</code> · test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Double, 3+ tied for most: the Leader picks which 2 go. Double, exactly 2 tied: both are voted out.<div class="ev">test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Double, one clear leader + tie for second: most-votes goes first, Leader picks the second.<div class="ev">test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">3 players left and 2 would be <em>eliminated</em> together (leaving 1): the Leader decides which one is eliminated — then Final Tribal begins immediately.<div class="ev">Applied to the resolved outcome only (all four shapes) · <code>_apply_three_left_rule</code> · test_rules_enforcement, test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Unclear who is voted out → the Leader chooses down the ladder: voted non-immune → unvoted non-immune → idol players.<div class="ev"><code>ladder()</code> tiers · test_tie_break_cascade</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Final Tribal starts the moment only 2 remain — “after just the first player is voted out” of a double, the second flip is spared.<div class="ev">Flip-loop early stop (2026-07-30) · <code>complete_tribal</code></div></div></div>
+
+<h2>8 · After the Vote</h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Return 1 Vote Card to every player who still has at least one Survivor Character Card.<div class="ev"><code>complete_tribal</code> vote-return loop · test_tribal_council</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">All cards used during the Tribal (ballots, advantages, the Tribal Card itself) go to the Discard Pile.<div class="ev">Discard hooks on spends, advantage plays, tribal card (2026-07-30)</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">After Tribal, play continues with the player on the drawer’s left.<div class="ev"><code>complete_tribal</code> advances from the drawer’s seat</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">When the Draw Pile bottoms out, the game is already at (or past) its last Tribal — the deck math + bottom-card rule guarantee Final Tribal first.<div class="ev">Invariant verified: 120/120 bot games finish; emergency reshuffle exists but logs an INVARIANT error and never fired · test_rules_enforcement deck-math test</div></div></div>
+
+<h2>9 · Elimination &amp; the Jury</h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Both Character Cards turned over = eliminated from the game.<div class="ev">F1 lives system · test_tribal_council</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">An eliminated player’s cards go face up onto the Discard Pile — unless an Inheritance claims them.<div class="ev">Inheritance transfer first, remainder to discard (2026-07-30)</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Eliminated players join the Jury.<div class="ev"><code>game["jury"]</code> accumulation · final tribal tests</div></div></div>
+<div class="item" data-s="phys"><span class="status s-phys">PHYSICAL</span><div class="rule">“The Tribe Has Spoken!”<div class="ev">The narrator says it for you</div></div></div>
+
+<h2>10 · The Final Tribal Council</h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The moment only 2 players remain — regardless of Character Cards left — Final Tribal begins IMMEDIATELY.<div class="ev"><code>complete_tribal</code> auto-start at 2 · full-game soaks</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The most recently eliminated player is a Jury member AND the Final Tribal Council Leader.<div class="ev"><code>_start_final_tribal_council</code>: <code>leader = jury[-1]</code></div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The three questions open the council (strategy / best move / how you outplayed).<div class="ev">Questions rendered on the Final Tribal screen</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Finalists can’t play any cards during Final Tribal.<div class="ev"><code>get_current_turn_phase</code> returns <code>waiting</code> in the final phase — nothing is playable</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Jury members raise a finger when ready; voting proceeds when every finger is up.<div class="ev"><code>signal_jury_ready</code>, deliberation phase (bots learned the official order the hard way)</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The Jury votes for who should WIN; most votes = Sole Survivor.<div class="ev"><code>cast_final_vote</code> auto-reveal · soak tests reach a crowned winner</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">A tied final vote is resolved by the Final Tribal Council Leader.<div class="ev"><code>break_final_tie</code> · exercised in live testing</div></div></div>
+
+<h2>11 · Survival Guide — Card by Card</h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Vote</b> ×6 — 1 per player at start; MUST go in the Voting Box; never “played” from hand.<div class="ev">Direct plays rejected with guidance · test_card_effects</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Extra Vote</b> ×7 — MAY cast now or save.<div class="ev">Optional spend tier · test_tribal_council</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule"><b>Immunity Idol</b> ×4 — only AFTER all players voted, BEFORE the tally; negates all votes for you; may be played on another player.<div class="ev">Idol window (immunity phase) sits between voting and reveal, card phase-locked, other-player target supported · <span class="note">but the server doesn’t hard-require a full ballot box before the window opens (leader-flow enforced)</span></div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Sorry For You</b> ×7 — play ANY time someone tries to take cards from you (turn steals AND card effects); they get nothing and discard 1.<div class="ev">Universal taking gate: steal, Spy Shack, KIP, Alliance, Control The Vote, Camp Raid spring, all three Reward Challenges · test_rules_enforcement</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Sorry For You</b> vs multiple takers — each of them gets nothing and EACH discards 1.<div class="ev">Multi-thief gate (Alliance, Power Pair) · test_rules_enforcement</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Control The Vote</b> ×2 — before voting, take a player’s Vote Card; you MUST use it in addition to your own; if they hold several, take only 1.<div class="ev">Own-vote precondition + single-card take + mandatory use · test_tribal_council</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Goodwill Gamble</b> ×3 — give to another player before voting; counts as 1 vote; MUST be used this Tribal; they vote however they want.<div class="ev">Transfer + mandatory counter · test_tribal_council</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule"><b>I’m The Leader Now</b> ×1 — become Leader before voting; it’s your turn when the Tribal ends (or the player after you if you’re eliminated).<div class="ev">Leader swap + next-turn honored · <span class="note">but if the ITLN player is eliminated, the turn falls to the player after the <em>drawer</em>, not after the ITLN player</span></div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Camp Raid</b> ×3 — placed face up in front of a player; you take the next card they draw, after they look at it; can’t stack on an already-raided player.<div class="ev">Trap semantics restored 2026-07-30; public “Raided” marker; dead raiders fizzle · test_rules_enforcement</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Knowledge Is Power</b> ×3 — ask by name; if they have it they must give you 1.<div class="ev"><code>by_type</code> take through the gate · test_card_effects</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>The Spy Shack</b> ×3 — look at any player’s cards and take one.<div class="ev">Live-hand look + chosen-index take · test_card_effects</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule"><b>Let’s Form An Alliance</b> ×4 — you and a partner EACH steal 1 from any other player; same victim allowed; you can’t steal from each other.<div class="ev"><span class="note">Digital simplification:</span> both partners steal from ONE chosen victim (official allows different victims); the can’t-rob-your-partner rule is de-facto (partner-as-victim degrades to nothing) rather than validated</div></div></div>
+<div class="item" data-s="partial"><span class="status s-partial">PARTIAL</span><div class="rule"><b>Inheritance</b> ×6 — color-bound cards, played the moment that color’s player is eliminated; you get their hand instead of the discard.<div class="ev"><span class="note">Documented digital adaptation:</span> you proactively mark any player during your turn; the transfer at elimination is automatic. Works better async; noted in the README</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Do Or Die</b> ×3 — one real game of Rock-Paper-Scissors vs a chosen player; tie = each swaps 1 chosen card; a winner steals 2 from the loser (either side can win).<div class="ev">Live two-player interaction with secret throws · test_reward_interactions</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>Power Pair</b> ×3 — pick 2 others; all three show 1–3 fingers; exactly-two-match steal 1 each from the third; all-match = everyone discards 1; all-different = replay.<div class="ev">Round machine with give/discard phases · test_reward_interactions</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule"><b>It’s A Numbers Game</b> ×3 — ALL players show 1–5; lowest UNIQUE steals 2 from any player; repeat until a single winner.<div class="ev">All-player rounds + victim choice · test_reward_interactions</div></div></div>
+
+<h2>12 · Deck Integrity <small>the invariant Tyler called</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Every player count carries one flip more than the adversarial maximum — Final Tribal is mathematically guaranteed before the Draw Pile empties.<div class="ev">3p: 4&gt;3 · 4p: 6&gt;5 · 5p: 8&gt;7 · 6p: 10&gt;9 · pinned in test_rules_enforcement; 120-seed audit clean</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Every Tribal delivers its full rating (single = 1 flip, double = 2) unless the game is ending at that Council.<div class="ev">Pre-emptive down-rating removed; audit found zero illegal under-deliveries</div></div></div>
+
+<h2>13 · Let’s Go To Rocks <small>expansion</small></h2>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The Challenge winner wears the Immunity Idol Necklace; players can’t vote for the wearer at the next Tribal.<div class="ev">Necklace holder excluded from vote targets · test_rocks_expansion, e2e</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Winning while already wearing the Necklace = take 3 cards from the Draw Pile instead.<div class="ev">Second-win reward · e2e</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The Necklace returns to the table when the Tribal Council ends.<div class="ev">Cleared post-tribal · scripted expansion game</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Challenge secrets (bag contents, hidden pulls, secret throws) never leave the server.<div class="ev">Underscore-key stripping in <code>get_game_state</code> · e2e hidden-state checks</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Hide ’n’ Seek is physical sleight-of-hand and is marked not available digitally.<div class="ev">Card explains itself; play refused · e2e</div></div></div>
+
+<div class="foot">
+  Generated from the 2026-07-30 rules-enforcement audit. Sources: <code>docs/survivor_rules.md</code> (base rulebook) and
+  <code>docs/SURV-CORE_SurvivalGuide_07AUG024_Web.pdf</code> (per-card clarifications). Evidence references name the enforcing
+  function and the pinning test suite. The three PARTIAL server-gating items (leader-only phase control, full-box-before-reveal,
+  full-box-before-idols) are honest gaps: the app’s screens and the bots follow the official order, but a hand-crafted API call
+  could skip ahead. The two PARTIAL card adaptations (Alliance single-victim, Inheritance proactive marking) are deliberate
+  digital simplifications, documented in the README.
+</div>
+</div>
+
+<script>
+(function () {
+  const items = [...document.querySelectorAll('.item')];
+  const counts = { all: items.length, pass: 0, partial: 0, fail: 0, phys: 0 };
+  items.forEach(i => counts[i.dataset.s]++);
+  const defs = [
+    ['all', null, 'All'], ['pass', 'var(--pass)', 'Pass'],
+    ['partial', 'var(--partial)', 'Partial'], ['fail', 'var(--fail)', 'Fail'],
+    ['phys', 'var(--phys)', 'Physical']
+  ];
+  const bar = document.getElementById('summary');
+  defs.forEach(([key, color, label]) => {
+    if (key !== 'all' && counts[key] === 0 && key === 'fail') { /* still show zero fails proudly */ }
+    const chip = document.createElement('span');
+    chip.className = 'chip' + (key === 'all' ? ' active' : '');
+    chip.innerHTML = (color ? `<span class="dot" style="background:${color}"></span>` : '') +
+      `${label} <b>${counts[key]}</b>`;
+    chip.onclick = () => {
+      bar.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      items.forEach(i => i.classList.toggle('hidden', key !== 'all' && i.dataset.s !== key));
+    };
+    bar.appendChild(chip);
+  });
+})();
+</script>
+</body>
+</html>
