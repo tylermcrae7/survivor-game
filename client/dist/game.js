@@ -453,6 +453,18 @@ async function submitAccessCode() {
  *   · 'survivorState'               (join details, used to rejoin)
  *   · the state manager's cache     (survivor-game-state + survivor-metadata)
  */
+async function addBot() {
+    const gameId = localGameState.gameId;
+    if (!gameId) { toast('Join a game first', 'warning'); return; }
+    await safeApiCall('/player/add_bot', { gameId });
+}
+
+async function removeBot(playerId) {
+    const gameId = localGameState.gameId;
+    if (!gameId || !playerId) return;
+    await safeApiCall('/player/remove_bot', { gameId, playerId });
+}
+
 function wipeLocalGame() {
     localGameState.gameId = null;
     localGameState.playerId = null;
@@ -810,6 +822,8 @@ window.SurvivorGame = {
     checkAccessGate,
     submitAccessCode,
     wipeLocalGame,
+    addBot,
+    removeBot,
     leaveGame,
     wipeGame,
     createGame,

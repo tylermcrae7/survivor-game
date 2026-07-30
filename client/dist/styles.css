@@ -2632,3 +2632,23 @@
 
   #cardSheetPlayBtn { width: 100%; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPUTER PLAYERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .add-bot-btn { width: 100%; margin-top: 0.55rem; }
+  .add-bot-btn .icon { width: 1.05rem; height: 1.05rem; vertical-align: -0.2em; }
+
+  .bot-badge {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    color: var(--text-faint);
+    margin-left: 0.3rem;
+  }
+  .bot-badge .icon { width: 0.95rem; height: 0.95rem; }
+
+  .bot-remove-btn:hover,
+  .bot-remove-btn:focus-visible { color: var(--danger); }
+}

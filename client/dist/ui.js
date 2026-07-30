@@ -578,6 +578,12 @@ function renderPlayerList(gameState) {
     });
     container.querySelector('[data-action="renameSelf"]')
         ?.addEventListener('click', (e) => { e.stopPropagation(); showRenameForm(); });
+    container.querySelectorAll('[data-action="removeBot"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.SurvivorGame?.removeBot(btn.dataset.playerId);
+        });
+    });
 }
 
 /** Lobby-only: change your own name before the game starts. */
@@ -661,8 +667,12 @@ function createPlayerCard(player, gameState) {
             <div class="player-info">
                 <div class="player-name">
                     ${escapeHtml(formatPlayerName(player))}
+                    ${player.isBot ? `<span class="bot-badge" title="Computer player">${icon('bot')}</span>` : ''}
                     ${canRename ? `<button class="rename-btn" data-action="renameSelf"
                         aria-label="Change your name" title="Change your name">${icon('pencil')}</button>` : ''}
+                    ${player.isBot && gameState?.phase === 'lobby' ? `<button class="rename-btn bot-remove-btn"
+                        data-action="removeBot" data-player-id="${escapeHtml(player.id)}"
+                        aria-label="Remove ${escapeHtml(player.name)}" title="Send them back to the jungle">${icon('x')}</button>` : ''}
                 </div>
                 <div class="player-status">
                     ${renderLives(player)}
@@ -716,7 +726,7 @@ function renderLivesTracker(gameState) {
             <div class="${classes}" data-player-id="${escapeHtml(id)}"
                  ${stealable ? `data-steal-target="${escapeHtml(id)}" role="button" tabindex="0" aria-label="Steal a card from ${escapeHtml(player.name)}"` : ''}>
                 <span class="lives-dot" style="background: ${escapeHtml(player.color || '#666')}">${escapeHtml(player.name.charAt(0).toUpperCase())}</span>
-                <span class="lives-name">${escapeHtml(formatPlayerName(player, 12))}${isMe ? ' <small style="color:var(--text-faint)">(you)</small>' : ''}</span>
+                <span class="lives-name">${escapeHtml(formatPlayerName(player, 12))}${player.isBot ? ` <span class="bot-badge">${icon('bot')}</span>` : ''}${isMe ? ' <small style="color:var(--text-faint)">(you)</small>' : ''}</span>
                 ${renderLives(player)}
                 ${meta}
             </div>
@@ -2236,6 +2246,12 @@ function renderGameOver(gameState) {
         || '';
 
     winnerInfo.textContent = winnerName ? winnerName : 'The tribe has spoken.';
+
+    // Games with computer players never enter the Hall of Fame — the server
+    // refuses, so don't offer the button.
+    const hasBot = Object.values(gameState.players || {}).some(p => p.isBot);
+    const recordBtn = document.querySelector('#gameOverActions [data-action="recordWinner"]');
+    if (recordBtn) recordBtn.style.display = hasBot ? 'none' : '';
 }
 
 /**

@@ -9,6 +9,8 @@ from functools import wraps
 from rules_engine import SurvivorRulesEngine, TribalPhase
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS
 from interactions import interaction_engine
+import bots as bots_module
+from bots import BotRunner
 
 try:
     from flask import Flask, request, jsonify, send_from_directory
@@ -1772,6 +1774,66 @@ class GameState:
             "newLeaderId": newLeaderId
         }
 
+    def add_bot(self, gid, **kwargs):
+        """Add a computer player to a lobby. The server picks name and color."""
+        g = self.games.get(gid)
+        if not g:
+            return {"success": False, "message": "Game not found"}
+        if g.get("phase") != "lobby":
+            return {"success": False, "message": "Computer players can only join in the lobby"}
+        if len(g["players"]) >= 6:
+            return {"success": False, "message": "Game is full — maximum 6 players."}
+
+        taken_names = {p.get("name", "").lower() for p in g["players"].values()}
+        name = next((n for n in bots_module.BOT_NAMES
+                     if n.lower() not in taken_names), None)
+        if name is None:
+            return {"success": False, "message": "The island is out of computer players"}
+
+        taken_colors = {p.get("color") for p in g["players"].values()}
+        color = next((c for c in bots_module.BOT_COLORS
+                      if c not in taken_colors), None)
+
+        validation = self.validate_new_player(gid, name, color)
+        if not validation.get("success"):
+            return validation
+        pid = self.add_player(gid, name, color)
+        if not pid:
+            return {"success": False, "message": "Could not add the computer player"}
+        g["players"][pid]["isBot"] = True
+        self._save()
+        logger.info(f"Bot {name} ({pid}) added to game {gid}")
+        return {"success": True, "message": f"{name} wanders into camp",
+                "playerId": pid, "name": name}
+
+    def remove_bot(self, gid, playerId=None, **kwargs):
+        """Remove a computer player — lobby only, bots only."""
+        g = self.games.get(gid)
+        if not g:
+            return {"success": False, "message": "Game not found"}
+        if g.get("phase") != "lobby":
+            return {"success": False, "message": "The game has started — the tribe is set."}
+        player = g["players"].get(playerId)
+        if not player:
+            return {"success": False, "message": "Invalid player ID"}
+        if not player.get("isBot"):
+            return {"success": False, "message": "Only computer players can be removed"}
+
+        name = player.get("name", "?")
+        was_leader = player.get("isCouncilLeader")
+        del g["players"][playerId]
+        if playerId in g.get("turnOrder", []):
+            g["turnOrder"].remove(playerId)
+        # A departing leader hands the torch to the first remaining player
+        if was_leader and g["players"]:
+            first = next(iter(g["players"]))
+            g["players"][first]["isCouncilLeader"] = True
+            if "currentVote" in g:
+                g["currentVote"]["councilLeaderId"] = first
+        self._save()
+        logger.info(f"Bot {name} ({playerId}) removed from game {gid}")
+        return {"success": True, "message": f"{name} walks back into the jungle"}
+
     def rename_player(self, gid, playerId=None, newName=None, **kwargs):
         """Rename a player. Only allowed in the lobby — once the game starts,
         you are who the tribe knows you as."""
@@ -2356,7 +2418,13 @@ class GameState:
             return {"success": False, "message": "winnerId is required"}
         
         game = self.games[gid]
-        
+
+        # House rule: a game with a computer player in it is practice, not
+        # history — it never writes to the Hall of Fame.
+        if any(p.get("isBot") for p in game["players"].values()):
+            return {"success": False,
+                    "message": "Games with computer players aren't recorded in the Hall of Fame"}
+
         # Validate winner exists
         if winnerId not in game["players"]:
             return {"success": False, "message": "Invalid winner ID"}
@@ -2815,6 +2883,13 @@ def handle(action, required):
 
         except Exception as e:
             logger.error(f"Socket operation=state_update gameId={gid} error: {e}")
+
+        # A state change may put a bot on the clock
+        if bot_runner:
+            try:
+                bot_runner.poke(gid)
+            except Exception as e:
+                logger.error(f"Bot poke failed for {gid}: {e}")
 
         response_data = {"success": True}
         if isinstance(result, dict):
@@ -3319,6 +3394,10 @@ def api_reset():   return handle('reset_game',[])
 def api_delete():  return handle('delete_game',[])
 @app.route('/api/player/rename',methods=['POST'])
 def api_rename():  return handle('rename_player',['playerId','newName'])
+@app.route('/api/player/add_bot',methods=['POST'])
+def api_add_bot():    return handle('add_bot',[])
+@app.route('/api/player/remove_bot',methods=['POST'])
+def api_remove_bot(): return handle('remove_bot',['playerId'])
 @app.route('/api/game/finish',methods=['POST'])
 def api_finish():  return handle('record_winner',['winnerId'])
 @app.route('/api/tribal/reset',methods=['POST'])
@@ -3546,6 +3625,33 @@ def handle_unhandled_exception(e):
     return jsonify(success=False, message=f"An internal server error occurred: {str(e)}"), 500
 
 
+# ── Computer players ─────────────────────────────────────────────────────────
+# The runner is created at server startup (game_state doesn't exist on import);
+# everything here tolerates bot_runner being None so test imports are unaffected.
+bot_runner = None
+
+def _bot_broadcast(gid, action):
+    """Bots act outside any request context — push fresh state to the room."""
+    game_data = game_state.get_game_state(gid) or {}
+    socketio.emit('state_update', game_data, to=gid)
+
+def _bot_spawn_later(delay, fn, *args):
+    def _run():
+        socketio.sleep(delay)
+        fn(*args)
+    socketio.start_background_task(_run)
+
+def _bot_heartbeat_loop():
+    """Backstop: every couple of seconds the bots look at their games. The
+    poke-after-action path makes them responsive; this makes them unstoppable."""
+    while True:
+        socketio.sleep(2)
+        try:
+            bot_runner.heartbeat()
+        except Exception as e:
+            logger.error(f"Bot heartbeat error: {e}")
+
+
 if __name__=='__main__':
     import signal
     signal.signal(signal.SIGTERM, cleanup_handler)
@@ -3565,6 +3671,9 @@ if __name__=='__main__':
     try:
         start_time = time.time()
         game_state = GameState()
+        bot_runner = BotRunner(game_state, broadcast=_bot_broadcast)
+        bot_runner.attach(_bot_spawn_later)
+        socketio.start_background_task(_bot_heartbeat_loop)
         IP = get_local_ip()
         port = int(os.environ.get('PORT', 0)) or find_available_port()
         

@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import urllib.error
+import time
 import urllib.request
 
 # Cookie-aware opener: when the target server is code-locked (SURVIVOR_ACCESS_CODE
@@ -665,6 +666,112 @@ api("/api/game/start_full", {"gameId": rn_gid})
 st, resp = api("/api/player/rename", {"gameId": rn_gid, "playerId": rn_pid, "newName": "TooLate"})
 check("rename_locked_after_start", resp.get("success") is False and "started" in resp.get("message", ""), resp)
 api("/api/game/delete", {"gameId": rn_gid})
+
+# ── Computer players: lifecycle + they actually take their turns ─────────────
+st, resp = api("/api/game/create", {})
+bot_gid = resp.get("gameId")
+st, resp = api("/api/player/join", {"gameId": bot_gid, "name": "Human", "color": "red"})
+human_pid = resp.get("playerId")
+st, resp = api("/api/player/add_bot", {"gameId": bot_gid})
+check("add_bot_works", resp.get("success") and resp.get("playerId"), resp)
+first_bot = resp.get("playerId")
+st, resp = api("/api/player/add_bot", {"gameId": bot_gid})
+check("second_bot_gets_unique_name", resp.get("success"), resp)
+game = state(bot_gid)
+bots_in_state = [p for p, pl in game.get("players", {}).items() if pl.get("isBot")]
+check("bots_flagged_in_state", len(bots_in_state) == 2, bots_in_state)
+st, resp = api("/api/player/remove_bot", {"gameId": bot_gid, "playerId": first_bot})
+check("remove_bot_works", resp.get("success"), resp)
+st, resp = api("/api/player/remove_bot", {"gameId": bot_gid, "playerId": human_pid})
+check("remove_bot_refuses_humans", resp.get("success") is False, resp)
+api("/api/player/add_bot", {"gameId": bot_gid})
+api("/api/game/start_full", {"gameId": bot_gid})
+
+# The Hall of Fame stays clean no matter who wins a practice game
+st, resp = api("/api/game/finish", {"gameId": bot_gid, "winnerId": human_pid})
+check("bot_game_never_recorded", resp.get("success") is False
+      and "Hall of Fame" in str(resp.get("message", "")), resp)
+
+# Bots take their turns unattended: wait for the torch to come around to the
+# human, play the human turn, then wait for it to come around again — that
+# second arrival means every bot in between played a full turn on its own.
+def _answer_the_island(g):
+    """While waiting, the human seat must still answer anything aimed at it —
+    a raid (Sorry For You window), a Reward Challenge pick, a Rocks turn —
+    exactly like a person tapping the dialogs the app shows them."""
+    theft = g.get("pending_theft") or {}
+    if theft.get("reactive_window_open") and theft.get("targetId") == human_pid:
+        api("/api/reactive/complete_theft", {"gameId": bot_gid})
+        return True
+    it = g.get("interaction") or {}
+    if it:
+        if it.get("phase") == "picking" and human_pid in (it.get("awaiting") or []):
+            value = "rock" if it.get("type") == "do_or_die" else 2
+            api("/api/interaction/act", {"gameId": bot_gid, "playerId": human_pid,
+                                         "action": "pick", "value": value})
+            return True
+        if it.get("phase") == "give" and human_pid in (it.get("awaiting") or []):
+            api("/api/interaction/act", {"gameId": bot_gid, "playerId": human_pid,
+                                         "action": "give", "value": 0})
+            return True
+        if it.get("phase") == "choose_victim" and it.get("winnerId") == human_pid:
+            victim = next((p for p in g.get("turnOrder", []) if p != human_pid), None)
+            if victim:
+                api("/api/interaction/act", {"gameId": bot_gid, "playerId": human_pid,
+                                             "action": "steal_from", "value": victim})
+            return True
+    ch = g.get("challenge") or {}
+    if ch and ch.get("phase") != "complete" and ch.get("currentPlayerId") == human_pid:
+        actions = ch.get("actions") or []
+        if actions:
+            action, value = actions[0], None
+            if action == "bid":
+                value = ch.get("currentBid", 0) + 1
+                if value > ch.get("maxBid", value) and "pass" in actions:
+                    action, value = "pass", None
+            elif action == "pull" and ch.get("type") == "lowest_score_loses":
+                value = 1
+            elif action == "steal":
+                action = "pull" if "pull" in actions else action
+            api("/api/challenge/action", {"gameId": bot_gid, "playerId": human_pid,
+                                          "action": action, "value": value})
+            return True
+    if ch and ch.get("phase") == "complete" and ch.get("winnerId") == human_pid:
+        api("/api/challenge/action", {"gameId": bot_gid, "playerId": human_pid,
+                                      "action": "dismiss"})
+        return True
+    return False
+
+
+def _wait_for_human_turn(timeout=45):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        g = state(bot_gid)
+        if g.get("phase") == "tribal_council":
+            # a bot's draw triggered tribal — that's bots working too
+            return "tribal", g
+        if _answer_the_island(g):
+            time.sleep(0.3)
+            continue
+        order = g.get("turnOrder") or []
+        if order and order[g.get("currentTurnIndex", 0) % len(order)] == human_pid \
+                and not g.get("interaction") and not g.get("challenge"):
+            return "turn", g
+        time.sleep(0.5)
+    return "timeout", state(bot_gid)
+
+outcome1, g = _wait_for_human_turn()
+check("bots_play_until_human_turn", outcome1 in ("turn", "tribal"), outcome1)
+if outcome1 == "turn":
+    victim = next(p for p in g["turnOrder"] if p != human_pid)
+    api("/api/turn/steal", {"gameId": bot_gid, "thiefId": human_pid, "targetId": victim})
+    api("/api/reactive/complete_theft", {"gameId": bot_gid})
+    r = api("/api/turn/draw", {"gameId": bot_gid, "playerId": human_pid})[1]
+    if not r.get("tribal_triggered"):
+        api("/api/turn/advance", {"gameId": bot_gid})
+    outcome2, _ = _wait_for_human_turn()
+    check("bots_keep_playing_after_human_turn", outcome2 in ("turn", "tribal"), outcome2)
+api("/api/game/delete", {"gameId": bot_gid})
 
 # ── Scrub this run's wins from the Hall of Fame ──────────────────────────────
 try:
