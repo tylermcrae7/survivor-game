@@ -1092,19 +1092,76 @@ function handleCardClick(event) {
 
     const cardIndex = parseInt(cardElement.dataset.cardIndex);
     const cardType = cardElement.dataset.cardType;
-    const requiresTarget = cardElement.dataset.requiresTarget === 'true';
 
     // Haptic feedback on card interaction
     hapticFeedback('medium');
 
-    if (requiresTarget) {
-        showTargetSelectionModal(cardIndex, cardType);
-    } else {
-        playCard(cardIndex);
-    }
+    beginCardPlay(cardIndex, cardType);
 
     // Add visual feedback
     addCardPlayAnimation(cardElement);
+}
+
+/**
+ * Card play pipeline — collects every parameter a card needs before it leaves
+ * your hand. Some cards need more than a target: Knowledge Is Power names a
+ * card, Do Or Die throws rock/paper/scissors, an Alliance picks two players.
+ * Without these prompts the server either rejects the play or (worse) consumes
+ * the card with no effect.
+ */
+function beginCardPlay(cardIndex, cardType) {
+    const cardInfo = window.SurvivorGame?.getCardInfo(cardType);
+
+    switch (cardType) {
+        case 'knowledge_is_power':
+            // Target first, then name the card you demand from them
+            showPlayerPicker({
+                title: 'Knowledge Is Power',
+                hint: 'Whose camp do you interrogate?',
+                onPick: (targetId) => showCardNamePicker({
+                    title: 'Name the card',
+                    hint: 'If they have one, they must hand it over.',
+                    onPick: (namedType) => playCard(cardIndex, { targetId, cardType: namedType })
+                })
+            });
+            return;
+
+        case 'reward_challenge_do_or_die':
+            // Opponent first, then your secret throw
+            showPlayerPicker({
+                title: 'Do Or Die',
+                hint: 'Challenge someone to Rock · Paper · Scissors.',
+                onPick: (targetId) => showRpsPicker({
+                    onPick: (choice) => playCard(cardIndex, { targetId, choice })
+                })
+            });
+            return;
+
+        case 'lets_form_an_alliance':
+            // Partner first, then the victim (who can't be the partner)
+            showPlayerPicker({
+                title: "Let's Form An Alliance",
+                hint: 'Choose your partner in crime.',
+                onPick: (allyId) => showPlayerPicker({
+                    title: "Let's Form An Alliance",
+                    hint: 'Now choose the victim — you each steal one of their cards.',
+                    excludeIds: [allyId],
+                    onPick: (victimId) => playCard(cardIndex, { allyId, victimId })
+                })
+            });
+            return;
+
+        default:
+            if (cardInfo?.requiresTarget) {
+                showPlayerPicker({
+                    title: cardInfo?.name || 'Select Target',
+                    hint: 'Choose a player.',
+                    onPick: (targetId) => playCard(cardIndex, { targetId })
+                });
+            } else {
+                playCard(cardIndex);
+            }
+    }
 }
 
 function handleVoteTargetClick(event) {
@@ -1152,7 +1209,7 @@ function handleLeaderClick(event) {
 /**
  * Game Actions
  */
-async function playCard(cardIndex, targetId = null) {
+async function playCard(cardIndex, params = {}) {
     const gameId = window.SurvivorGame?.localGameState.gameId;
     const playerId = window.SurvivorGame?.localGameState.playerId;
 
@@ -1161,9 +1218,11 @@ async function playCard(cardIndex, targetId = null) {
         return;
     }
 
+    // Back-compat: older call sites passed a bare targetId string
+    if (typeof params === 'string') params = { targetId: params };
+
     try {
         showLoading('Playing card...');
-        const params = targetId ? { targetId } : {};
         const result = await window.SurvivorNetwork?.GameAPI.playCard(gameId, playerId, cardIndex, params);
 
         if (result && result.success) {
@@ -1328,27 +1387,31 @@ function confirmAction(confirmed) {
     hideModal();
 }
 
-function showTargetSelectionModal(cardIndex, cardType) {
+/**
+ * Prompt helpers for the card play pipeline.
+ * All of them render into the shared modal and hand the choice to `onPick`.
+ */
+function showPlayerPicker({ title = 'Select Target', hint = '', excludeIds = [], onPick }) {
     const gameState = window.SurvivorGame?.fullGameState;
-    if (!gameState) return;
+    if (!gameState?.players) return;
 
     const playerId = window.SurvivorGame?.localGameState.playerId;
-    const eligibleTargets = Object.values(gameState.players).filter(player =>
-        player.id !== playerId && !player.isEliminated
+    const eligible = Object.values(gameState.players).filter(player =>
+        player.id !== playerId && !player.isEliminated && !excludeIds.includes(player.id)
     );
 
     const content = `
         <div class="target-selection">
-            <p>Select a target for your card:</p>
+            ${hint ? `<p class="picker-hint">${escapeHtml(hint)}</p>` : ''}
             <div class="target-grid">
-                ${eligibleTargets.map(player => {
+                ${eligible.map(player => {
                     const safeId = escapeHtml(player.id);
                     const safeName = escapeHtml(formatPlayerName(player));
+                    const safeColor = escapeHtml(player.color || '#666');
                     return `
-                        <button class="btn btn-secondary target-option"
-                                data-target-id="${safeId}"
-                                data-card-index="${cardIndex}">
-                            ${safeName}
+                        <button class="target-option touch-target" data-target-id="${safeId}">
+                            <span class="target-dot" style="background:${safeColor}"></span>
+                            <span class="target-name">${safeName}</span>
                         </button>
                     `;
                 }).join('')}
@@ -1356,24 +1419,101 @@ function showTargetSelectionModal(cardIndex, cardType) {
         </div>
     `;
 
-    showModal(content, { title: 'Select Target' });
+    showModal(content, { title });
 
-    // Bind target selection events safely (no inline onclick)
     setTimeout(() => {
         document.querySelectorAll('.target-option').forEach(btn => {
             btn.addEventListener('click', () => {
-                const targetId = btn.dataset.targetId;
-                const idx = btn.dataset.cardIndex;
-                selectTarget(idx, targetId);
+                hideModal();
+                onPick && onPick(btn.dataset.targetId);
             });
         });
     }, 0);
 }
 
+/** Grid of every nameable card — for Knowledge Is Power's demand. */
+const HOUSE_CARD_TYPES = ['idol_nullifier', 'steal_vote', 'block_vote', 'grant_immunity'];
+
+function showCardNamePicker({ title = 'Name a card', hint = '', onPick }) {
+    const cards = window.SurvivorGame?.SURVIVOR_CARDS || {};
+    const gameState = window.SurvivorGame?.fullGameState || {};
+
+    // Only offer cards that can actually be in someone's hand in THIS game:
+    // no tribal council cards ever, no Challenge cards outside the expansion,
+    // no house cards outside the extended deck.
+    const nameable = Object.values(cards)
+        .filter(c => c.category !== 'tribal_council')
+        .filter(c => gameState.expansion || c.category !== 'challenge')
+        .filter(c => gameState.deckMode === 'extended' || !HOUSE_CARD_TYPES.includes(c.type))
+        .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
+
+    const content = `
+        <div class="cardname-selection">
+            ${hint ? `<p class="picker-hint">${escapeHtml(hint)}</p>` : ''}
+            <div class="cardname-grid">
+                ${nameable.map(c => `
+                    <button class="cardname-option touch-target" data-card-type="${escapeHtml(c.type)}">
+                        <span class="cardname-cat">${escapeHtml(CATEGORY_LABELS[c.category] || c.category)}</span>
+                        <span class="cardname-name">${escapeHtml(c.name)}</span>
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    showModal(content, { title });
+
+    setTimeout(() => {
+        document.querySelectorAll('.cardname-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hideModal();
+                onPick && onPick(btn.dataset.cardType);
+            });
+        });
+    }, 0);
+}
+
+/** Rock · Paper · Scissors throw for Do Or Die. */
+function showRpsPicker({ onPick }) {
+    const throws = [
+        { value: 'rock',     label: 'Rock',     mark: '●' },
+        { value: 'paper',    label: 'Paper',    mark: '▭' },
+        { value: 'scissors', label: 'Scissors', mark: '✕' },
+    ];
+    const content = `
+        <div class="rps-selection">
+            <p class="picker-hint">Make your throw — winner steals 2 cards, a tie swaps 1.</p>
+            <div class="rps-row">
+                ${throws.map(t => `
+                    <button class="rps-option touch-target" data-choice="${t.value}">
+                        <span class="rps-mark" aria-hidden="true">${t.mark}</span>
+                        <span class="rps-label">${t.label}</span>
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    showModal(content, { title: 'Do Or Die' });
+
+    setTimeout(() => {
+        document.querySelectorAll('.rps-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hideModal();
+                onPick && onPick(btn.dataset.choice);
+            });
+        });
+    }, 0);
+}
+
+/** Back-compat shims — older call sites route through the pipeline. */
+function showTargetSelectionModal(cardIndex, cardType) {
+    beginCardPlay(parseInt(cardIndex), cardType);
+}
+
 function selectTarget(cardIndex, targetId) {
     hideModal();
-    // Pass target info to playCard function
-    playCard(parseInt(cardIndex), targetId);
+    playCard(parseInt(cardIndex), { targetId });
 }
 
 /**
@@ -1650,6 +1790,11 @@ function updateFromDiff(diff) {
     if (diff.necklaceHolder !== undefined) {
         renderPlayerList(window.SurvivorGame.fullGameState);
         renderLivesTracker(window.SurvivorGame.fullGameState);
+    }
+
+    // Reactive theft window opening/closing arrives as a pending_theft diff
+    if (diff.pending_theft !== undefined) {
+        renderReactiveTheft(window.SurvivorGame.fullGameState);
     }
 
     // Additional diff-based updates could be added here
@@ -1995,6 +2140,9 @@ function updateCurrentScreen(gameState) {
     renderPhaseGuidance(gameState);
     updateGameInfo(gameState);
 
+    // Reactive theft window (Sorry For You) — must render regardless of screen
+    renderReactiveTheft(gameState);
+
     // Update UI based on current screen
     switch (currentScreen) {
         case 'lobbyScreen':
@@ -2034,6 +2182,115 @@ function updateCurrentScreen(gameState) {
             break;
         // Add other screens as needed
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REACTIVE THEFT WINDOW — Sorry For You
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// When a steal targets a player holding Sorry For You, the server pauses the
+// theft (`pending_theft.reactive_window_open`) until the defender decides.
+// Before this existed the thief's tap appeared to do nothing and — since no UI
+// ever resolved the window — the game wedged forever. Now:
+//   · the DEFENDER gets a blocking raid dialog: play the card, or let it happen
+//   · the THIEF gets a waiting banner naming who they're waiting on
+//   · everyone else sees nothing
+
+let reactiveTheftKey = null;
+
+function renderReactiveTheft(gameState) {
+    const pending = gameState?.pending_theft;
+    const open = !!(pending && pending.reactive_window_open);
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const key = open ? `${pending.thiefId}:${pending.targetId}` : null;
+
+    if (key === reactiveTheftKey) return;   // no change
+
+    // Window closed (or changed): clear whatever we showed for the old one
+    if (reactiveTheftKey !== null) {
+        removeReactiveWaitBanner();
+        const dialog = document.querySelector('.raid-dialog');
+        if (dialog) hideModal();
+    }
+    reactiveTheftKey = key;
+    if (!open) return;
+
+    const thiefName = gameState.players?.[pending.thiefId]?.name || 'Someone';
+    const targetName = gameState.players?.[pending.targetId]?.name || 'them';
+
+    if (me === pending.targetId) {
+        showRaidDialog(gameState, pending, thiefName);
+    } else if (me === pending.thiefId) {
+        showReactiveWaitBanner(targetName);
+    }
+}
+
+/** Defender's blocking choice: burn the Sorry For You, or let the raid land. */
+function showRaidDialog(gameState, pending, thiefName) {
+    const content = `
+        <div class="raid-dialog">
+            <div class="raid-mark">${icon('torch-out', 'raid-icon')}</div>
+            <p class="raid-line"><strong>${escapeHtml(thiefName)}</strong> is raiding your camp
+            for a random card.</p>
+            <p class="picker-hint">You're holding <em>Sorry For You</em> — play it and they get
+            nothing (and must discard a card), or let them take their prize.</p>
+            <div class="raid-actions">
+                <button class="btn btn-primary touch-target" data-raid="play">
+                    ${icon('x')} Sorry for you!
+                </button>
+                <button class="btn btn-secondary touch-target" data-raid="allow">
+                    Let them take it
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal(content, { title: 'Camp Raid!', showClose: false });
+    Haptics.trigger('warning');
+
+    setTimeout(() => {
+        const playBtn = document.querySelector('[data-raid="play"]');
+        const allowBtn = document.querySelector('[data-raid="allow"]');
+        const gameId = window.SurvivorGame?.localGameState?.gameId;
+        const myId = window.SurvivorGame?.localGameState?.playerId;
+
+        if (playBtn) playBtn.addEventListener('click', async () => {
+            const hand = window.SurvivorGame?.fullGameState?.players?.[myId]?.hand || [];
+            const cardIdx = hand.findIndex(c => c.type === 'sorry_for_you');
+            hideModal();
+            if (cardIdx < 0) { showToast('Sorry For You is no longer in your hand', 'error'); return; }
+            try {
+                await window.SurvivorNetwork?.GameAPI.playReactiveCard(gameId, myId, cardIdx);
+                Haptics.trigger('success');
+            } catch (e) { showToast(e.message || 'Could not play Sorry For You', 'error'); }
+        });
+
+        if (allowBtn) allowBtn.addEventListener('click', async () => {
+            hideModal();
+            try {
+                await window.SurvivorNetwork?.GameAPI.completeTheft(gameId);
+            } catch (e) { showToast(e.message || 'Could not resolve the raid', 'error'); }
+        });
+    }, 0);
+}
+
+/** Thief's non-blocking wait state while the defender decides. */
+function showReactiveWaitBanner(targetName) {
+    removeReactiveWaitBanner();
+    const banner = document.createElement('div');
+    banner.id = 'reactiveWaitBanner';
+    banner.className = 'reactive-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML = `
+        <span class="reactive-banner-flame">${icon('torch')}</span>
+        <span>Waiting on <strong>${escapeHtml(targetName)}</strong> — they may play
+        <em>Sorry For You</em>…</span>
+    `;
+    document.body.appendChild(banner);
+}
+
+function removeReactiveWaitBanner() {
+    document.getElementById('reactiveWaitBanner')?.remove();
 }
 
 /** Leader-only control strips on the tribal screens. */
@@ -2286,6 +2543,8 @@ window.SurvivorUI = {
     renderPlayerList,
     renderPlayerHand,
     renderVoteTargets,
+    renderReactiveTheft,
+    beginCardPlay,
     renderLives,
     renderLivesTracker,
     renderChallengePanel,

@@ -655,6 +655,15 @@ const GameAPI = {
         return apiCall('/challenge/action', { gameId, playerId, action, value });
     },
 
+    // Reactive theft window (Sorry For You)
+    async playReactiveCard(gameId, playerId, cardIdx) {
+        return apiCall('/reactive/play_card', { gameId, playerId, cardIdx });
+    },
+
+    async completeTheft(gameId) {
+        return apiCall('/reactive/complete_theft', { gameId });
+    },
+
     // State sync — GET-only route on the server
     async fetchGameState(gameId) {
         return apiCall(`/game/${gameId}/state`, {}, 'GET');

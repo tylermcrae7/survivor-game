@@ -1933,3 +1933,210 @@
   .mt-md { margin-top: var(--spacing-md); }
   .hidden { display: none !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARD PLAY PIPELINE — player / card-name / rock-paper-scissors pickers
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .picker-hint {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .target-grid {
+    display: grid;
+    gap: var(--spacing-sm);
+  }
+
+  .target-option {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: var(--touch-target-min);
+    padding: 0.6rem 0.9rem;
+    border: 1px solid oklch(1 0 0 / 0.1);
+    border-radius: var(--radius-lg);
+    background: oklch(1 0 0 / 0.04);
+    color: var(--parchment);
+    font-family: var(--font-label);
+    font-size: 1rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  }
+
+  .target-option:hover,
+  .target-option:focus-visible {
+    border-color: var(--torch);
+    background: oklch(0.65 0.18 55 / 0.1);
+  }
+
+  .target-option:active { transform: scale(0.98); }
+
+  .target-dot {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    box-shadow: 0 0 6px oklch(0 0 0 / 0.4);
+  }
+
+  /* Knowledge Is Power — name any card in the game */
+  .cardname-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-sm);
+    max-height: min(52vh, 24rem);
+    overflow-y: auto;
+    padding-right: 2px;
+    scrollbar-width: thin;
+  }
+
+  .cardname-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    min-height: var(--touch-target-min);
+    padding: 0.55rem 0.7rem;
+    border: 1px solid oklch(1 0 0 / 0.09);
+    border-radius: var(--radius-md);
+    background: oklch(1 0 0 / 0.03);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .cardname-option:hover,
+  .cardname-option:focus-visible {
+    border-color: var(--torch);
+    background: oklch(0.65 0.18 55 / 0.1);
+  }
+
+  .cardname-cat {
+    font-family: var(--font-label);
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--torch);
+  }
+
+  .cardname-name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--parchment);
+    line-height: 1.2;
+  }
+
+  /* Do Or Die — the throw */
+  .rps-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-sm);
+  }
+
+  .rps-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 5.5rem;
+    padding: var(--spacing-md) var(--spacing-sm);
+    border: 1px solid oklch(1 0 0 / 0.1);
+    border-radius: var(--radius-lg);
+    background: oklch(1 0 0 / 0.04);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  }
+
+  .rps-option:hover,
+  .rps-option:focus-visible {
+    border-color: var(--torch);
+    background: oklch(0.65 0.18 55 / 0.12);
+    transform: translateY(-2px);
+  }
+
+  .rps-mark {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    color: var(--torch);
+    line-height: 1;
+  }
+
+  .rps-label {
+    font-family: var(--font-label);
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--parchment);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REACTIVE THEFT — Camp Raid dialog + thief's waiting banner
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .raid-dialog { text-align: center; }
+
+  .raid-mark { margin-bottom: var(--spacing-sm); }
+
+  .raid-mark .icon {
+    width: 2.6rem;
+    height: 2.6rem;
+    color: var(--danger);
+  }
+
+  .raid-line {
+    font-family: var(--font-display);
+    font-size: var(--font-size-lg);
+    color: var(--parchment);
+    line-height: 1.45;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .raid-actions {
+    display: grid;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+  }
+
+  .reactive-banner {
+    position: fixed;
+    left: 50%;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    max-width: min(92vw, 26rem);
+    padding: 0.7rem 1.1rem;
+    border: 1px solid oklch(0.65 0.18 55 / 0.5);
+    border-radius: var(--radius-full);
+    background: oklch(0.13 0.02 60 / 0.94);
+    color: var(--parchment-dim);
+    font-size: var(--font-size-sm);
+    line-height: 1.35;
+    box-shadow: var(--shadow-lg), var(--shadow-glow-torch);
+    z-index: 950;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .reactive-banner strong { color: var(--parchment); }
+  .reactive-banner em { color: var(--torch); font-style: normal; }
+
+  .reactive-banner-flame .icon {
+    width: 1.1rem;
+    height: 1.1rem;
+    color: var(--torch);
+    animation: torchFlicker 2.4s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reactive-banner { animation: none; }
+    .reactive-banner-flame .icon { animation: none; }
+    .rps-option:hover { transform: none; }
+  }
+}

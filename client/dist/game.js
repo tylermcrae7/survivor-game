@@ -71,6 +71,12 @@ async function loadCardDefinitions() {
             };
         }
         
+        // The export object captured the ORIGINAL (empty) SURVIVOR_CARDS reference
+        // before this reassignment — refresh it so consumers of
+        // window.SurvivorGame.SURVIVOR_CARDS (e.g. the Knowledge Is Power card
+        // picker) see the loaded registry, not a stale {}.
+        if (window.SurvivorGame) window.SurvivorGame.SURVIVOR_CARDS = SURVIVOR_CARDS;
+
         console.log(`Loaded ${Object.keys(SURVIVOR_CARDS).length} card types from server`);
         return true;
     } catch (error) {

@@ -44,3 +44,6 @@ node_modules/
 
 # Xcode SwiftPM build artifacts
 ios/SourcePackages/
+
+# Playwright MCP snapshots
+.playwright-mcp/
