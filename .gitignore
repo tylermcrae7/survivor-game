@@ -36,3 +36,6 @@ winners.json
 
 # Node modules (if any)
 node_modules/
+
+# Xcode SwiftPM build artifacts
+ios/SourcePackages/

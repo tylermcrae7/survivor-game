@@ -85,7 +85,7 @@
 		17367F3603D03F66FA9D0E5E /* ViewModelState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelState.swift; sourceTree = "<group>"; };
 		1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDecodingTests.swift; sourceTree = "<group>"; };
 		22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartViewModel.swift; sourceTree = "<group>"; };
-		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorGameApp.swift; sourceTree = "<group>"; };
 		4C6C157EA402C9C0508A1015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4F0C398C7CA94DAB86E5CED0 /* PlayingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingScreen.swift; sourceTree = "<group>"; };
@@ -539,6 +539,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M5H3893R7A;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -549,11 +550,13 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tylermcrae.SurvivorGame;
+				PRODUCT_BUNDLE_IDENTIFIER = mctech.SurvivorGame;
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			
+				GENERATE_INFOPLIST_FILE = YES;
 			};
 			name = Release;
 		};
@@ -617,6 +620,8 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+			
+				GENERATE_INFOPLIST_FILE = YES;
 			};
 			name = Debug;
 		};
@@ -634,6 +639,8 @@
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SurvivorGame.app/SurvivorGame";
+			
+				GENERATE_INFOPLIST_FILE = YES;
 			};
 			name = Release;
 		};
@@ -690,6 +697,8 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+			
+				GENERATE_INFOPLIST_FILE = YES;
 			};
 			name = Release;
 		};
@@ -699,6 +708,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M5H3893R7A;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -709,11 +719,13 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tylermcrae.SurvivorGame;
+				PRODUCT_BUNDLE_IDENTIFIER = mctech.SurvivorGame;
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			
+				GENERATE_INFOPLIST_FILE = YES;
 			};
 			name = Debug;
 		};
@@ -731,6 +743,8 @@
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SurvivorGame.app/SurvivorGame";
+			
+				GENERATE_INFOPLIST_FILE = YES;
 			};
 			name = Debug;
 		};
@@ -772,7 +786,7 @@
 			repositoryURL = "https://github.com/socketio/socket.io-client-swift";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 9.0.1;
+				minimumVersion = 16.1.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

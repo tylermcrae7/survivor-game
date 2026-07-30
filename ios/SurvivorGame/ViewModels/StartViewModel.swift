@@ -137,6 +137,6 @@ enum PlayerColor: String, CaseIterable {
     }
 
     var color: Color {
-        Color(hex: rawValue)
+        Color(hex: rawValue) ?? .gray
     }
 }

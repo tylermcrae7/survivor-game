@@ -29,10 +29,12 @@ final class GameClient {
         startListening()
     }
 
-    deinit {
-        stateListenerTask?.cancel()
-        eventListenerTask?.cancel()
-        connectionListenerTask?.cancel()
+    nonisolated deinit {
+        MainActor.assumeIsolated {
+            stateListenerTask?.cancel()
+            eventListenerTask?.cancel()
+            connectionListenerTask?.cancel()
+        }
     }
 
     // MARK: - Connection
@@ -151,10 +153,16 @@ final class GameClient {
 
     // MARK: - Reactive
 
-    func playReactiveCard(at index: Int, theftContext: [String: Any]) async throws {
+    nonisolated func playReactiveCard(at index: Int, theftContext: [String: Any]) async throws {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
+        
+        // Transfer dictionary across isolation boundary
+        // Safe because it's immediately JSON-serialized in the actor
+        nonisolated(unsafe) let contextCopy = theftContext
         let response = try await apiClient.playReactiveCard(
-            gameId: gameId, playerId: playerId, cardIdx: index, theftContext: theftContext
+            gameId: gameId, playerId: playerId, cardIdx: index, theftContext: contextCopy
         )
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Reactive play failed")
@@ -188,9 +196,15 @@ final class GameClient {
         }
     }
 
-    func castVotes(votesData: [[String: Any]]) async throws {
+    nonisolated func castVotes(votesData: [[String: Any]]) async throws {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        let response = try await apiClient.castVote(gameId: gameId, voterId: playerId, votesData: votesData)
+        
+        // Transfer dictionary across isolation boundary
+        // Safe because it's immediately JSON-serialized in the actor
+        nonisolated(unsafe) let votesCopy = votesData
+        let response = try await apiClient.castVote(gameId: gameId, voterId: playerId, votesData: votesCopy)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Cast votes failed")
         }

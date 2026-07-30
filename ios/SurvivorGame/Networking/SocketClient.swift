@@ -197,7 +197,7 @@ final class SocketClient {
 
 // MARK: - Game Event
 
-enum GameEvent {
+enum GameEvent: @unchecked Sendable {
     case custom(type: String, data: [String: Any])
     case reset
     case error(String)

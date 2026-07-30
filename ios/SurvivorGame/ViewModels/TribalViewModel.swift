@@ -104,7 +104,9 @@ final class TribalViewModel {
         isPerformingAction = true
         defer { isPerformingAction = false }
         do {
-            try await gameClient.castVotes(votesData: votesData)
+            // Safe to pass dictionary - immediately serialized to JSON in network layer
+            nonisolated(unsafe) let votes = votesData
+            try await gameClient.castVotes(votesData: votes)
         } catch {
             self.error = .from(error)
         }

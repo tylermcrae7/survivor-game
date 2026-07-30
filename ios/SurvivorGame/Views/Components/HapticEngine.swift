@@ -2,6 +2,7 @@ import UIKit
 
 /// Optimized haptic feedback engine with pre-prepared generators
 /// Following Apple's best practices for haptic performance
+@MainActor
 enum HapticEngine {
     // Pre-created generators for better performance
     private static let impactLight = UIImpactFeedbackGenerator(style: .light)
@@ -12,12 +13,14 @@ enum HapticEngine {
     
     /// Prepare all haptic generators for immediate use
     /// Call this during app initialization for best performance
-    static func prepare() {
-        impactLight.prepare()
-        impactMedium.prepare()
-        impactHeavy.prepare()
-        notificationGenerator.prepare()
-        selectionGenerator.prepare()
+    nonisolated static func prepare() {
+        Task { @MainActor in
+            impactLight.prepare()
+            impactMedium.prepare()
+            impactHeavy.prepare()
+            notificationGenerator.prepare()
+            selectionGenerator.prepare()
+        }
     }
     
     static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {

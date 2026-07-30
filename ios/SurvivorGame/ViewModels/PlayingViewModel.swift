@@ -96,7 +96,9 @@ final class PlayingViewModel {
         defer { isPerformingAction = false }
 
         do {
-            try await gameClient.playReactiveCard(at: index, theftContext: theftContext)
+            // Safe to pass dictionary - immediately serialized to JSON in network layer
+            nonisolated(unsafe) let context = theftContext
+            try await gameClient.playReactiveCard(at: index, theftContext: context)
         } catch {
             self.error = .from(error)
         }
