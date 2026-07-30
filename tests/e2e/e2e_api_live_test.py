@@ -163,8 +163,7 @@ def play_turn(gid, game):
     st, resp = api("/api/reactive/complete_theft", {"gameId": gid})  # no-op if no window
     st, resp = api("/api/turn/draw", {"gameId": gid, "playerId": cp})
     triggered = bool(resp.get("tribal_triggered"))
-    if not triggered:
-        api("/api/turn/advance", {"gameId": gid})
+    # Drawing ends the turn - the server advances it on its own now.
     return state(gid), triggered
 
 
@@ -270,11 +269,11 @@ victim = next(p for p in g["turnOrder"] if p != first)
 st, resp = api("/api/turn/steal", {"gameId": gid, "thiefId": first, "targetId": victim})
 check("steal_endpoint", resp.get("success"), resp.get("message"))
 api("/api/reactive/complete_theft", {"gameId": gid})
-st, resp = api("/api/turn/draw", {"gameId": gid, "playerId": first})
-check("draw_after_steal", resp.get("success"), resp.get("message"))
 st, resp = api("/api/turn/steal", {"gameId": gid, "thiefId": first, "targetId": victim})
 check("double_steal_rejected", not resp.get("success"), resp.get("message"))
-api("/api/turn/advance", {"gameId": gid})
+st, resp = api("/api/turn/draw", {"gameId": gid, "playerId": first})
+check("draw_after_steal", resp.get("success"), resp.get("message"))
+# The draw ended the turn - the server has already advanced it.
 
 # ── play until the first tribal council ──
 g = state(gid)
@@ -451,7 +450,11 @@ eg = state(egid)
 challenge_cards = [c for c in eg.get("deck", []) if str(c.get("type", "")).startswith("challenge_")]
 challenge_cards += [c for p in eg["players"].values() for c in p.get("hand", [])
                     if str(c.get("type", "")).startswith("challenge_")]
-check("five_challenge_cards_in_expansion_game", len(challenge_cards) == 5,
+# Hide 'n' Seek is physical-only sleight-of-hand and never enters a digital
+# deck — the Rocks expansion contributes the 4 playable Challenge Cards.
+check("four_playable_challenge_cards_in_expansion_game",
+      len(challenge_cards) == 4
+      and "challenge_hide_n_seek" not in [c["type"] for c in challenge_cards],
       sorted(c["type"] for c in challenge_cards))
 check("necklace_starts_on_the_table", eg.get("necklaceHolder") is None)
 
@@ -574,9 +577,8 @@ def play_expansion_game(egid):
                   ch.get("log", [])[-1:])
 
         api("/api/challenge/action", {"gameId": egid, "playerId": winner, "action": "dismiss"})
-        # Finish the starter's turn so play continues
+        # Finish the starter's turn so play continues (the draw ends the turn)
         api("/api/turn/draw", {"gameId": egid, "playerId": ch["starterId"]})
-        api("/api/turn/advance", {"gameId": egid})
 
         challenges_played += 1
 
@@ -695,10 +697,14 @@ api("/api/reactive/complete_theft", {"gameId": td_gid})
 st, resp = api("/api/turn/draw", {"gameId": td_gid, "playerId": td_cur})
 check("first_draw_succeeds", resp.get("success"), resp)
 if not resp.get("tribal_triggered"):
+    # The draw ended the turn automatically — the torch has moved on
+    game = state(td_gid)
+    check("draw_auto_advances_turn",
+          game["turnOrder"][game["currentTurnIndex"]] != td_cur,
+          game["turnOrder"][game["currentTurnIndex"]])
     st, resp = api("/api/turn/draw", {"gameId": td_gid, "playerId": td_cur})
     check("second_draw_refused", resp.get("success") is False
-          and "End Turn" in str(resp.get("message", "")), resp)
-    game = state(td_gid)
+          and "not your turn" in str(resp.get("message", "")), resp)
     hand = game["players"][td_cur].get("hand") or []
     playable_idx = next((i for i, c in enumerate(hand)
                          if c.get("type") == "inheritance"), None)
@@ -808,9 +814,7 @@ if outcome1 == "turn":
     victim = next(p for p in g["turnOrder"] if p != human_pid)
     api("/api/turn/steal", {"gameId": bot_gid, "thiefId": human_pid, "targetId": victim})
     api("/api/reactive/complete_theft", {"gameId": bot_gid})
-    r = api("/api/turn/draw", {"gameId": bot_gid, "playerId": human_pid})[1]
-    if not r.get("tribal_triggered"):
-        api("/api/turn/advance", {"gameId": bot_gid})
+    api("/api/turn/draw", {"gameId": bot_gid, "playerId": human_pid})
     outcome2, _ = _wait_for_human_turn()
     check("bots_keep_playing_after_human_turn", outcome2 in ("turn", "tribal"), outcome2)
 api("/api/game/delete", {"gameId": bot_gid})

@@ -2520,7 +2520,9 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
     gap: 0.55rem;
-    padding: 0.85rem 0.1rem 1rem;
+    /* The sticky action bar hovers over the page bottom — the last row of
+       cards needs clearance to stay tappable on tall screens (iPad). */
+    padding: 0.85rem 0.1rem calc(4.5rem + env(safe-area-inset-bottom));
   }
 
   .hand-grid .card-mini {
@@ -2657,4 +2659,70 @@
 @layer components {
   .raid-tag { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 45%, var(--line)); }
   .raid-tag .icon { width: 0.85rem; height: 0.85rem; }
+}
+
+/* ── The Story So Far: slide-over history drawer ── */
+@layer components {
+  .story-overlay {
+    position: fixed;
+    inset: 0;
+    background: oklch(0.1 0.02 260 / 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 60;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .story-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100dvh;
+    width: min(88vw, 380px);
+    z-index: 61;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-deep);
+    border-left: 1px solid var(--line);
+    box-shadow: -18px 0 40px oklch(0 0 0 / 0.45);
+    transform: translateX(102%);
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0.22, 1);
+  }
+  .story-drawer.open { transform: translateX(0); }
+  .story-overlay.open { opacity: 1; pointer-events: auto; }
+  .story-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.9rem 1rem calc(0.7rem);
+    padding-top: calc(0.9rem + env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line);
+  }
+  .story-head h3 { margin: 0; font-size: 1.05rem; }
+  .story-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.6rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column-reverse; /* newest at the top of the reader's eye */
+    gap: 0.45rem;
+  }
+  .story-item {
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: oklch(1 0 0 / 0.03);
+    font-size: 0.86rem;
+    line-height: 1.35;
+    color: var(--text-secondary);
+  }
+  .story-item time {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    margin-bottom: 0.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .story-empty { text-align: center; color: var(--text-faint); padding: 2rem 0.5rem; }
 }

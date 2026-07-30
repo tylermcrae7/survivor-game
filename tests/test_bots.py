@@ -243,10 +243,8 @@ def _human_move(gs, gid, human, rng):
             if target:
                 gs.steal_card(gid, thiefId=human, targetId=target)
                 return True
-        r = gs.draw_card(gid, playerId=human)
-        if isinstance(r, dict) and r.get("tribal_triggered"):
-            return True
-        gs.advance_turn(gid)
+        gs.draw_card(gid, playerId=human)
+        # Drawing ends the turn - the server advances it on its own.
         return True
 
     if phase == "tribal_council":

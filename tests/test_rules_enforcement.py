@@ -77,31 +77,32 @@ def test_one_draw_ends_the_turn():
 
         r1 = gs.draw_card(gid, playerId=ana)
         assert r1["success"] is True
-        assert game["players"][ana]["hasDrawn"] is True
+        assert "turn is over" in r1["message"]
 
-        # Second draw refused
+        # The draw ended the turn all by itself — torch moved off Ana,
+        # and every player's flags are fresh for the new turn
+        current = game["turnOrder"][game["currentTurnIndex"]]
+        assert current != ana, current
+        assert game["players"][ana]["hasDrawn"] is False
+        assert game["players"][ana]["hasPlayed"] is False
+
+        # Second draw refused — it isn't Ana's turn any more
         r2 = gs.draw_card(gid, playerId=ana)
         print("second draw:", r2.get("message"))
         assert r2["success"] is False
-        assert "End Turn" in r2["message"]
+        assert "not your turn" in r2["message"]
 
-        # Playing after the draw refused — "Steal, Play, THEN Draw"
+        # Playing after the draw refused too
         game["players"][ana]["hand"] = [{"type": "inheritance"}]
         r3 = gs.play_card(gid, playerId=ana, cardIdx=0, params={"targetId": ben})
         print("play after draw:", r3.get("message"))
         assert r3["success"] is False
-        assert "turn is over" in r3["message"]
 
-        # turn_done is the reported phase
-        phase = gs.rules_engine.get_current_turn_phase(game, ana)
-        assert phase == "turn_done", phase
+        # The next player's phase machine starts at the steal step
+        phase = gs.rules_engine.get_current_turn_phase(game, current)
+        assert phase == "turn_steal", phase
 
-        # advance_turn resets everything for the next player
-        gs.advance_turn(gid)
-        assert game["players"][ana]["hasDrawn"] is False
-        assert game["players"][ana]["hasPlayed"] is False
-
-        print("✅ draw discipline\n")
+        print("✅ draw discipline (draw auto-ends the turn)\n")
     finally:
         os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
 

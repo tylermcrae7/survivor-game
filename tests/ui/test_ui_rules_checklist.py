@@ -287,19 +287,17 @@ def run_checks():
         ana.keyboard.press("Escape")
         time.sleep(0.3)
 
-        # One draw, then the turn is over
+        # One draw ends the turn all by itself — the torch moves to Ben
         jsclick(ana, '[data-action="drawCard"]')
-        check("turn: after drawing, guidance says the turn is over",
-              wait_for(lambda: 'End Turn' in guidance(ana)
-                       or 'turn is over' in guidance(ana)
-                       or 'Turn over' in guidance(ana)) is not None, guidance(ana))
-        before = len(state(gid)["players"][ana_id]["hand"])
-        jsclick(ana, '[data-action="drawCard"]')
-        time.sleep(0.8)
-        check("turn: a second draw is refused by the interface",
-              len(state(gid)["players"][ana_id]["hand"]) == before,
-              toast_text(ana))
-        jsclick(ana, '[data-action="advanceTurn"]')
+        check("turn: drawing ends the turn automatically",
+              wait_for(lambda: state(gid)["turnOrder"]
+                       [state(gid)["currentTurnIndex"]] != ana_id, 10)
+              is not None, guidance(ana))
+        r_draw2 = api("/api/turn/draw", {"gameId": gid, "playerId": ana_id})
+        check("turn: an out-of-turn draw is refused",
+              not r_draw2.get("success")
+              and "not your turn" in (r_draw2.get("message") or ""),
+              r_draw2.get("message"))
 
         # Ben's quick turn, then the bot plays itself
         wait_for(lambda: 'Steal' in guidance(ben), 15)
@@ -312,7 +310,6 @@ def run_checks():
         wait_for(lambda: 'Play' in guidance(ben) or 'Draw' in guidance(ben), 10)
         jsclick(ben, '[data-action="drawCard"]')
         time.sleep(0.8)
-        jsclick(ben, '[data-action="advanceTurn"]')
         check("bots: the computer player takes its turn unattended",
               wait_for(lambda: (state(gid)["turnOrder"]
                                 [state(gid)["currentTurnIndex"]] == ana_id)
@@ -436,11 +433,8 @@ def run_checks():
                               if p != cur and not g4["players"][p].get("isEliminated"))
                 api("/api/turn/steal", {"gameId": gid, "thiefId": cur, "targetId": victim})
                 continue
-            if not g4["players"][cur].get("hasDrawn"):
-                api("/api/test/stack_deck", {"gameId": gid, "top": ["tribal_council_single"]})
-                api("/api/turn/draw", {"gameId": gid, "playerId": cur})
-                continue
-            api("/api/turn/advance", {"gameId": gid})
+            api("/api/test/stack_deck", {"gameId": gid, "top": ["tribal_council_single"]})
+            api("/api/turn/draw", {"gameId": gid, "playerId": cur})
 
         check("tribal #2: the ceremony opens again on every phone",
               wait_for(lambda: active_screen(ana) == 'tribalAnnouncementScreen', 12)

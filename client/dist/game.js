@@ -124,16 +124,33 @@ function cardRequiresConfirmation(cardType) {
  */
 function getCurrentTurnPhase(gameState, playerId) {
     if (!gameState || !gameState.players || !playerId) return 'waiting';
-    
+
     const player = gameState.players[playerId];
     if (!player || player.isEliminated) return 'waiting';
-    
+
+    // Mirror of the server's tribal mapping: advantage cards live in the
+    // announcement/advantage/discussion window, vote cards in voting,
+    // immunity cards in immunity. Reveal locks everything.
+    if (gameState.phase === 'tribal_council') {
+        const votePhase = (gameState.currentVote && gameState.currentVote.phase) || 'announcement';
+        const tribalMap = {
+            announcement: 'tribal_discussion',
+            advantage_play: 'tribal_discussion',
+            discussion: 'tribal_discussion',
+            voting: 'tribal_voting',
+            immunity: 'tribal_immunity'
+        };
+        return tribalMap[votePhase] || 'waiting';
+    }
+
+    if (gameState.phase !== 'playing') return 'waiting';
+
     const turnOrder = gameState.turnOrder || [];
     const currentPlayerIndex = gameState.currentTurnIndex || 0;
     const currentPlayerId = turnOrder[currentPlayerIndex];
-    
+
     if (currentPlayerId !== playerId) return 'waiting';
-    
+
     // Mirror of the server's phase machine: Steal -> Play (one card, optional)
     // -> Draw (ends the turn) -> Done
     if (!player.hasStolen) return TURN_PHASES.STEAL;
@@ -865,8 +882,31 @@ window.SurvivorGame = {
     formatCardName
 };
 
+// A shared ?join=CODE link walks a friend straight to the join form with the
+// code already filled in — they only pick a name and color.
+function applyJoinLink() {
+    let code = null;
+    try {
+        code = new URLSearchParams(window.location.search).get('join');
+        // Legacy /join/CODE links from older shares still work
+        const pathMatch = window.location.pathname.match(/^\/join\/([\w-]+)/);
+        if (!code && pathMatch) code = pathMatch[1];
+    } catch (e) { /* very old browser — the join form still works by hand */ }
+    if (!code) return;
+
+    const joinForm = document.getElementById('joinForm');
+    const gameCodeInput = document.getElementById('gameCodeInput');
+    if (joinForm) joinForm.style.display = 'block';
+    if (gameCodeInput) gameCodeInput.value = code;
+    const nameInput = document.getElementById('playerNameInput');
+    if (nameInput) nameInput.focus();
+    // Clean the address bar so a reload doesn't re-trigger the prefill
+    try { window.history.replaceState({}, '', window.location.origin + '/'); } catch (e) {}
+}
+
 // Initialize card definitions when module loads
 document.addEventListener('DOMContentLoaded', function() {
+    applyJoinLink();
     loadCardDefinitions().then(success => {
         if (success) {
             console.log('✅ Card definitions loaded successfully');

@@ -2335,7 +2335,7 @@ class GameState:
         if player.get("hasDrawn"):
             return {
                 "success": False,
-                "message": "You already drew — drawing ends your turn. Tap End Turn.",
+                "message": "You already drew — drawing ends your turn.",
             }
 
         if game.get("pending_theft", {}).get("reactive_window_open"):
@@ -2364,6 +2364,7 @@ class GameState:
             else:
                 # Nothing anywhere to draw — the draw step still ends the turn
                 player["hasDrawn"] = True
+                self.advance_turn(gid)
                 self._save()
                 return {"success": True,
                         "message": "The Draw Pile is empty — your turn ends"}
@@ -2425,10 +2426,20 @@ class GameState:
                 "tribal_triggered": True
             }
         else:
+            # "End your turn by taking the top card from the Draw Pile" — the
+            # draw IS the end of the turn; the torch moves on by itself.
+            # If the draw sprang a Camp Raid trap, the Sorry-For-You window is
+            # open and blocks the advance — defer it to the window's close.
+            theft_now = game.get("pending_theft")
+            if theft_now and theft_now.get("reactive_window_open"):
+                theft_now["_end_turn_after"] = True
+                self._save()
+            else:
+                self.advance_turn(gid)
             card_names = [card.get("name", card.get("type", "unknown")) for card in drawn_cards]
             return {
                 "success": True,
-                "message": f"Drew {len(drawn_cards)} card(s): {', '.join(card_names)}",
+                "message": f"Drew {len(drawn_cards)} card(s): {', '.join(card_names)} — your turn is over",
                 "drawn_cards": drawn_cards,
                 "tribal_triggered": False
             }
@@ -2739,11 +2750,15 @@ class GameState:
             game, player_id, thief_id, card
         )
         
+        end_turn_after = bool(pending_theft.get("_end_turn_after"))
         if interrupt_result.get("success"):
             # The played Sorry For You goes face up on the Discard Pile
             game.setdefault("discard", []).append({"type": "sorry_for_you"})
             # Close reactive window (execute_reactive_interrupt may already have)
             game.pop("pending_theft", None)
+            # A draw ended this turn while the window was open — advance now
+            if end_turn_after and game.get("phase") == "playing":
+                self.advance_turn(gid)
             self._save()
             return {
                 "success": True,
@@ -2769,6 +2784,7 @@ class GameState:
         thief_id = pending_theft.get("thiefId")
         target_id = pending_theft.get("targetId")
         resume = pending_theft.get("_resume")
+        end_turn_after = bool(pending_theft.get("_end_turn_after"))
 
         if resume:
             # A card-effect taking (Spy Shack, Alliance, Camp Raid, a Reward
@@ -2777,6 +2793,9 @@ class GameState:
             take_result = execute_take_spec(game, resume)
             game.pop("pending_theft", None)
             self.rules_engine.sync_vote_counters(game)
+            # A draw ended this turn while the window was open — advance now
+            if end_turn_after and game.get("phase") == "playing":
+                self.advance_turn(gid)
             self._save()
             return {"success": True,
                     "message": take_result.get("message", "The cards change hands")}
@@ -2786,6 +2805,8 @@ class GameState:
 
         # Close reactive window (execute_theft may already have)
         game.pop("pending_theft", None)
+        if end_turn_after and game.get("phase") == "playing":
+            self.advance_turn(gid)
 
 
         if theft_result.get("success"):
@@ -2954,6 +2975,16 @@ def handle(action, required):
         #    tallies, and closes the council). Enforced here at the API layer so
         #    no phone can act for the Leader; internal callers (bots, tests) use
         #    GameState directly and are trusted.
+        # Ending the turn belongs to the player whose turn it is
+        if action == 'advance_turn':
+            g0 = game_state.games[gid]
+            order0 = g0.get("turnOrder") or []
+            if order0 and g0.get("phase") == "playing":
+                current0 = order0[g0.get("currentTurnIndex", 0) % len(order0)]
+                if d.get('playerId') != current0:
+                    return jsonify(success=False,
+                                   message="Only the player whose turn it is can end the turn"), 403
+
         LEADER_ONLY = {'advance_tribal_phase', 'reveal_votes', 'complete_tribal',
                        'start_voting', 'reset_tribal_council'}
         if action in LEADER_ONLY:
@@ -3013,6 +3044,13 @@ def handle(action, required):
 
         except Exception as e:
             logger.error(f"Socket operation=state_update gameId={gid} error: {e}")
+
+        # The story so far: remember every visible outcome for the history panel
+        if isinstance(result, dict) and result.get("message") \
+                and action not in ('add_bot', 'remove_bot', 'rename_player'):
+            log_list = game_state.games.get(gid, {}).setdefault("eventLog", [])
+            log_list.append({"t": time.time(), "msg": str(result["message"])[:200]})
+            del log_list[:-120]
 
         # A state change may put a bot on the clock
         if bot_runner:

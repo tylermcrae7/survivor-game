@@ -34,8 +34,8 @@
     <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
 
     <!-- Preload critical resources -->
-    <link rel="preload" href="styles.css?v=torchlit-3.9.0" as="style">
-    <link rel="preload" href="game.js?v=torchlit-3.9.0" as="script">
+    <link rel="preload" href="styles.css?v=torchlit-3.10.0" as="style">
+    <link rel="preload" href="game.js?v=torchlit-3.10.0" as="script">
     <link rel="preload" href="https://cdn.socket.io/4.7.5/socket.io.min.js" as="script" crossorigin="anonymous">
 
     <!-- Tribal typography: Fraunces (ceremony) + Alegreya Sans (signage & body).
@@ -45,13 +45,13 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Alegreya+Sans+SC:wght@500;700;800&display=swap">
 
     <!-- Critical CSS -->
-    <link rel="stylesheet" href="styles.css?v=torchlit-3.9.0">
+    <link rel="stylesheet" href="styles.css?v=torchlit-3.10.0">
 
     <!-- Web App Manifest for PWA -->
     <link rel="manifest" href="manifest.json">
 
     <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.9.0">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.10.0">
 
     <!-- Socket.IO with fallback -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
@@ -181,6 +181,9 @@
         <symbol id="i-hourglass" viewBox="0 0 24 24">
             <path d="M6.5 3.5h11M6.5 20.5h11M7.5 3.5v3.2L12 12 7.5 17.3v3.2M16.5 3.5v3.2L12 12l4.5 5.3v3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
         </symbol>
+        <symbol id="i-scroll" viewBox="0 0 24 24">
+            <path d="M7 4.5h11a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-1M7 4.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8.5M7 4.5a2 2 0 0 1 2 2v0M8.5 11h6M8.5 14.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </symbol>
     </svg>
 
     <!-- Skip Navigation -->
@@ -205,6 +208,10 @@
             <div class="game-info">
                 <span class="chip" id="gameChip" hidden>FIRE <strong id="gameCode">—</strong></span>
                 <span class="chip" id="playerChip" hidden><span id="playerInfo">—</span></span>
+                <button class="chip chip-btn" id="storyBtn" data-action="openStory" hidden
+                        aria-label="The story so far" title="The story so far">
+                    <svg class="icon" aria-hidden="true"><use href="#i-scroll"></use></svg>
+                </button>
                 <button class="chip chip-btn" id="campMenuBtn" data-action="openCampMenu"
                         aria-label="Camp menu" title="Camp menu">
                     <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
@@ -406,10 +413,7 @@
                     <div id="gameActions" class="game-actions action-bar">
                         <button class="btn btn-secondary btn-enhanced touch-target" data-action="drawCard" id="drawCardBtn">
                             <svg class="icon" aria-hidden="true"><use href="#i-draw"></use></svg>
-                            Draw Card
-                        </button>
-                        <button class="btn btn-info btn-enhanced touch-target" data-action="advanceTurn">
-                            End Turn
+                            Draw Card &amp; End Turn
                         </button>
                     </div>
                 </div>
@@ -568,6 +572,19 @@
         </div>
     </dialog>
 
+    <!-- The Story So Far: slide-over history drawer -->
+    <div id="storyOverlay" class="story-overlay" aria-hidden="true"></div>
+    <aside id="storyDrawer" class="story-drawer" role="dialog" aria-modal="true"
+           aria-label="The story so far" aria-hidden="true">
+        <div class="story-head">
+            <h3><svg class="icon" aria-hidden="true"><use href="#i-scroll"></use></svg> The Story So Far</h3>
+            <button class="chip chip-btn" data-action="closeStory" aria-label="Close history">
+                <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+            </button>
+        </div>
+        <div id="storyList" class="story-list"></div>
+    </aside>
+
     <!-- Card Tooltip (Popover API) -->
     <div id="cardTooltip" class="card-tooltip" popover>
         <div class="card-tooltip-arrow bottom"></div>
@@ -599,11 +616,11 @@
     </div>
 
     <!-- JavaScript Modules (with defer for proper loading order) -->
-    <script src="game.js?v=torchlit-3.9.0" defer></script>
-    <script src="network.js?v=torchlit-3.9.0" defer></script>
-    <script src="ui.js?v=torchlit-3.9.0" defer></script>
-    <script src="state-manager.js?v=torchlit-3.9.0" defer></script>
-    <script src="narrator.js?v=torchlit-3.9.0" defer></script>
+    <script src="game.js?v=torchlit-3.10.0" defer></script>
+    <script src="network.js?v=torchlit-3.10.0" defer></script>
+    <script src="ui.js?v=torchlit-3.10.0" defer></script>
+    <script src="state-manager.js?v=torchlit-3.10.0" defer></script>
+    <script src="narrator.js?v=torchlit-3.10.0" defer></script>
 
     <!-- Slim Initialization Script -->
     <script>
@@ -667,6 +684,8 @@
         const _actionMap = {
             submitAccessCode: () => window.SurvivorGame?.submitAccessCode(),
             openCampMenu:     () => window.SurvivorUI?.openCampMenu(),
+            openStory:        () => window.SurvivorUI?.openStory(),
+            closeStory:       () => window.SurvivorUI?.closeStory(),
             showLeaderboard:  () => window.SurvivorUI?.showLeaderboard(),
             leaveLeaderboard: () => window.SurvivorUI?.leaveLeaderboard(),
             toggleLeaderboardEdit: () => window.SurvivorUI?.toggleLeaderboardEdit(),

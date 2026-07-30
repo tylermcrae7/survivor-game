@@ -78,6 +78,10 @@ CHALLENGE_CARD_TYPES = (
     "challenge_hide_n_seek",
 )
 
+# Physical-only cards: no digital equivalent exists, so they never enter a
+# freshly built deck (effects stay registered for older saved games).
+PHYSICAL_ONLY_CARD_TYPES = ("challenge_hide_n_seek",)
+
 # Card validation constants
 REQUIRED_CARD_FIELDS = [
     "type", "category", "name", "description", "playable_phases",
@@ -384,6 +388,8 @@ class SurvivorRulesEngine:
 				continue  # House cards only appear in "extended" mode
 			if category == 'challenge' and not expansion:
 				continue  # Orange Challenge Cards only in combined expansion mode
+			if card_type in PHYSICAL_ONLY_CARD_TYPES:
+				continue  # Sleight-of-hand cards don't work on a screen
 
 			# Add the specified count of each card type (compact format)
 			for _ in range(card_data.get('count', 0)):

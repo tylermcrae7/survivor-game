@@ -147,12 +147,19 @@ class TestCardRegistry(CardEffectTestBase):
             self.assertIn(card_type, [c["type"] for c in extended])
 
     def test_challenge_cards_only_with_expansion(self):
+        from rules_engine import PHYSICAL_ONLY_CARD_TYPES
         without = self.gs.rules_engine.create_deck(4, expansion=False)
         with_exp = self.gs.rules_engine.create_deck(4, expansion=True)
 
         for card_type in CHALLENGE_CARD_TYPES:
             self.assertNotIn(card_type, [c["type"] for c in without])
-            self.assertIn(card_type, [c["type"] for c in with_exp])
+            if card_type in PHYSICAL_ONLY_CARD_TYPES:
+                # Hide 'n' Seek is sleight-of-hand with no digital equivalent —
+                # it never enters a freshly built deck (effect stays registered
+                # for older saved games)
+                self.assertNotIn(card_type, [c["type"] for c in with_exp])
+            else:
+                self.assertIn(card_type, [c["type"] for c in with_exp])
 
 
 class TestTurnActionCards(CardEffectTestBase):

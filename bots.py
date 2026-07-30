@@ -352,6 +352,8 @@ def _turn_action(game, mem, rng):
         return _act("steal_card", thiefId=current, targetId=target)
 
     if player.get("hasDrawn"):
+        # Shouldn't happen — the draw ends the turn on its own now — but if a
+        # deferred advance ever leaves this state, end the turn rather than loop.
         return _act("advance_turn")
 
     if not player.get("hasPlayed") and rng.random() < PLAY_CHANCE:
@@ -604,6 +606,10 @@ class BotRunner:
             return False
 
         ok = result.get("success", True) if isinstance(result, dict) else bool(result)
+        if ok and isinstance(result, dict) and result.get("message"):
+            log_list = game.setdefault("eventLog", [])
+            log_list.append({"t": time.time(), "msg": str(result["message"])[:200]})
+            del log_list[:-120]
         if not ok:
             message = result.get("message") if isinstance(result, dict) else result
             logger.warning(f"Bot action {method}({kwargs}) refused in {gid}: {message}")

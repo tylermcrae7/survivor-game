@@ -85,7 +85,7 @@
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Steal a Card: pick a player and steal <em>1 random card</em> from them; exactly one steal per turn.<div class="ev"><code>steal_card</code> + <code>hasStolen</code> guard · test_card_effects</div></div></div>
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Play a Card (optional): play <em>1 card</em> from your hand — one play maximum per turn.<span class="ui-b">UI ✓</span><div class="ev"><code>hasPlayed</code> guard, friendly refusal on the second play · test_rules_enforcement</div></div></div>
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Played cards go face up on the <em>Discard Pile</em>.<div class="ev"><code>game["discard"]</code> fed by plays, spends, penalties, tribal cards, eliminated hands (2026-07-30)</div></div></div>
-<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Draw a Card <em>ends your turn</em> — exactly one draw, nothing playable afterwards.<span class="ui-b">UI ✓</span><div class="ev"><code>hasDrawn</code> guard; hand grid locks; “You drew — tap End Turn” · test_rules_enforcement, e2e</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Draw a Card <em>ends your turn</em> — exactly one draw, nothing playable afterwards.<span class="ui-b">UI ✓</span><div class="ev"><code>draw_card</code> auto-advances the turn — the draw IS the end of the turn (3.10.0); out-of-turn draws refused · test_rules_enforcement, e2e</div></div></div>
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Play continues clockwise around the table.<div class="ev"><code>advance_turn</code> walks <code>turnOrder</code>, skipping eliminated players</div></div></div>
 
 <h2>3 · Table Talk &amp; Information <small>“Time to Strategize”</small></h2>
@@ -171,7 +171,7 @@
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Winning while already wearing the Necklace = take 3 cards from the Draw Pile instead.<div class="ev">Second-win reward · e2e</div></div></div>
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">The Necklace returns to the table when the Tribal Council ends.<div class="ev">Cleared post-tribal · scripted expansion game</div></div></div>
 <div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Challenge secrets (bag contents, hidden pulls, secret throws) never leave the server.<div class="ev">Underscore-key stripping in <code>get_game_state</code> · e2e hidden-state checks</div></div></div>
-<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Hide ’n’ Seek is physical sleight-of-hand and is marked not available digitally.<div class="ev">Card explains itself; play refused · e2e</div></div></div>
+<div class="item" data-s="pass"><span class="status s-pass">PASS</span><div class="rule">Hide ’n’ Seek is physical sleight-of-hand and is marked not available digitally.<div class="ev">Removed from the digital deck entirely (3.10.0) — Rocks adds the 4 playable Challenge Cards; effect kept for old saves · test_card_effects, e2e</div></div></div>
 
 <div class="foot">
   Rev 2 (same day): every gap the first audit found is now fixed and re-verified — leader-only tribal controls and the

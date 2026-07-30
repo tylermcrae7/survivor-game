@@ -292,6 +292,13 @@ function updateGameInfo(gameState) {
         gameCodeEl.textContent = gameState.id;
         const chip = document.getElementById('gameChip');
         if (chip) chip.hidden = false;
+        const storyBtn = document.getElementById('storyBtn');
+        if (storyBtn) storyBtn.hidden = false;
+    }
+
+    // Keep an open story drawer fed with the latest events
+    if (document.getElementById('storyDrawer')?.classList.contains('open')) {
+        renderStoryList(gameState);
     }
 
     // Update game code (lobby display)
@@ -368,7 +375,7 @@ function updateVotingInfo(gameState) {
     votingInfo.innerHTML = `
         ${chips}
         <p class="panel-sub" style="text-align:center; margin-bottom: 0.9rem;">
-            ${voteCount} of ${playerCount} ballots in the box
+            ${voteCount} of ${playerCount} players have voted
         </p>
     `;
     votingInfo.querySelector('[data-action="passVotingBox"]')
@@ -490,12 +497,35 @@ function renderVoteResults(gameState) {
         // A tie the Council Leader still has to break
         let tieNote = '';
         if (currentVote.tieBreakNeeded) {
-            const tied = (currentVote.tiedPlayers || []).map(pid =>
+            const tiedIds = (currentVote.tiedPlayers || []).filter(pid => gameState.players[pid]);
+            const tied = tiedIds.map(pid =>
                 escapeHtml(gameState.players[pid]?.name || pid)).join(', ');
-            tieNote = `
-                <p class="panel-sub" style="text-align:center; margin-top: 0.8rem;">
-                    ${icon('alert')} Deadlocked — the Council Leader must choose between: <strong>${tied}</strong>
-                </p>`;
+            const myId = window.SurvivorGame?.localGameState?.playerId;
+            const leaderId = currentVote.councilLeaderId;
+            const iAmLeader = myId && myId === leaderId;
+            const picksLeft = Math.max(1,
+                (currentVote.eliminationsNeeded || 1) - (currentVote.eliminated || []).length);
+
+            if (iAmLeader) {
+                const pickBtns = tiedIds.map(pid => `
+                    <button class="btn btn-danger btn-enhanced touch-target tiebreak-pick-btn"
+                            data-picked-id="${escapeHtml(pid)}"
+                            style="margin: 0.25rem;">
+                        ${icon('torch-out')} ${escapeHtml(gameState.players[pid]?.name || pid)}
+                    </button>`).join('');
+                tieNote = `
+                    <div style="text-align:center; margin-top: 0.8rem;">
+                        <p class="panel-sub">${icon('alert')} Deadlocked — as Council Leader, YOU break the tie.
+                        Choose ${picksLeft === 1 ? 'the player' : `${picksLeft} players`} whose torch goes out:</p>
+                        <div class="tiebreak-picks">${pickBtns}</div>
+                    </div>`;
+            } else {
+                const leaderName = escapeHtml(gameState.players[leaderId]?.name || 'the Council Leader');
+                tieNote = `
+                    <p class="panel-sub" style="text-align:center; margin-top: 0.8rem;">
+                        ${icon('alert')} Deadlocked — <strong>${leaderName}</strong> must choose between: <strong>${tied}</strong>
+                    </p>`;
+            }
         }
 
         voteResults.innerHTML = `
@@ -504,6 +534,29 @@ function renderVoteResults(gameState) {
                 ${tieNote}
             </div>
         `;
+
+        // Leader's tie-break picks go straight to the official cascade endpoint
+        voteResults.querySelectorAll('.tiebreak-pick-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const chosenId = btn.dataset.pickedId;
+                const gameId = window.SurvivorGame?.localGameState?.gameId;
+                const leaderId = window.SurvivorGame?.localGameState?.playerId;
+                const name = gameState.players[chosenId]?.name || 'this player';
+                showConfirm(`Snuff ${name}'s torch? The Council Leader's word is final.`, async () => {
+                    try {
+                        showLoading('Breaking the tie…');
+                        const result = await window.SurvivorNetwork?.apiCall('/vote/tiebreak',
+                            { gameId, leaderId, chosenId });
+                        if (result?.success) showToast(result.message || 'The tie is broken', 'success');
+                        else if (result?.message) showToast(result.message, 'error');
+                    } catch (error) {
+                        showToast(error.message || 'Tie-break failed', 'error');
+                    } finally {
+                        hideLoading();
+                    }
+                });
+            });
+        });
     }
 
     if (eliminationResults && gameState.currentVote && gameState.currentVote.eliminated) {
@@ -730,11 +783,17 @@ function renderLivesTracker(gameState) {
 
         const raidTag = player.campRaidedBy
             ? `<span class="player-tag raid-tag" title="Camp Raid: their next drawn card goes to the raider">${icon('target')}</span>` : '';
+        // At steal time you need the counts MORE, not less — show hand size
+        // beside the steal hint so you can pick the richest target.
+        const handCount = `<span title="Cards in hand">${icon('cards')} ${player.hand ? player.hand.length : 0}</span>`;
+        const necklaceTag = gameState.necklaceHolder === id
+            ? `<span class="necklace" title="Immunity Idol Necklace">${icon('necklace')}</span>` : '';
         const meta = stealable
-            ? `<span class="steal-hint">${icon('swap')} steal</span>`
+            ? `<span class="row-meta">${necklaceTag} ${handCount}</span>
+               <span class="steal-hint">${icon('swap')} steal</span>`
             : `<span class="row-meta">
-                   ${gameState.necklaceHolder === id ? `<span class="necklace" title="Immunity Idol Necklace">${icon('necklace')}</span>` : ''}
-                   <span title="Cards in hand">${icon('cards')} ${player.hand ? player.hand.length : 0}</span>
+                   ${necklaceTag}
+                   ${handCount}
                </span>`;
 
         return `
@@ -1262,8 +1321,64 @@ function handleVoteTargetClick(event) {
     });
     targetElement.classList.add('selected');
 
+    // Holding Extra Votes? Ask how many to pile on before the parchment goes in.
+    const voterId = window.SurvivorGame?.localGameState?.playerId;
+    const me = window.SurvivorGame?.fullGameState?.players?.[voterId];
+    const extra = me?.extraVotes ?? 0;
+    if (extra > 0 && !me?.hasVoted) {
+        showExtraVoteChooser(playerId);
+        return;
+    }
+
     // Cast vote
     castVote(playerId);
+}
+
+/**
+ * Extra Vote chooser — Extra Vote cards MAY be spent now or saved for a later
+ * tribal, so the player picks how many ride along with the mandatory ballot.
+ */
+function showExtraVoteChooser(targetId) {
+    const voterId = window.SurvivorGame?.localGameState?.playerId;
+    const state = window.SurvivorGame?.fullGameState;
+    const me = state?.players?.[voterId];
+    const target = state?.players?.[targetId];
+    if (!me || !target) { castVote(targetId); return; }
+
+    const mandatory = me.mandatoryVotes ?? 0;
+    const extra = me.extraVotes ?? 0;
+    const minTotal = Math.max(1, mandatory);
+    const maxTotal = mandatory + extra;
+
+    let buttons = '';
+    for (let t = minTotal; t <= maxTotal; t++) {
+        const extrasUsed = Math.max(0, t - mandatory);
+        const sub = extrasUsed === 0
+            ? 'Save your Extra Votes for later'
+            : `Adds ${extrasUsed} Extra Vote${extrasUsed === 1 ? '' : 's'}`;
+        buttons += `
+            <button class="btn btn-enhanced touch-target extra-vote-option"
+                    style="width:100%; margin-bottom:0.5rem; display:block;"
+                    data-total="${t}">
+                ${t} vote${t === 1 ? '' : 's'} against ${escapeHtml(target.name || 'them')}
+                <span class="panel-sub" style="display:block; font-size:0.8em;">${sub}</span>
+            </button>`;
+    }
+
+    showModal(`
+        <p class="panel-sub" style="margin-bottom:0.75rem;">
+            You hold ${extra} Extra Vote${extra === 1 ? '' : 's'}. Spend them now, or keep them hidden for a later Tribal Council.
+        </p>
+        ${buttons}
+    `, { title: 'How many votes?' });
+
+    document.querySelectorAll('.extra-vote-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const total = parseInt(btn.dataset.total, 10);
+            hideModal();
+            castVote(targetId, total);
+        });
+    });
 }
 
 function handleStealClick(event) {
@@ -1320,7 +1435,7 @@ async function playCard(cardIndex, params = {}) {
     }
 }
 
-async function castVote(targetId) {
+async function castVote(targetId, totalVotes = null) {
     const gameId = window.SurvivorGame?.localGameState.gameId;
     const voterId = window.SurvivorGame?.localGameState.playerId;
 
@@ -1336,11 +1451,15 @@ async function castVote(targetId) {
         showLoading('Placing your parchment in the box…');
 
         // Every Vote/Goodwill Gamble card in hand MUST be cast at this tribal;
-        // the server rejects partial ballots. Extra Votes may ride along too.
-        // A player whose Vote Card was stolen legally passes the box (empty ballot).
+        // the server rejects partial ballots. Extra Votes may ride along when
+        // the chooser passes a total. A player whose Vote Card was stolen
+        // legally passes the box (empty ballot).
         const me = window.SurvivorGame?.fullGameState?.players?.[voterId];
         const maxVotes = me?.maxVotes ?? 1;
-        const votes = Math.max(1, me?.mandatoryVotes ?? 1);
+        const mandatory = me?.mandatoryVotes ?? 1;
+        const votes = totalVotes != null
+            ? Math.min(Math.max(totalVotes, Math.max(1, mandatory)), Math.max(maxVotes, 1))
+            : Math.max(1, mandatory);
         const votesData = maxVotes === 0 ? [] : [{ targetId, votes }];
         const result = await window.SurvivorNetwork?.GameAPI.castVote(gameId, voterId, votesData);
 
@@ -1651,9 +1770,14 @@ function selectTarget(cardIndex, targetId) {
 /**
  * Toast Notifications
  */
-function showToast(message, type = 'info', duration = 3000) {
+function showToast(message, type = 'info', duration = null) {
     if (!toastContainer) {
         toastContainer = createToastContainer();
+    }
+
+    // Long enough to read across the table — errors linger a little longer
+    if (duration == null) {
+        duration = (type === 'error' || type === 'warning') ? 6500 : 5000;
     }
     
     const toast = document.createElement('div');
@@ -1945,8 +2069,8 @@ const PHASE_GUIDANCE = {
     'lobby':       { icon: 'users',  text: 'Gathering the tribe', action: 'Share the fire code and wait for everyone to arrive.' },
     'turn_steal':  { icon: 'swap',   text: 'Steal', action: 'Tap a tribe member to steal a random card.' },
     'turn_play':   { icon: 'cards',  text: 'Play', action: 'Play a card if you like, then draw to end your turn.' },
-    'turn_draw':   { icon: 'draw',   text: 'Draw', action: 'Card played — take the top card of the Draw Pile to end your turn.' },
-    'turn_done':   { icon: 'check',  text: 'Turn over', action: 'You drew — tap End Turn to pass the torch.' },
+    'turn_draw':   { icon: 'draw',   text: 'Draw', action: 'Card played — take the top card of the Draw Pile. Drawing ends your turn.' },
+    'turn_done':   { icon: 'check',  text: 'Turn over', action: 'You drew — the torch passes on its own.' },
     'playing':     { icon: 'hourglass', text: 'On the island', action: 'Wait for the torch to come around.' },
     'tribal_council': { icon: 'torch', text: 'Tribal Council', action: 'Someone drew a Tribal Council card. The tribe must vote.' },
     'voting':      { icon: 'ballot', text: 'The vote', action: 'Tap a name to write it on your parchment.' },
@@ -2669,6 +2793,49 @@ function removeReactiveWaitBanner() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Header menu: everything that isn't part of playing a turn. */
+/**
+ * The Story So Far — a slide-over reading of the server's event log, so a
+ * player who was disconnected (or just distracted) can catch up.
+ */
+function openStory() {
+    const drawer = document.getElementById('storyDrawer');
+    const overlay = document.getElementById('storyOverlay');
+    if (!drawer || !overlay) return;
+    renderStoryList(window.SurvivorGame?.fullGameState);
+    drawer.classList.add('open');
+    overlay.classList.add('open');
+    drawer.setAttribute('aria-hidden', 'false');
+    overlay.addEventListener('click', closeStory, { once: true });
+    drawer.querySelector('[data-action="closeStory"]')
+        ?.addEventListener('click', closeStory, { once: true });
+}
+
+function closeStory() {
+    const drawer = document.getElementById('storyDrawer');
+    const overlay = document.getElementById('storyOverlay');
+    drawer?.classList.remove('open');
+    overlay?.classList.remove('open');
+    drawer?.setAttribute('aria-hidden', 'true');
+}
+
+function renderStoryList(gameState) {
+    const list = document.getElementById('storyList');
+    if (!list) return;
+    const events = gameState?.eventLog || [];
+    if (!events.length) {
+        list.innerHTML = `<div class="story-empty">${icon('hourglass')}<p>Nothing has happened yet.<br>The island is quiet.</p></div>`;
+        return;
+    }
+    // column-reverse flexbox shows the LAST child first — append in order
+    list.innerHTML = events.map(ev => {
+        let when = '';
+        try {
+            when = new Date(ev.t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        } catch (e) { /* no timestamp, no line */ }
+        return `<div class="story-item">${when ? `<time>${when}</time>` : ''}${escapeHtml(ev.msg || '')}</div>`;
+    }).join('');
+}
+
 function openCampMenu() {
     const inGame = !!window.SurvivorGame?.localGameState?.gameId;
     const gameId = window.SurvivorGame?.localGameState?.gameId;
@@ -2681,6 +2848,10 @@ function openCampMenu() {
                 <span><strong>Hall of Fame</strong><em>Every Sole Survivor so far</em></span>
             </button>
             ${inGame ? `
+                <button class="camp-menu-item touch-target" data-camp="story">
+                    ${icon('eye')}
+                    <span><strong>The Story So Far</strong><em>Everything that's happened this game</em></span>
+                </button>
                 <button class="camp-menu-item touch-target" data-camp="leave">
                     ${icon('swap')}
                     <span><strong>Leave this game</strong><em>Just you — the game keeps going</em></span>
@@ -2699,6 +2870,10 @@ function openCampMenu() {
         document.querySelector('[data-camp="leaderboard"]')?.addEventListener('click', () => {
             hideModal();
             showLeaderboard();
+        });
+        document.querySelector('[data-camp="story"]')?.addEventListener('click', () => {
+            hideModal();
+            setTimeout(openStory, 80);
         });
         document.querySelector('[data-camp="leave"]')?.addEventListener('click', () => {
             hideModal();
@@ -2942,21 +3117,24 @@ async function copyGameCode() {
         return;
     }
 
+    // The copied text is a link that walks a friend straight onto the island —
+    // opening it prefills the join form with this code.
+    const joinLink = `${window.location.origin}/?join=${encodeURIComponent(gameId)}`;
     try {
-        await navigator.clipboard.writeText(gameId);
-        showToast('Game code copied!', 'success');
+        await navigator.clipboard.writeText(joinLink);
+        showToast('Join link copied!', 'success');
         hapticFeedback('success');
     } catch (error) {
         // Fallback for older browsers
         const textArea = document.createElement('textarea');
-        textArea.value = gameId;
+        textArea.value = joinLink;
         textArea.style.position = 'fixed';
         textArea.style.left = '-9999px';
         document.body.appendChild(textArea);
         textArea.select();
         try {
             document.execCommand('copy');
-            showToast('Game code copied!', 'success');
+            showToast('Join link copied!', 'success');
             hapticFeedback('success');
         } catch (e) {
             showToast('Failed to copy code', 'error');
@@ -2975,7 +3153,7 @@ async function shareGame() {
         return;
     }
 
-    const shareUrl = `${window.location.origin}/join/${gameId}`;
+    const shareUrl = `${window.location.origin}/?join=${encodeURIComponent(gameId)}`;
     const shareData = {
         title: 'Join my Survivor game!',
         text: `Join my Survivor game with code: ${gameId}`,
@@ -3173,6 +3351,8 @@ window.SurvivorUI = {
     renderInteraction,
     beginCardPlay,
     openCampMenu,
+    openStory,
+    closeStory,
     showLeaderboard,
     leaveLeaderboard,
     toggleLeaderboardEdit,

@@ -139,7 +139,7 @@ def take_turn(gid):
     _, resp = api("/api/turn/draw", {"gameId": gid, "playerId": cp})
     if resp.get("tribal_triggered"):
         return state(gid), True
-    api("/api/turn/advance", {"gameId": gid})
+    # Drawing ends the turn - the server advances it on its own now.
     return state(gid), False
 
 
@@ -341,7 +341,9 @@ eg = state(egid)
 in_play = [c["type"] for c in eg["deck"] if c["type"].startswith("challenge_")]
 in_play += [c["type"] for p in eg["players"].values() for c in p["hand"]
             if c["type"].startswith("challenge_")]
-expect("all 5 Orange Challenge Cards are in the expansion game", len(in_play) == 5, sorted(in_play))
+# Hide 'n' Seek is physical-only and never enters a digital deck
+expect("the 4 playable Orange Challenge Cards are in the expansion game",
+       len(in_play) == 4 and "challenge_hide_n_seek" not in in_play, sorted(in_play))
 expect("the Necklace starts on the table", eg.get("necklaceHolder") is None)
 
 for attempt in range(8):
@@ -437,7 +439,6 @@ for attempt in range(8):
         challenges_run.append(ch.get("type"))
         api("/api/challenge/action", {"gameId": egid, "playerId": winner, "action": "dismiss"})
         api("/api/turn/draw", {"gameId": egid, "playerId": cp})
-        api("/api/turn/advance", {"gameId": egid})
         eg = state(egid)
 
         if len(challenges_run) >= 2 and necklace_blocked:

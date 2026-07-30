@@ -454,7 +454,9 @@ class TestOptimizationFixes(unittest.TestCase):
         num_draws = len(test_cards)
         
         for i in range(num_draws):
-            # One draw per turn now (official rule) — simulate a fresh turn each time
+            # One draw per turn now, and the draw itself ends the turn —
+            # simulate a fresh turn back on the victim each time
+            game["currentTurnIndex"] = game["turnOrder"].index(victim_id)
             game["players"][victim_id]["hasStolen"] = True
             game["players"][victim_id]["hasDrawn"] = False
             result = self.gs.draw_card(self.game_id, victim_id)
