@@ -116,6 +116,14 @@ def main():
         {
             'file': 'tests/test_targeted_optimization_fixes.py',
             'description': 'Targeted Optimization Fixes Tests'
+        },
+        {
+            'file': 'tests/test_tie_break_cascade.py',
+            'description': 'Tie-Break & Double-Elimination Cascade Tests (16 tests)'
+        },
+        {
+            'file': 'tests/test_rocks_expansion.py',
+            'description': "Let's Go To Rocks Expansion Tests — necklace + 4 challenges (31 tests)"
         }
     ]
     
@@ -162,14 +170,16 @@ def main():
         print("✅ GameState Unit Tests: Game creation, player management, persistence")
         print("✅ Turn-Based Integration: Complete turn sequences, multi-player rotation") 
         print("✅ Tribal Council Flow: All phases, voting mechanics, elimination")
-        print("✅ Card Effects: All 67 cards + reactive card mechanics")
+        print("✅ Card Effects: every registry card type + reactive card mechanics")
         print("✅ Robustness: Error handling, file operations, iOS compatibility")
         print("✅ Edge Cases: Real-world failures, data corruption, network issues")
         print("✅ Phase Enforcement: Negative tests, wrong phase rejections")
         print("✅ Deck Composition: All player counts (3-6), tribal card rules")
         print("✅ Tribal Triggers: Automatic tribal council triggering")
         print("✅ Rules Engine: Card validation, phase logic, dispatch system")
-        print("\n📊 Total Test Count: ~150+ comprehensive tests across all game systems")
+        print("✅ Tie-Break Cascade: official double-elim rules + unclear-vote ladder")
+        print("✅ Rocks Expansion: Immunity Idol Necklace + 4 playable challenges")
+        print("\n📊 Total Test Count: ~200 comprehensive tests across all game systems")
         
         return 0
     else:

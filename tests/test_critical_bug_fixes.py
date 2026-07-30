@@ -64,7 +64,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         """Test that drawing tribal_council_single properly triggers tribal council phase"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][current_player]["hasStolen"] = True
         
         # Create and add tribal_council_single card to deck
         tribal_card = {
@@ -77,18 +78,18 @@ class TestCriticalBugFixes(unittest.TestCase):
         
         if "deck" not in game:
             game["deck"] = []
-        game["deck"].append(tribal_card)  # Use append since pop() takes from end
+        game["deck"].insert(0, tribal_card)  # draw_card takes from the top (index 0)
         
         # Verify initial state
         self.assertEqual(game["phase"], "playing")
-        self.assertNotIn("currentVote", game)
+        self.assertEqual(game["currentVote"]["phase"], "waiting")
         
         # Draw the tribal council card
         result = self.gs.draw_card(self.game_id, current_player)
         
         # Verify tribal council was properly triggered (draw_card returns different format)
         self.assertIsInstance(result, dict, "Draw should return a dictionary")
-        self.assertTrue(result.get("tribal_council", False), f"Draw should trigger tribal council: {result}")
+        self.assertTrue(result.get("tribal_triggered", False), f"Draw should trigger tribal council: {result}")
         updated_game = self.gs.games[self.game_id]
         
         self.assertEqual(updated_game["phase"], "tribal_council", 
@@ -105,7 +106,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         """Test that drawing tribal_council_double properly triggers tribal council phase"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][current_player]["hasStolen"] = True
         
         # Create and add tribal_council_double card to deck
         tribal_card = {
@@ -118,7 +120,7 @@ class TestCriticalBugFixes(unittest.TestCase):
         
         if "deck" not in game:
             game["deck"] = []
-        game["deck"].append(tribal_card)  # Use append since pop() takes from end
+        game["deck"].insert(0, tribal_card)  # draw_card takes from the top (index 0)
         
         # Verify initial state
         self.assertEqual(game["phase"], "playing")
@@ -127,7 +129,7 @@ class TestCriticalBugFixes(unittest.TestCase):
         result = self.gs.draw_card(self.game_id, current_player)
         
         # Verify tribal council was properly triggered
-        self.assertTrue(result.get("tribal_council", False))
+        self.assertTrue(result.get("tribal_triggered", False))
         updated_game = self.gs.games[self.game_id]
         
         self.assertEqual(updated_game["phase"], "tribal_council")
@@ -170,15 +172,19 @@ class TestCriticalBugFixes(unittest.TestCase):
         self.assertEqual(phase, "tribal_discussion",
                         "Discussion phase should map to tribal_discussion")
 
-    def test_phase_mapping_voting_start_returns_tribal_voting(self):
-        """Test that tribal voting_start phase maps to tribal_voting"""
+    def test_phase_mapping_unknown_phase_falls_back_to_discussion(self):
+        """
+        An unrecognised tribal sub-phase must not crash card validation — it falls
+        back to tribal_discussion. ("voting_start" is not a real phase; the real
+        sequence is announcement, advantage_play, discussion, voting, immunity, reveal.)
+        """
         game = self.gs.games[self.game_id]
         game["phase"] = "tribal_council"
         game["currentVote"] = {"phase": "voting_start"}
-        
+
         phase = self.rules_engine.get_current_turn_phase(game, self.player_ids[0])
-        self.assertEqual(phase, "tribal_voting",
-                        "Voting_start phase should map to tribal_voting")
+        self.assertEqual(phase, "tribal_discussion",
+                        "Unknown tribal sub-phases should fall back to tribal_discussion")
 
     def test_phase_mapping_voting_returns_tribal_voting(self):
         """Test that tribal voting phase maps to tribal_voting"""
@@ -209,7 +215,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         
         # Set up turn_play phase
         game["phase"] = "playing"
-        game["currentPlayer"] = player_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][player_id]["hasStolen"] = True
         game["players"][player_id]["hasStolen"] = True  # This makes it turn_play
         
         control_vote_card = self.rules_engine.get_card_definition("control_the_vote")
@@ -242,7 +249,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         
         # Set up turn_play phase
         game["phase"] = "playing"
-        game["currentPlayer"] = player_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][player_id]["hasStolen"] = True
         game["players"][player_id]["hasStolen"] = True
         
         leader_card = self.rules_engine.get_card_definition("im_the_leader_now")
@@ -345,7 +353,7 @@ class TestCriticalBugFixes(unittest.TestCase):
         single_count = sum(1 for card in tribal_cards if card["type"] == "tribal_council_single")
         double_count = sum(1 for card in tribal_cards if card["type"] == "tribal_council_double")
         
-        self.assertEqual(single_count, 1, "5-player game should have 1 single elimination card")
+        self.assertEqual(single_count, 2, "5-player game should have 2 single elimination cards")
         self.assertEqual(double_count, 3, "5-player game should have 3 double elimination cards")
 
     def test_tribal_composition_6_players(self):
@@ -356,12 +364,12 @@ class TestCriticalBugFixes(unittest.TestCase):
         double_count = sum(1 for card in tribal_cards if card["type"] == "tribal_council_double")
         
         self.assertEqual(single_count, 0, "6-player game should have 0 single elimination cards")
-        self.assertEqual(double_count, 4, "6-player game should have 4 double elimination cards")
+        self.assertEqual(double_count, 5, "6-player game should have 5 double elimination cards")
 
     def test_tribal_composition_total_cards_correct(self):
         """Test that total tribal cards match expected count for each player count"""
-        # Based on the official rules table, all player counts get 4 tribal cards
-        expected_totals = {3: 4, 4: 4, 5: 4, 6: 4}
+        # Official rules table: 3p=4+0, 4p=2+2, 5p=2+3, 6p=0+5
+        expected_totals = {3: 4, 4: 4, 5: 5, 6: 5}
         
         for player_count in [3, 4, 5, 6]:
             with self.subTest(player_count=player_count):
@@ -380,7 +388,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         
         # Set up game state for testing
         game["phase"] = "playing"
-        game["currentPlayer"] = player_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][player_id]["hasStolen"] = True
         game["players"][player_id]["hasStolen"] = True
         
         numbers_game_card = self.rules_engine.get_card_definition("reward_challenge_its_a_numbers_game")
@@ -454,7 +463,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         """Test that tribal council initialization includes all required fields"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][current_player]["hasStolen"] = True
         
         # Add tribal council card
         tribal_card = {
@@ -467,11 +477,11 @@ class TestCriticalBugFixes(unittest.TestCase):
         
         if "deck" not in game:
             game["deck"] = []
-        game["deck"].append(tribal_card)  # Use append since pop() takes from end
+        game["deck"].insert(0, tribal_card)  # draw_card takes from the top (index 0)
         
         # Draw the card to trigger tribal council
         result = self.gs.draw_card(self.game_id, current_player)
-        self.assertTrue(result.get("tribal_council", False), "Should trigger tribal council")
+        self.assertTrue(result.get("tribal_triggered", False), "Should trigger tribal council")
         
         updated_game = self.gs.games[self.game_id]
         self.assertIn("currentVote", updated_game, "currentVote should be created")
@@ -480,7 +490,8 @@ class TestCriticalBugFixes(unittest.TestCase):
         # Verify all required fields are present based on _start_tribal_council method
         required_fields = [
             "type", "phase", "councilLeaderId", "votes", "immunityPlayed",
-            "tieBreakNeeded", "tiedPlayers", "eliminated", "tribalCard"
+            "advantageCardsPlayed", "tieBreakNeeded", "tiedPlayers", "eliminated",
+            "eliminationsNeeded", "voteResults",
         ]
         
         for field in required_fields:

@@ -21,53 +21,10 @@ from pathlib import Path
 from unittest import mock
 from concurrent.futures import ThreadPoolExecutor
 
-# Mock Flask/SocketIO dependencies for testing
-class MockApp:
-    def __init__(self, *args, **kwargs):
-        self.config = {}
-    
-    def route(self, *args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
-class MockSocketIO:
-    def __init__(self, *args, **kwargs):
-        pass
-    
-    def emit(self, *args, **kwargs):
-        pass
-    
-    def on(self, *args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def on_error_default(self, func):
-        return func
-
-# Create comprehensive mocks
-flask_mock = mock.MagicMock()
-flask_mock.Flask = MockApp
-flask_mock.request = mock.MagicMock()
-flask_mock.jsonify = lambda **kwargs: kwargs
-flask_mock.render_template_string = lambda x: x
-flask_mock.make_response = lambda x: x
-
-socketio_mock = mock.MagicMock()
-socketio_mock.SocketIO = MockSocketIO
-socketio_mock.emit = lambda *args, **kwargs: None
-socketio_mock.join_room = lambda *args: None
-
-# Add signal handling mock
-signal_mock = mock.MagicMock()
-signal_mock.SIGINT = 2
-signal_mock.SIGTERM = 15
-signal_mock.signal = lambda *args: None
-
-sys.modules['flask'] = flask_mock
-sys.modules['flask_socketio'] = socketio_mock
-sys.modules['signal'] = signal_mock
+# NOTE: this suite used to replace flask, flask_socketio and signal with mocks.
+# Every new import or decorator in survivor_server (send_from_directory,
+# app.errorhandler, ...) broke the mocks, so the suite failed for reasons that had
+# nothing to do with edge cases. The venv has the real dependencies installed.
 
 # Now import GameState
 from survivor_server import GameState
@@ -282,14 +239,15 @@ class ConnectionNetworkEdgeCases(EdgeCaseTester):
         game_id = gs.create_game()
         
         # Rapid player additions
-        results = []
+        accepted = 0
         for i in range(20):  # More than max players
-            result = gs.add_player(game_id, f"Player{i}", f"#{i*10000:06X}")
-            results.append(result)
-            
+            name, color = f"Player{i}", f"#{i*10000:06X}"
+            if gs.validate_new_player(game_id, name, color)["success"]:
+                if gs.add_player(game_id, name, color):
+                    accepted += 1
+
         # Should reject after 6 players
-        success_count = sum(1 for r in results if isinstance(r, dict) and r.get("success"))
-        return success_count == 6
+        return accepted == 6
         
     def test_malformed_data_handling(self):
         """Test handling of malformed API data"""
@@ -312,10 +270,10 @@ class ConnectionNetworkEdgeCases(EdgeCaseTester):
         
         success_count = 0
         for test_data in test_cases:
-            result = gs.add_player(game_id, test_data["name"], test_data["color"])
-            if isinstance(result, dict) and not result.get("success"):
+            result = gs.validate_new_player(game_id, test_data["name"], test_data["color"])
+            if not result["success"]:
                 success_count += 1  # Correctly rejected invalid data
-                
+
         return success_count >= len(test_cases) - 2  # Most should be rejected
         
     def test_concurrent_player_actions(self):
@@ -326,9 +284,9 @@ class ConnectionNetworkEdgeCases(EdgeCaseTester):
         # Add players
         player_ids = []
         for i in range(3):
-            result = gs.add_player(game_id, f"Player{i}", f"#FF000{i}")
-            if isinstance(result, dict) and result.get("success"):
-                player_ids.append(result["playerId"])
+            pid = gs.add_player(game_id, f"Player{i}", f"#FF000{i}")
+            if pid:
+                player_ids.append(pid)
         
         gs.start_full_game(game_id)
         
@@ -357,15 +315,14 @@ class ConnectionNetworkEdgeCases(EdgeCaseTester):
         
         # Simulate timeout by taking a long time between operations
         result1 = gs.add_player(game_id, "Player1", "#FF0000")
-        
+
         # Wait to simulate network delay
         time.sleep(0.1)  # Short delay for testing
-        
+
         result2 = gs.add_player(game_id, "Player2", "#00FF00")
-        
+
         # Both operations should succeed despite delay
-        return (isinstance(result1, dict) and result1.get("success") and
-                isinstance(result2, dict) and result2.get("success"))
+        return bool(result1) and bool(result2) and result1 != result2
 
 
 class GameStateEdgeCases(EdgeCaseTester):
@@ -396,9 +353,8 @@ class GameStateEdgeCases(EdgeCaseTester):
         # Add minimal players
         player1 = gs.add_player(game_id, "Player1", "#FF0000")
         player2 = gs.add_player(game_id, "Player2", "#00FF00")
-        
-        if not (isinstance(player1, dict) and isinstance(player2, dict) and 
-                player1.get("success") and player2.get("success")):
+
+        if not (player1 and player2):
             return False
             
         gs.start_full_game(game_id)
@@ -460,20 +416,19 @@ class GameStateEdgeCases(EdgeCaseTester):
         # Add exactly max players (6)
         player_ids = []
         for i in range(6):
-            result = gs.add_player(game_id, f"Player{i}", f"#{i*100000:06X}")
-            if isinstance(result, dict) and result.get("success"):
-                player_ids.append(result["playerId"])
-                
-        # Try to add one more (should fail)
-        result = gs.add_player(game_id, "Player7", "#700000")
-        game_full_rejected = isinstance(result, dict) and not result.get("success")
-        
-        # Try to add many more (should all fail gracefully)
+            pid = gs.add_player(game_id, f"Player{i}", f"#{i*100000:06X}")
+            if pid:
+                player_ids.append(pid)
+
+        # Try to add one more (should be rejected)
+        game_full_rejected = not gs.validate_new_player(game_id, "Player7", "#700000")["success"]
+
+        # Try to add many more (should all be rejected gracefully)
         for i in range(5):
-            result = gs.add_player(game_id, f"ExtraPlayer{i}", f"#{800000+i*10000:06X}")
-            if isinstance(result, dict) and result.get("success"):
-                return False  # Should not succeed
-                
+            name, color = f"ExtraPlayer{i}", f"#{800000+i*10000:06X}"
+            if gs.validate_new_player(game_id, name, color)["success"]:
+                return False  # Should not be allowed
+
         return len(player_ids) == 6 and game_full_rejected
         
     def test_zero_players_game_operations(self):
@@ -604,12 +559,10 @@ class MalformedDataHandlingEdgeCases(EdgeCaseTester):
         """Test handling of invalid card references in player hands"""
         gs = GameState()
         game_id = gs.create_game()
-        player_result = gs.add_player(game_id, "Player1", "#FF0000")
-        
-        if not (isinstance(player_result, dict) and player_result.get("success")):
+        player_id = gs.add_player(game_id, "Player1", "#FF0000")
+        if not player_id:
             return False
-            
-        player_id = player_result["playerId"]
+
         gs.start_full_game(game_id)
         
         game = gs.games[game_id]
@@ -707,14 +660,12 @@ class MalformedDataHandlingEdgeCases(EdgeCaseTester):
         gs = GameState()
         game_id = gs.create_game()
         
-        player1_result = gs.add_player(game_id, "Player1", "#FF0000")
-        player2_result = gs.add_player(game_id, "Player2", "#00FF00")
-        
-        if not (isinstance(player1_result, dict) and isinstance(player2_result, dict) and
-                player1_result.get("success") and player2_result.get("success")):
+        player1_id = gs.add_player(game_id, "Player1", "#FF0000")
+        player2_id = gs.add_player(game_id, "Player2", "#00FF00")
+
+        if not (player1_id and player2_id):
             return False
-            
-        player1_id = player1_result["playerId"]
+
         gs.start_voting(game_id, "single")
         
         # Test invalid vote targets

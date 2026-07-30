@@ -74,6 +74,25 @@ def validate_player_name(name):
         return False, "Player name can only contain letters, numbers, spaces, hyphens, underscores, and periods."
     return True, None
 
+def validate_player_color(color):
+    """
+    Validates a player colour.
+
+    Colours are written straight into inline styles on the client, so only accept a
+    hex triple or a plain CSS colour name. ``None`` means "assign one for me".
+    Returns (is_valid, error_message).
+    """
+    if color is None:
+        return True, None
+    if not isinstance(color, str) or not color.strip():
+        return False, "Player color is required."
+    color = color.strip()
+    if re.match(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$', color):
+        return True, None
+    if re.match(r'^[a-zA-Z][a-zA-Z0-9]{1,23}$', color):
+        return True, None
+    return False, f"'{color}' is not a valid color (use #RRGGBB or a color name)."
+
 # ───────────────────────── Persistent Game State ────────────────────
 class GameState:
     _FILE = 'games.json'
@@ -100,7 +119,14 @@ class GameState:
             logger.warning(f"Error during orphaned temp file cleanup: {e}")
 
     def _save(self):
-        """Atomically saves the current game state to a JSON file."""
+        """
+        Atomically saves the current game state to a JSON file.
+
+        Returns True on success, False on failure. A save failure must not abort the
+        game in progress — the in-memory state is still authoritative and the next
+        save may well succeed, so this logs loudly and returns False rather than
+        raising into whatever request happened to trigger it.
+        """
         temp_file = f"{self._FILE}.tmp.{uuid.uuid4().hex[:8]}"
         try:
             current_time = time.time()
@@ -110,6 +136,7 @@ class GameState:
                 json.dump(self.games, f, indent=2)
             os.rename(temp_file, self._FILE)
             logger.debug("Game state saved successfully")
+            return True
         except Exception as e:
             logger.error(f"GameState save error: {e}")
             if os.path.exists(temp_file):
@@ -117,7 +144,7 @@ class GameState:
                     os.remove(temp_file)
                 except OSError as cleanup_error:
                     logger.warning(f"Could not clean up temp file {temp_file}: {cleanup_error}")
-            raise
+            return False
 
     def _load(self):
         """Loads the game state from a JSON file, handling corruption."""
@@ -130,7 +157,20 @@ class GameState:
             if not content:
                 self.games = {}
                 return
-            self.games = json.loads(content)
+            loaded = json.loads(content)
+
+            # Structural validation: the file must be a mapping of game-id -> game
+            # object. Anything else (null, a list, a dict of non-dicts) used to load
+            # happily and then crash garbage_collect on startup.
+            if not isinstance(loaded, dict):
+                raise ValueError(f"expected a JSON object of games, got {type(loaded).__name__}")
+
+            bad_games = [gid for gid, game in loaded.items() if not isinstance(game, dict)]
+            for gid in bad_games:
+                logger.warning(f"Dropping malformed game '{gid}' from {self._FILE}")
+                del loaded[gid]
+
+            self.games = loaded
             logger.info(f"Loaded {len(self.games)} games from {self._FILE}")
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading {self._FILE}: {e}")
@@ -237,6 +277,10 @@ class GameState:
         if not is_valid:
             return {"success": False, "message": error}
 
+        is_valid, error = validate_player_color(color)
+        if not is_valid:
+            return {"success": False, "message": error}
+
         if len(g["players"]) >= 6:
             return {"success": False, "message": "Game is full — maximum 6 players."}
 
@@ -257,7 +301,7 @@ class GameState:
         if not g: return None
 
 
-        if color is None:
+        if not color:
             colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#F9844A", "#90BE6D", "#F9C74F"]
             used_colors = {p.get("color") for p in g["players"].values()}
             color = next((c for c in colors if c not in used_colors), "#8B5CF6")
@@ -456,41 +500,11 @@ class GameState:
         if voter.get("hasVoted", False):
             return {"success": False, "message": "Player has already voted"}
 
-        # ── Vote card economy (F2) ──
-        # Vote Cards and Goodwill Gambles MUST be placed in the Voting Box at this
-        # Tribal Council; Extra Vote Cards MAY be used now or saved for later.
-        mandatory_votes, optional_votes = self.rules_engine.get_vote_capacity(voter)
-        total_votes_available = mandatory_votes + optional_votes
-
         # Validate vote data format
         if not isinstance(votesData, list):
             return {"success": False, "message": "Vote data must be a list"}
 
-        total_votes_cast = sum(vote.get("votes", 0) for vote in votesData)
-
-        if total_votes_available == 0:
-            if total_votes_cast > 0:
-                return {"success": False, "message": "You have no Vote Card — you can't cast a vote at this Tribal Council"}
-            # Passing the Voting Box along with no Vote Card is legal.
-            current_vote["votes"][voterId] = {}
-            voter["hasVoted"] = True
-            self._save()
-            logger.info(f"Player {voterId} had no vote cards and passed in game {gid}")
-            return {"success": True, "message": "You have no Vote Card — the Voting Box passes you by"}
-
-        if total_votes_cast > total_votes_available:
-            return {"success": False, "message": f"Cannot cast {total_votes_cast} votes - only {total_votes_available} available"}
-
-        if total_votes_cast < mandatory_votes:
-            return {
-                "success": False,
-                "message": (
-                    f"You must cast all {mandatory_votes} of your Vote/Goodwill Gamble cards "
-                    f"at this Tribal Council (tried to cast {total_votes_cast})"
-                ),
-            }
-
-        # Validate all targets are valid and not immune
+        # ── Validate the ballot itself before counting cards ──
         necklace_holder = game.get("necklaceHolder")
         vote_targets = {}
         for vote in votesData:
@@ -515,6 +529,35 @@ class GameState:
 
             # Accumulate votes for same target
             vote_targets[target_id] = vote_targets.get(target_id, 0) + vote_count
+
+        # ── Vote card economy (F2) ──
+        # Vote Cards and Goodwill Gambles MUST be placed in the Voting Box at this
+        # Tribal Council; Extra Vote Cards MAY be used now or saved for later.
+        mandatory_votes, optional_votes = self.rules_engine.get_vote_capacity(voter)
+        total_votes_available = mandatory_votes + optional_votes
+        total_votes_cast = sum(vote.get("votes", 0) for vote in votesData)
+
+        if total_votes_available == 0:
+            if total_votes_cast > 0:
+                return {"success": False, "message": "You have no Vote Card — you can't cast a vote at this Tribal Council"}
+            # Passing the Voting Box along with no Vote Card is legal.
+            current_vote["votes"][voterId] = {}
+            voter["hasVoted"] = True
+            self._save()
+            logger.info(f"Player {voterId} had no vote cards and passed in game {gid}")
+            return {"success": True, "message": "You have no Vote Card — the Voting Box passes you by"}
+
+        if total_votes_cast > total_votes_available:
+            return {"success": False, "message": f"Cannot cast {total_votes_cast} votes - only {total_votes_available} available"}
+
+        if total_votes_cast < mandatory_votes:
+            return {
+                "success": False,
+                "message": (
+                    f"You must cast all {mandatory_votes} of your Vote/Goodwill Gamble cards "
+                    f"at this Tribal Council (tried to cast {total_votes_cast})"
+                ),
+            }
 
         # Record the votes
         current_vote["votes"][voterId] = vote_targets
@@ -1974,6 +2017,17 @@ class GameState:
         if player.get("isEliminated", False):
             return {"success": False, "message": "Eliminated players cannot draw cards"}
 
+        if game.get("phase") != "playing":
+            if game.get("phase") == "tribal_council":
+                return {
+                    "success": False,
+                    "message": "You can't draw during a tribal council — the Tribe must speak first",
+                }
+            return {
+                "success": False,
+                "message": f"Cannot draw during the '{game.get('phase')}' phase",
+            }
+
         # Validate it's this player's turn
         turn_order = game.get("turnOrder", [])
         current_index = game.get("currentTurnIndex", 0)
@@ -2005,9 +2059,11 @@ class GameState:
         # Get number of cards to draw (including draw bonuses)
         draw_count = self.rules_engine.get_card_draw_count(player)
         
-        drawn_cards = []
+        drawn_cards = []      # resolved cards, for the response
+        hand_cards = []       # the exact (compact) objects added to the hand
         tribal_triggered = False
-        
+
+
         for _ in range(min(draw_count, len(deck))):
             if not deck:
                 break
@@ -2030,12 +2086,19 @@ class GameState:
                 break
             else:
                 player["hand"].append(drawn_card)
+                hand_cards.append(drawn_card)
                 drawn_cards.append(resolved_card)
-        
-        # Process card draw effects (Camp Raid, etc.)
+
+        # Process card draw effects (Camp Raid, etc.). This must be handed the exact
+        # objects that went into the hand — passing the resolved copies meant the
+        # "is this card still in their hand?" check never matched and Camp Raid
+        # silently took nothing.
         if not tribal_triggered:
-            self.rules_engine.process_card_draw_effects(game, player_id, drawn_cards)
-        
+            self.rules_engine.process_card_draw_effects(game, player_id, hand_cards)
+
+        self.rules_engine.sync_vote_counters(game)
+
+
         self._save()
         
         if tribal_triggered:
@@ -2321,8 +2384,8 @@ class GameState:
         )
         
         if interrupt_result.get("success"):
-            # Close reactive window
-            del game["pending_theft"]
+            # Close reactive window (execute_reactive_interrupt may already have)
+            game.pop("pending_theft", None)
             self._save()
             return {
                 "success": True,
@@ -2350,10 +2413,11 @@ class GameState:
         
         # Execute the theft
         theft_result = self.rules_engine.execute_theft(game, thief_id, target_id)
-        
-        # Close reactive window
-        del game["pending_theft"]
-        
+
+        # Close reactive window (execute_theft may already have)
+        game.pop("pending_theft", None)
+
+
         if theft_result.get("success"):
             stolen_cards = theft_result.get("stolen_cards", [])
             target_name = game["players"][target_id].get("name", "player")

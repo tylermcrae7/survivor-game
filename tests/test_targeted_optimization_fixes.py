@@ -69,7 +69,8 @@ class TestTargetedOptimizationFixes(unittest.TestCase):
         """
         game = self.gs.games[self.game_id]
         drawer_id = self.player_ids[0]
-        game["currentPlayer"] = drawer_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][drawer_id]["hasStolen"] = True
         
         # Create tribal council card and add to deck
         tribal_card = {
@@ -86,7 +87,7 @@ class TestTargetedOptimizationFixes(unittest.TestCase):
         
         # Verify initial state
         self.assertEqual(game["phase"], "playing")
-        self.assertNotIn("currentVote", game)
+        self.assertEqual(game["currentVote"]["phase"], "waiting")
         
         # Draw the tribal council card
         result = self.gs.draw_card(self.game_id, drawer_id)
@@ -223,7 +224,8 @@ class TestTargetedOptimizationFixes(unittest.TestCase):
         game = self.gs.games[self.game_id]
         thief_id = self.player_ids[0]
         victim_id = self.player_ids[1]
-        game["currentPlayer"] = thief_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][thief_id]["hasStolen"] = True
         
         # Give victim some cards to steal
         victim_cards = [
@@ -296,7 +298,8 @@ class TestTargetedOptimizationFixes(unittest.TestCase):
         game = self.gs.games[self.game_id]
         raider_id = self.player_ids[0]
         victim_id = self.player_ids[1] 
-        game["currentPlayer"] = victim_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][victim_id]["hasStolen"] = True
         
         # Set up camp raid marker
         game["campRaidedBy"] = raider_id

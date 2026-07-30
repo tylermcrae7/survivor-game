@@ -175,6 +175,12 @@ def test_cast_vote_errors():
         gs.add_player(game_id, "Player3", "green")
         gs.start_full_game(game_id)
 
+        # Deterministic hands: setup deals random action cards, and a random
+        # Goodwill Gamble would change how many votes a player must cast.
+        for player in gs.games[game_id]["players"].values():
+            player["hand"] = [{"type": "camp_raid"}, {"type": "vote"}]
+        gs.rules_engine.sync_vote_counters(gs.games[game_id])
+
         # Test: Not in voting phase
         result = gs.cast_vote(game_id, player1_id, [{"targetId": player2_id, "votes": 1}])
         print(f"Not in voting phase: {result}")

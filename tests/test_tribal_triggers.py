@@ -66,7 +66,8 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         """Test that drawing a tribal_council_single card triggers tribal council"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Add tribal council card to top of deck
         tribal_card = self._create_tribal_council_card("tribal_council_single")
@@ -74,7 +75,7 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         
         # Verify game is in playing phase before drawing
         self.assertEqual(game["phase"], "playing")
-        self.assertNotIn("currentVote", game)
+        self.assertEqual(game["currentVote"]["phase"], "waiting")
         
         # Draw the card (this should trigger tribal council)
         result = self.gs.draw_card(self.game_id, current_player)
@@ -91,17 +92,22 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         
         # Verify tribal council is properly initialized
         vote_data = updated_game["currentVote"]
-        self.assertEqual(vote_data["phase"], "tribal_announcement", 
+        self.assertEqual(vote_data["phase"], "announcement", 
             "Tribal council should start in announcement phase")
         self.assertIn("votes", vote_data)
-        self.assertIn("hasVoted", vote_data)
-        self.assertIn("eliminatedPlayers", vote_data)
+        self.assertIn("eliminated", vote_data)
+        self.assertIn("eliminationsNeeded", vote_data)
+        # Per-player vote state lives on the players, not on currentVote
+        for player in updated_game["players"].values():
+            self.assertFalse(player["hasVoted"])
+            self.assertFalse(player["immunityPlayed"])
         
     def test_drawing_tribal_council_double_triggers_tribal_council(self):
         """Test that drawing a tribal_council_double card triggers tribal council"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Add double elimination tribal council card to deck
         tribal_card = self._create_tribal_council_card("tribal_council_double")
@@ -122,14 +128,15 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         
         # Verify double elimination is set correctly
         vote_data = updated_game["currentVote"]
-        self.assertTrue(vote_data.get("doubleElimination", False),
+        self.assertEqual(updated_game["currentVote"]["type"], "double",
             "Double elimination should be set for tribal_council_double")
     
     def test_drawing_non_tribal_cards_does_not_trigger_tribal_council(self):
         """Test that drawing non-tribal cards does not trigger tribal council"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Add a regular action card to deck
         action_card = {
@@ -160,7 +167,7 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         self.assertEqual(updated_game["phase"], original_phase,
             "Game phase should not change when drawing non-tribal cards")
         
-        self.assertNotIn("currentVote", updated_game,
+        self.assertEqual(updated_game["currentVote"]["phase"], "waiting",
             "currentVote should not be initialized for non-tribal cards")
         
         # Verify card was added to player's hand
@@ -172,7 +179,8 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         """Test that tribal advantage cards don't trigger tribal council when drawn"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Add tribal advantage card (not tribal_council category)
         advantage_card = {
@@ -198,14 +206,15 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         
         self.assertEqual(updated_game["phase"], "playing",
             "Tribal advantage cards should not trigger tribal council")
-        self.assertNotIn("currentVote", updated_game,
+        self.assertEqual(updated_game["currentVote"]["phase"], "waiting",
             "currentVote should not be created for tribal advantage cards")
     
     def test_vote_cards_do_not_trigger_tribal_council(self):
         """Test that vote cards don't trigger tribal council when drawn"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Add vote card
         vote_card = {
@@ -230,13 +239,14 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         updated_game = self.gs.games[self.game_id]
         
         self.assertEqual(updated_game["phase"], "playing")
-        self.assertNotIn("currentVote", updated_game)
+        self.assertEqual(updated_game["currentVote"]["phase"], "waiting")
     
     def test_tribal_council_initialization_properties(self):
         """Test that tribal council is initialized with correct properties"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Test both single and double elimination
         for elimination_type in ["single", "double"]:
@@ -260,27 +270,29 @@ class TestTribalCouncilTriggers(unittest.TestCase):
                 
                 # Verify all required properties are initialized
                 required_properties = [
-                    "phase", "votes", "hasVoted", "eliminatedPlayers", 
-                    "tribalAdvantages", "immunityPlayers"
+                    "phase", "type", "votes", "councilLeaderId", "immunityPlayed",
+                    "advantageCardsPlayed", "tieBreakNeeded", "tiedPlayers",
+                    "eliminated", "eliminationsNeeded", "voteResults",
                 ]
-                
+
                 for prop in required_properties:
-                    self.assertIn(prop, vote_data, 
+                    self.assertIn(prop, vote_data,
                         f"Tribal council should have '{prop}' property")
-                
+
                 # Verify elimination type is set correctly
-                if elimination_type == "double":
-                    self.assertTrue(vote_data.get("doubleElimination", False),
-                        "Double elimination should be true for double tribal council")
-                else:
-                    self.assertFalse(vote_data.get("doubleElimination", False),
-                        "Double elimination should be false for single tribal council")
+                self.assertEqual(vote_data["type"], elimination_type)
+                self.assertEqual(vote_data["eliminationsNeeded"],
+                                 2 if elimination_type == "double" else 1)
+
+                # The player who drew the card is the Tribal Council Leader
+                self.assertEqual(vote_data["councilLeaderId"], current_player)
     
     def test_multiple_tribal_cards_in_sequence(self):
         """Test behavior when multiple tribal council cards are drawn in sequence"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         # Add multiple tribal cards to deck
         tribal_card1 = self._create_tribal_council_card("tribal_council_single")
@@ -313,7 +325,8 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         """Test that drawing tribal council cards provides appropriate feedback"""
         game = self.gs.games[self.game_id]
         current_player = self.player_ids[0]
-        game["currentPlayer"] = current_player
+        # draw_card enforces Steal -> Play -> Draw, so satisfy the steal first
+        game["players"][current_player]["hasStolen"] = True
         
         tribal_card = self._create_tribal_council_card("tribal_council_single")
         self._add_card_to_deck_top(tribal_card)

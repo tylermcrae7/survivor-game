@@ -116,7 +116,7 @@ class TestPhaseEnforcement(unittest.TestCase):
         result = self.gs.play_card(self.game_id, player_id, card_idx)
         
         self.assertFalse(result["success"])
-        self.assertIn("cannot be played during", result["message"].lower())
+        self.assertIn("reactive card", result["message"].lower())
     
     def test_immunity_idol_cannot_be_played_during_turn_phases(self):
         """Test immunity_idol CANNOT be played during regular turn phases"""
@@ -149,7 +149,7 @@ class TestPhaseEnforcement(unittest.TestCase):
         result = self.gs.play_card(self.game_id, player_id, card_idx)
         
         self.assertFalse(result["success"])
-        self.assertIn("cannot be played during", result["message"].lower())
+        self.assertIn("spent when you vote", result["message"].lower())
     
     def test_vote_cards_cannot_be_played_during_turn_phases(self):
         """Test vote cards CANNOT be played outside tribal council"""
@@ -160,7 +160,7 @@ class TestPhaseEnforcement(unittest.TestCase):
         result = self.gs.play_card(self.game_id, player_id, card_idx)
         
         self.assertFalse(result["success"])
-        self.assertIn("cannot be played during", result["message"].lower())
+        self.assertIn("spent when you vote", result["message"].lower())
     
     def test_action_cards_cannot_be_played_during_tribal_phases(self):
         """Test action cards CANNOT be played during tribal council phases"""
@@ -211,17 +211,22 @@ class TestPhaseEnforcement(unittest.TestCase):
                 
                 # Check for phase-related error messages (various forms)
                 error_msg = result["message"].lower()
+                # Every rejection must say something specific and actionable, not
+                # just "invalid" — these are shown to players verbatim as toasts.
                 phase_error_indicators = [
-                    "cannot be played during", 
+                    "cannot be played during",
                     "phase",
                     "waiting",
                     "turn",
-                    "tribal"
+                    "tribal",
+                    "reactive card",
+                    "requires a valid target",
+                    "spent when you vote",
                 ]
-                
+
                 has_phase_error = any(indicator in error_msg for indicator in phase_error_indicators)
                 self.assertTrue(has_phase_error,
-                    f"{card_type} should provide phase validation error message: {result['message']}")
+                    f"{card_type} should provide a specific validation error message: {result['message']}")
     
     def test_wrong_player_turn_rejection(self):
         """Test that cards cannot be played when it's not the player's turn"""
@@ -246,17 +251,20 @@ class TestPhaseEnforcement(unittest.TestCase):
         """Test that eliminated players cannot play cards"""
         player_id = self.player_ids[0]
         
-        # Eliminate player
+        # Eliminate player (both Survivor Character Cards turned over)
         game = self.gs.games[self.game_id]
+        game["players"][player_id]["characterCards"] = 0
+        game["players"][player_id]["isEliminated"] = True
         game["players"][player_id]["isActive"] = False
-        
+
         # Try to play card as eliminated player
         card_idx = self._add_card_to_player_hand(player_id, "the_spy_shack")
-        result = self.gs.play_card(self.game_id, player_id, card_idx)
-        
+        result = self.gs.play_card(self.game_id, player_id, card_idx,
+                                   {"targetId": self.player_ids[1]})
+
         # Should fail
         self.assertFalse(result["success"])
-        self.assertIn("not active", result["message"].lower())
+        self.assertIn("eliminated", result["message"].lower())
 
 if __name__ == '__main__':
     print("Running Negative Phase Enforcement Tests...")

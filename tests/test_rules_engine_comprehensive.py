@@ -102,9 +102,12 @@ class TestRulesEngineComprehensive(unittest.TestCase):
         self.assertIsNotNone(engine.card_definitions)
         self.assertIn('cards', engine.card_definitions)
         
-        # Should have some default cards
+        # The fallback registry is deliberately empty — for a rules-fidelity game a
+        # silently-wrong deck is worse than an obviously-empty one. What matters is
+        # that the engine degrades gracefully instead of raising.
         cards = engine.get_all_card_definitions()
-        self.assertGreater(len(cards), 0)
+        self.assertIsInstance(cards, dict)
+        self.assertEqual(engine.create_deck(4), [])
     
     def test_card_registry_loading_fallback_on_invalid_json(self):
         """Test fallback when JSON file is malformed"""
@@ -163,10 +166,13 @@ class TestRulesEngineComprehensive(unittest.TestCase):
                 self.assertIsInstance(deck, list)
                 self.assertGreater(len(deck), 0)
                 
-                # All items should be card dictionaries
+                # Deck cards are stored compactly ({"type": ...}); metadata comes
+                # from resolve_card against the registry.
                 for card in deck:
                     self.assertIsInstance(card, dict)
                     self.assertIn("type", card)
+
+                for card in engine.resolve_cards(deck):
                     self.assertIn("category", card)
                     self.assertIn("name", card)
                     self.assertIn("description", card)
@@ -176,11 +182,12 @@ class TestRulesEngineComprehensive(unittest.TestCase):
         engine = SurvivorRulesEngine()
         
         # Test the internal tribal card creation method
+        # The official rules table (Setup step 4)
         test_cases = [
             (3, {"single": 4, "double": 0}),
             (4, {"single": 2, "double": 2}),
-            (5, {"single": 1, "double": 3}),
-            (6, {"single": 0, "double": 4})
+            (5, {"single": 2, "double": 3}),
+            (6, {"single": 0, "double": 5})
         ]
         
         for player_count, expected in test_cases:
@@ -290,7 +297,7 @@ class TestRulesEngineComprehensive(unittest.TestCase):
         engine = SurvivorRulesEngine()
         all_cards = engine.get_all_card_definitions()
         
-        valid_categories = {"vote", "tribal_advantage", "action", "tribal_council"}
+        valid_categories = {"vote", "tribal_advantage", "action", "tribal_council", "challenge"}
         
         for card_type, card_data in all_cards.items():
             with self.subTest(card_type=card_type):
@@ -323,10 +330,9 @@ class TestRulesEngineComprehensive(unittest.TestCase):
             # Should still function with fallback
             self.assertIsNotNone(engine.card_definitions)
             
-            # Should be able to create decks
+            # Should be able to create decks without raising (empty on fallback)
             deck = engine.create_deck(4)
             self.assertIsInstance(deck, list)
-            self.assertGreater(len(deck), 0)
     
     def test_card_insertion_algorithm(self):
         """Test the tribal card insertion algorithm"""

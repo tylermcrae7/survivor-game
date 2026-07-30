@@ -108,7 +108,12 @@ class SurvivorRulesEngine:
 	def _load_card_definitions(self, cards_file: str) -> None:
 		"""Load and validate card definitions from JSON file."""
 		try:
-			cards_path = Path(__file__).parent / cards_file
+			# Accept an absolute path, a path relative to the caller's cwd, or the
+			# default of "next to this module" (how the server loads it).
+			cards_path = Path(cards_file)
+			if not cards_path.is_absolute():
+				from_cwd = Path.cwd() / cards_file
+				cards_path = from_cwd if from_cwd.exists() else Path(__file__).parent / cards_file
 			with open(cards_path, 'r') as f:
 				self.card_definitions = json.load(f)
 				
@@ -287,7 +292,7 @@ class SurvivorRulesEngine:
 		"""
 		deck = list(action_deck)
 		tribal_cards = self._create_tribal_council_cards(player_count)
-		tribal_count = len(tribal_cards)  # _insert_tribal_cards consumes the list
+		tribal_count = len(tribal_cards)
 		if tribal_cards:
 			deck = self._insert_tribal_cards(deck, tribal_cards)
 
@@ -406,27 +411,34 @@ class SurvivorRulesEngine:
 		return tribal_cards
 		
 	def _insert_tribal_cards(self, deck: List[Dict], tribal_cards: List[Dict]) -> List[Dict]:
-		"""Insert tribal council cards at proper intervals throughout the deck."""
+		"""
+		Insert tribal council cards at proper intervals throughout the deck.
+
+		Rules step 5: place 1 face down at the bottom of the Action Card deck, then
+		insert the remainder face down, spaced evenly(ish) throughout.
+
+		Does not mutate either argument.
+		"""
 		if not tribal_cards:
 			return deck
-			
+
 		final_deck = deck.copy()
-		
+		remaining = list(tribal_cards)
+
 		# Place 1 tribal card at bottom as per rules
-		if tribal_cards:
-			final_deck.append(tribal_cards.pop())
-			
+		final_deck.append(remaining.pop())
+
 		# Insert remaining tribal cards evenly throughout the deck
-		if tribal_cards:
+		if remaining:
 			deck_size = len(final_deck)
-			interval = deck_size // (len(tribal_cards) + 1)
-			
-			for i, tribal_card in enumerate(tribal_cards):
+			interval = deck_size // (len(remaining) + 1)
+
+			for i, tribal_card in enumerate(remaining):
 				insert_pos = (i + 1) * interval
 				if insert_pos >= len(final_deck):
 					insert_pos = len(final_deck) - 1
 				final_deck.insert(insert_pos, tribal_card)
-				
+
 		return final_deck
 		
 	def get_current_turn_phase(self, game: Dict[str, Any], player_id: str) -> str:
@@ -485,16 +497,22 @@ class SurvivorRulesEngine:
 			
 		# Get current turn phase
 		current_phase = self.get_current_turn_phase(game, player_id)
-		
+
+		# Check reactive-only cards first — "wrong phase" is technically true but
+		# unhelpful when the real answer is "this card only works in response to theft".
+		if card.get("reactive_only", False) and current_phase != "reactive_theft":
+			return False, "This is a reactive card and can only be played in response to theft"
+
 		# Check if card is playable in current phase
 		playable_phases = card.get("playable_phases", [])
 		if current_phase not in playable_phases:
-			return False, f"Card not playable during {current_phase} phase"
-			
-		# Check reactive-only cards
-		if card.get("reactive_only", False) and current_phase != "reactive_theft":
-			return False, "This is a reactive card and can only be played in response to theft"
-			
+			allowed = ", ".join(playable_phases) if playable_phases else "never playable directly"
+			return False, (
+				f"{card.get('name', card.get('type', 'That card'))} cannot be played during "
+				f"the {current_phase} phase (playable during: {allowed})"
+			)
+
+
 		# Additional validation based on card requirements
 		if card.get("requires_target") and current_phase != "reactive_theft":
 			# We can't fully validate target here without knowing the intended target
@@ -544,7 +562,16 @@ class SurvivorRulesEngine:
 		playable, reason = self.is_card_playable(game, player_id, card)
 		if not playable:
 			return False, reason
-			
+
+		# Cards that name a target must actually get a live one. Without this the
+		# card was consumed from hand and the effect quietly did nothing.
+		if card.get("requires_target") and phase != "reactive_theft":
+			target_id = params.get("targetId")
+			if not target_id or target_id not in game["players"]:
+				return False, f"{card.get('name', card.get('type'))} requires a valid target player"
+			if game["players"][target_id].get("isEliminated", False):
+				return False, "Cannot target eliminated players"
+
 		# Category-specific validation
 		category = card.get("category")
 		if category == "tribal_advantage":
@@ -1086,6 +1113,10 @@ class SurvivorRulesEngine:
 			player.pop("immunityIdolProtection", None)
 			player.pop("idolNullified", None)
 			player.pop("immunityNullified", None)
+
+			# Per-tribal turn state
+			player["immunityPlayed"] = False
+			player["hasVoted"] = False
 			
 			# Reset vote manipulation flags
 			player.pop("voteStolen", None)
@@ -1649,10 +1680,15 @@ class SurvivorRulesEngine:
 			raider = game["players"][camp_raider_id]
 			stolen_card = drawn_cards[-1]  # Take the last card drawn
 			
-			# Remove from player's hand and give to raider
-			if stolen_card in player.get("hand", []):
-				player["hand"].remove(stolen_card)
-				raider["hand"].append(stolen_card)
+			# Remove from player's hand and give to raider. Match by identity so a
+			# resolved copy of the card can never fool the check.
+			hand = player.get("hand", [])
+			index = next((i for i, c in enumerate(hand) if c is stolen_card), None)
+			if index is None:
+				index = next((i for i, c in enumerate(hand) if c == stolen_card), None)
+			if index is not None:
+				hand.pop(index)
+				raider.setdefault("hand", []).append(stolen_card)
 				player["campRaidedBy"] = None  # Use up the camp raid
 				drawn_cards[-1] = {"type": "stolen_by_camp_raid", "original": stolen_card}
 				logger.info(f"Camp Raid: {camp_raider_id} stole {stolen_card.get('type')} from {player_id}")

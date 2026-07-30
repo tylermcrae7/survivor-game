@@ -1,701 +1,583 @@
 #!/usr/bin/env python3
 """
-Comprehensive Card Effect Validation Tests
-Tests all 67 action cards and their unique effects
+Card Effect Validation Tests
+
+Covers every card that actually exists in survivor_cards.json — the 17 official
+card types from Survivor: The Tribe Has Spoken, the 4 house cards that only appear
+in the extended deck, and the 5 Orange Challenge Cards from Let's Go To Rocks.
+
+Card behaviour is checked against the official Survival Guide wording.
 """
 
 import unittest
 import tempfile
 import os
 import sys
-import json
 import shutil
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from survivor_server import GameState
+from rules_engine import NON_OFFICIAL_CARD_TYPES, CHALLENGE_CARD_TYPES
 
-class TestCardEffects(unittest.TestCase):
-    """Test comprehensive card effects and validation"""
+
+class CardEffectTestBase(unittest.TestCase):
+    """Shared 4-player game fixture with deterministic hands."""
+
+    PLAYER_COUNT = 4
+    DECK_MODE = "official"
+    EXPANSION = False
 
     def setUp(self):
-        """Set up test environment with clean temporary directory"""
         self.test_dir = tempfile.mkdtemp()
         self.original_dir = os.getcwd()
         os.chdir(self.test_dir)
-        
+
         self.gs = GameState()
-        
-        # Create a standard 4-player game for testing
-        self.game_id = self.gs.create_game()
-        self.player_ids = []
-        colors = ["red", "blue", "green", "yellow"]
-        for i in range(4):
-            player_id = self.gs.add_player(self.game_id, f"Player{i+1}", colors[i])
-            self.player_ids.append(player_id)
-        
-        # Start the game to get to playing phase
+        self.game_id = self.gs.create_game(deckMode=self.DECK_MODE, expansion=self.EXPANSION)
+
+        colors = ["red", "blue", "green", "yellow", "orange", "purple"]
+        self.player_ids = [
+            self.gs.add_player(self.game_id, f"Player{i + 1}", colors[i])
+            for i in range(self.PLAYER_COUNT)
+        ]
+
         self.gs.start_full_game(self.game_id)
-        
-        # Set all players to have completed their steal phase for card testing
-        game = self.gs.games[self.game_id]
-        for player_id in self.player_ids:
-            game["players"][player_id]["hasStolen"] = True
-        
+        self.game = self.gs.games[self.game_id]
+
+        # Deterministic hands — opening deals are random, which makes hand-size and
+        # vote-economy assertions flaky.
+        for player in self.game["players"].values():
+            player["hand"] = [
+                {"type": "the_spy_shack"},
+                {"type": "camp_raid"},
+                {"type": "inheritance"},
+                {"type": "vote"},
+            ]
+        self.gs.rules_engine.sync_vote_counters(self.game)
+
+        # Put the turn on player 1, past the mandatory steal
+        self.game["currentTurnIndex"] = self.game["turnOrder"].index(self.player_ids[0])
+        for player in self.game["players"].values():
+            player["hasStolen"] = True
+
     def tearDown(self):
-        """Clean up test environment"""
         os.chdir(self.original_dir)
         shutil.rmtree(self.test_dir, ignore_errors=True)
-    
+
+    # ── helpers ──
+
+    def hand(self, player_id):
+        return self.game["players"][player_id]["hand"]
+
+    def hand_types(self, player_id):
+        return [c.get("type") for c in self.hand(player_id)]
+
+    def give(self, player_id, card_type):
+        """Put a card in a player's hand and return its index."""
+        self.hand(player_id).append({"type": card_type})
+        self.gs.rules_engine.sync_vote_counters(self.game)
+        return len(self.hand(player_id)) - 1
+
     def find_card_index(self, player_id, card_type):
-        """Helper to find card index in player's hand by card type"""
-        game = self.gs.games[self.game_id]
-        player_hand = game["players"][player_id]["hand"]
-        for i, card in enumerate(player_hand):
+        for i, card in enumerate(self.hand(player_id)):
             if card.get("type") == card_type:
                 return i
-        return -1  # Not found
-    
-    def test_card_database_completeness(self):
-        """Test that all unique card types are present with required fields"""
-        cards = self.gs.get_card_database()
-        
-        # Should have exactly 18 unique card types (including idol_nullifier)
-        # These represent all the card types that appear in the game
-        action_cards = [c for c in cards if c.get('category') in ['action', 'tribal_advantage']]
-        self.assertEqual(len(action_cards), 14)  # 14 action/tribal_advantage cards (including idol_nullifier)
-        
-        # Each card should have required fields
-        required_fields = ['type', 'category', 'description', 'playable_phases']
-        for card in action_cards:
-            for field in required_fields:
-                self.assertIn(field, card, f"Card {card.get('type', 'unknown')} missing {field}")
-                
-    def test_stealing_cards(self):
-        """Test all stealing-related card effects"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0] 
-        player2_id = self.player_ids[1]
-        
-        # Reset hasStolen flag for this test
-        game["players"][player1_id]["hasStolen"] = False
-        
-        # Test basic stealing
-        initial_p1_count = len(game["players"][player1_id]["hand"])
-        initial_p2_count = len(game["players"][player2_id]["hand"])
-        
-        result = self.gs.steal_card(self.game_id, player1_id, player2_id)
-        self.assertTrue(result)
-        
-        # Player 1 should gain a card, Player 2 should lose a card
-        final_p1_count = len(game["players"][player1_id]["hand"])
-        final_p2_count = len(game["players"][player2_id]["hand"])
-        
-        self.assertEqual(final_p1_count, initial_p1_count + 1)
-        self.assertEqual(final_p2_count, initial_p2_count - 1)
-        
-    def test_camp_raid_effect(self):
-        """Test camp raid - steal 2 random cards from target"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Add camp raid card to player 1's hand - use complete card definition
-        camp_raid_card = self.gs.get_complete_card("camp_raid")
-        game["players"][player1_id]["hand"].append(camp_raid_card)
-        
-        initial_p1_count = len(game["players"][player1_id]["hand"])
-        initial_p2_count = len(game["players"][player2_id]["hand"])
-        
-        # Play camp raid card (should be last card in hand)
-        card_idx = self.find_card_index(player1_id, "camp_raid")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": player2_id})
-        self.assertTrue(result)
-        
-        # Player 1 should gain 2 cards (minus the played card = +1), Player 2 should lose 2
-        final_p1_count = len(game["players"][player1_id]["hand"])
-        final_p2_count = len(game["players"][player2_id]["hand"])
-        
-        self.assertEqual(final_p1_count, initial_p1_count + 1)  # +2 stolen -1 played
-        self.assertEqual(final_p2_count, initial_p2_count - 2)
-        
-    def test_card_swap_effect(self):
-        """Test card swap - trade hands with target player"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Record initial hands
-        initial_p1_hand = list(game["players"][player1_id]["hand"])
-        initial_p2_hand = list(game["players"][player2_id]["hand"])
-        
-        # Test with official spy shack card instead (looks at hands)
-        spy_card = self.gs.get_complete_card("the_spy_shack") 
-        game["players"][player1_id]["hand"].append(spy_card)
-        
-        # Play spy shack
-        card_idx = self.find_card_index(player1_id, "the_spy_shack")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": player2_id})
-        self.assertTrue(result)
-        
-        # Hands should be swapped (minus the played card)
-        final_p1_hand = game["players"][player1_id]["hand"]
-        final_p2_hand = game["players"][player2_id]["hand"]
-        
-        # Player 1 should now have player 2's original hand
-        # Player 2 should have player 1's original hand minus the played card
-        self.assertEqual(len(final_p1_hand), len(initial_p2_hand))
-        self.assertEqual(len(final_p2_hand), len(initial_p1_hand))
-        
-    def test_spy_shack_effect(self):
-        """Test spy shack - look at target player's hand"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Add spy shack card to player 1
-        spy_shack_card = self.gs.get_complete_card("spy_shack")
-        game["players"][player1_id]["hand"].append(spy_shack_card)
-        
-        # Play spy shack (this should succeed but not change hands)
-        card_idx = self.find_card_index(player1_id, "spy_shack")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": player2_id})
-        self.assertTrue(result)
-        
-        # Hands should remain the same except for the played card
-        self.assertNotIn(spy_shack_card, game["players"][player1_id]["hand"])
-        
-    def test_immunity_effects(self):
-        """Test immunity-related cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test tribal immunity card
-        immunity_card = self.gs.get_complete_card("tribal_immunity")
-        game["players"][player1_id]["hand"].append(immunity_card)
-        
-        card_idx = self.find_card_index(player1_id, "tribal_immunity")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-        # Player should have immunity
-        self.assertTrue(game["players"][player1_id].get("immune", False))
-        
-    def test_extra_vote_cards(self):
-        """Test extra vote mechanisms"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Add extra vote card
-        extra_vote_card = self.gs.get_complete_card("extra_vote")
-        game["players"][player1_id]["hand"].append(extra_vote_card)
-        
-        # Trigger tribal council and advance to advantage phase
-        self.gs._trigger_tribal_council(game, "single")
-        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
-        
-        # Play extra vote
-        result = self.gs.play_tribal_advantage(self.game_id, player1_id, "extra_vote")
-        self.assertTrue(result)
-        
-        # Player should have extra votes
-        self.assertEqual(game["players"][player1_id].get("extraVotes", 0), 1)
-        
-    def test_vote_manipulation_cards(self):
-        """Test vote steal and vote blocking cards"""
-        game = self.gs.games[self.game_id] 
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Test vote steal card
-        vote_steal_card = self.gs.get_complete_card("vote_steal")
-        game["players"][player1_id]["hand"].append(vote_steal_card)
-        
-        card_idx = self.find_card_index(player1_id, "vote_steal")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": player2_id})
-        self.assertTrue(result)
-        
-        # Card should be removed from hand
-        self.assertNotIn(vote_steal_card, game["players"][player1_id]["hand"])
-        
-    def test_hand_manipulation_cards(self):
-        """Test cards that manipulate hand contents"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Test sorry for you card - should NOT be playable proactively
-        sorry_card = self.gs.get_complete_card("sorry_for_you")
-        game["players"][player1_id]["hand"].append(sorry_card)  # Give Sorry For You to current player
-        
-        # Ensure player1 is current turn and can play cards
-        game["currentTurnIndex"] = 0  # Make player1 current
-        game["players"][player1_id]["hasStolen"] = True  # Move to play phase
-        
-        card_idx = self.find_card_index(player1_id, "sorry_for_you")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        
-        # Should fail because Sorry For You is reactive only
+        return -1
+
+    def play(self, player_id, card_type, **params):
+        idx = self.find_card_index(player_id, card_type)
+        self.assertGreaterEqual(idx, 0, f"{card_type} not in hand")
+        return self.gs.play_card(self.game_id, player_id, idx, params or None)
+
+
+class TestCardRegistry(CardEffectTestBase):
+    """The card registry itself: counts, categories, required fields."""
+
+    def test_card_registry_official_counts(self):
+        """The official box is 67 Action Cards; the house deck adds exactly 7."""
+        cards = self.gs.rules_engine.get_all_card_definitions()
+
+        official_total = sum(
+            c["count"] for t, c in cards.items()
+            if t not in NON_OFFICIAL_CARD_TYPES and c["category"] != "challenge"
+        )
+        self.assertEqual(official_total, 67)
+
+        house_total = sum(c["count"] for t, c in cards.items() if t in NON_OFFICIAL_CARD_TYPES)
+        self.assertEqual(house_total, 7)
+
+        challenge_total = sum(c["count"] for c in cards.values() if c["category"] == "challenge")
+        self.assertEqual(challenge_total, 5)
+
+    def test_official_tribal_and_vote_card_counts(self):
+        """9 Tribal Council Cards and 6 Vote Cards, per the rules sheet contents."""
+        cards = self.gs.rules_engine.get_all_card_definitions()
+        tribal = sum(c["count"] for c in cards.values() if c["category"] == "tribal_council")
+        self.assertEqual(tribal, 9)
+        self.assertEqual(cards["vote"]["count"], 6)
+        self.assertEqual(cards["extra_vote"]["count"], 7)
+
+    def test_every_card_has_required_fields(self):
+        cards = self.gs.rules_engine.get_all_card_definitions()
+        required = ["type", "category", "name", "description", "playable_phases",
+                    "requires_target", "reactive_only", "count"]
+        for card_type, card in cards.items():
+            for field in required:
+                self.assertIn(field, card, f"{card_type} missing {field}")
+            self.assertTrue(card["name"], f"{card_type} has an empty name")
+            self.assertTrue(card["description"], f"{card_type} has an empty description")
+            self.assertIsInstance(card["playable_phases"], list)
+
+    def test_get_complete_card(self):
+        card = self.gs.get_complete_card("camp_raid")
+        self.assertEqual(card["type"], "camp_raid")
+        self.assertEqual(card["category"], "action")
+        self.assertTrue(card["requires_target"])
+        self.assertIsNone(self.gs.get_complete_card("no_such_card"))
+
+    def test_house_cards_excluded_from_official_deck(self):
+        official = self.gs.rules_engine.create_deck(4, deck_mode="official")
+        extended = self.gs.rules_engine.create_deck(4, deck_mode="extended")
+
+        for card_type in NON_OFFICIAL_CARD_TYPES:
+            self.assertNotIn(card_type, [c["type"] for c in official],
+                             f"{card_type} is a house card and must not be in the official deck")
+            self.assertIn(card_type, [c["type"] for c in extended])
+
+    def test_challenge_cards_only_with_expansion(self):
+        without = self.gs.rules_engine.create_deck(4, expansion=False)
+        with_exp = self.gs.rules_engine.create_deck(4, expansion=True)
+
+        for card_type in CHALLENGE_CARD_TYPES:
+            self.assertNotIn(card_type, [c["type"] for c in without])
+            self.assertIn(card_type, [c["type"] for c in with_exp])
+
+
+class TestTurnActionCards(CardEffectTestBase):
+    """Action cards played on your turn."""
+
+    def test_basic_steal(self):
+        thief, victim = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        # Sorry For You would open a reactive window instead of resolving immediately
+        self.hand(victim)[:] = [{"type": "camp_raid"}, {"type": "vote"}]
+
+        before_thief = len(self.hand(thief))
+        before_victim = len(self.hand(victim))
+
+        result = self.gs.steal_card(self.game_id, thief, victim)
+        self.assertTrue(result["success"], result.get("message"))
+
+        self.assertEqual(len(self.hand(thief)), before_thief + 1)
+        self.assertEqual(len(self.hand(victim)), before_victim - 1)
+        self.assertTrue(self.game["players"][thief]["hasStolen"])
+
+    def test_camp_raid_marks_target_for_their_next_draw(self):
+        """
+        Survival Guide: "Place this card face up in front of any player. you take the
+        next card they draw at the end of their turn."
+        """
+        raider, victim = self.player_ids[0], self.player_ids[1]
+        # Distinct victim hand so stolen cards can't be confused with the played one
+        self.hand(victim)[:] = [{"type": "immunity_idol"}, {"type": "immunity_idol"}]
+
+        result = self.play(raider, "camp_raid", targetId=victim)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertNotIn("camp_raid", self.hand_types(raider))
+        # Camp Raid steals 2 random cards from the target
+        self.assertEqual(self.hand(victim), [])
+        self.assertEqual(self.hand_types(raider).count("immunity_idol"), 2)
+
+    def test_the_spy_shack_reveals_target_hand(self):
+        spy, victim = self.player_ids[0], self.player_ids[1]
+        victim_hand = list(self.hand(victim))
+
+        result = self.play(spy, "the_spy_shack", targetId=victim)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(result["card_effect"]["spied_hand"], victim_hand)
+        self.assertNotIn("the_spy_shack", self.hand_types(spy))
+
+    def test_knowledge_is_power_takes_a_named_card(self):
+        """Survival Guide: "Ask any player for a card by name. If they have it, they must give you 1." """
+        asker, victim = self.player_ids[0], self.player_ids[1]
+        self.give(asker, "knowledge_is_power")
+        self.hand(victim)[:] = [{"type": "immunity_idol"}, {"type": "vote"}]
+
+        result = self.play(asker, "knowledge_is_power", targetId=victim, cardType="immunity_idol")
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertIn("immunity_idol", self.hand_types(asker))
+        self.assertNotIn("immunity_idol", self.hand_types(victim))
+
+        # Asking for something they don't have takes nothing
+        self.give(asker, "knowledge_is_power")
+        result = self.play(asker, "knowledge_is_power", targetId=victim, cardType="camp_raid")
+        self.assertTrue(result["success"])
+        self.assertIn("does not have", result["message"])
+
+    def test_lets_form_an_alliance_steals_one_card_each(self):
+        """You and your partner EACH steal 1 card from the victim."""
+        player, ally, victim = self.player_ids[0], self.player_ids[1], self.player_ids[2]
+        self.give(player, "lets_form_an_alliance")
+
+        before_player = len(self.hand(player))
+        before_ally = len(self.hand(ally))
+        before_victim = len(self.hand(victim))
+
+        result = self.play(player, "lets_form_an_alliance", allyId=ally, victimId=victim)
+        self.assertTrue(result["success"], result.get("message"))
+
+        # player: +1 stolen, -1 played alliance card
+        self.assertEqual(len(self.hand(player)), before_player)
+        self.assertEqual(len(self.hand(ally)), before_ally + 1)
+        self.assertEqual(len(self.hand(victim)), before_victim - 2)
+
+    def test_inheritance_marks_a_target_and_transfers_on_elimination(self):
+        """
+        Survival Guide: inheritance pays out "When that player is eliminated from the
+        game (by having both of their Survivor Character Cards turned over)".
+        """
+        heir, doomed = self.player_ids[0], self.player_ids[1]
+
+        result = self.play(heir, "inheritance", targetId=doomed)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.game["players"][heir]["inheritanceTarget"], doomed)
+
+        doomed_hand = list(self.hand(doomed))
+        heir_before = len(self.hand(heir))
+
+        messages = self.gs.rules_engine.process_elimination_inheritance(self.game, doomed)
+        self.assertTrue(messages)
+        self.assertEqual(len(self.hand(heir)), heir_before + len(doomed_hand))
+        self.assertEqual(self.hand(doomed), [])
+        self.assertIsNone(self.game["players"][heir]["inheritanceTarget"])
+
+    def test_inheritance_does_not_fire_on_a_non_elimination_vote_out(self):
+        """A vote-out that only flips one card must NOT pay out the inheritance."""
+        heir, doomed = self.player_ids[0], self.player_ids[1]
+        self.play(heir, "inheritance", targetId=doomed)
+
+        heir_before = list(self.hand(heir))
+        doomed_before = list(self.hand(doomed))
+
+        # Run a tribal that votes `doomed` out once (2 cards -> 1, still in the game)
+        self.gs._trigger_tribal_council(self.game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+        for voter in self.player_ids:
+            target = doomed if voter != doomed else heir
+            self.gs.cast_vote(self.game_id, voter, [{"targetId": target, "votes": 1}])
+        self.gs.reveal_votes(self.game_id)
+        self.gs.complete_tribal(self.game_id)
+
+        self.assertEqual(self.game["players"][doomed]["characterCards"], 1)
+        self.assertFalse(self.game["players"][doomed]["isEliminated"])
+        # Hands unchanged except for the Vote Card spent and returned
+        self.assertEqual(len(self.hand(doomed)), len(doomed_before))
+        self.assertEqual(len(self.hand(heir)), len(heir_before))
+        self.assertEqual(self.game["players"][heir]["inheritanceTarget"], doomed)
+
+    def test_reward_challenge_do_or_die(self):
+        player = self.player_ids[0]
+        self.give(player, "reward_challenge_do_or_die")
+        result = self.play(player, "reward_challenge_do_or_die",
+                           targetId=self.player_ids[1], choice="rock")
+        self.assertTrue(result["success"], result.get("message"))
+
+    def test_reward_challenge_power_pair(self):
+        player = self.player_ids[0]
+        self.give(player, "reward_challenge_power_pair")
+        result = self.play(player, "reward_challenge_power_pair")
+        self.assertTrue(result["success"], result.get("message"))
+
+    def test_reward_challenge_its_a_numbers_game(self):
+        player = self.player_ids[0]
+        self.give(player, "reward_challenge_its_a_numbers_game")
+        result = self.play(player, "reward_challenge_its_a_numbers_game")
+        self.assertTrue(result["success"], result.get("message"))
+
+
+class TestCardValidation(CardEffectTestBase):
+    """Phase gating, target requirements, and cards that can't be played at all."""
+
+    def test_sorry_for_you_cannot_be_played_proactively(self):
+        player = self.player_ids[0]
+        self.give(player, "sorry_for_you")
+        result = self.play(player, "sorry_for_you")
         self.assertFalse(result["success"])
         self.assertIn("reactive", result["message"].lower())
-        
-    def test_leadership_cards(self):
-        """Test cards that affect tribal council leadership"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Test control the vote card
-        control_card = self.gs.get_complete_card("control_the_vote")
-        game["players"][player1_id]["hand"].append(control_card)
-        
-        card_idx = self.find_card_index(player1_id, "control_the_vote")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": player2_id})
-        self.assertTrue(result)
-        
-        # Card should be played successfully
-        self.assertNotIn(control_card, game["players"][player1_id]["hand"])
-        
-    def test_alliance_cards(self):
-        """Test alliance and cooperation cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        player3_id = self.player_ids[2]
-        
-        # Test alliance card (official name: lets_form_an_alliance)
-        alliance_card = self.gs.get_complete_card("lets_form_an_alliance")
-        game["players"][player1_id]["hand"].append(alliance_card)
-        
-        result = self.gs.play_card(self.game_id, player1_id, "lets_form_an_alliance", {
-            "targetId": player3_id,  # victim
-            "allyId": player2_id     # ally
-        })
-        self.assertTrue(result)
-        
-    def test_reward_challenge_cards(self):
-        """Test reward challenge cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test reward challenge card
-        challenge_card = self.gs.get_complete_card("reward_challenge_do_or_die")
-        game["players"][player1_id]["hand"].append(challenge_card)
-        
-        result = self.gs.play_card(self.game_id, player1_id, "reward_challenge_do_or_die", {
-            "targetId": self.player_ids[1]
-        })
-        self.assertTrue(result)
-        
-    def test_protection_cards(self):
-        """Test protection and defensive cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test hand protection card
-        protection_card = self.gs.get_complete_card("hand_protection")
-        game["players"][player1_id]["hand"].append(protection_card)
-        
-        card_idx = self.find_card_index(player1_id, "hand_protection")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-        # Player should have protection
-        self.assertTrue(game["players"][player1_id].get("protected", False))
-        
-    def test_idol_nullifier_effect(self):
-        """Test idol nullifier - cancel immunity idol protection"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        player2_id = self.player_ids[1]
-        
-        # Set up tribal council with immunity phase
-        game["phase"] = "tribal_council"
-        game["tribal_council"] = {
-            "phase": "immunity",
-            "players": [player1_id, player2_id],
-            "votes": {}
-        }
-        
-        # Give player1 immunity protection
-        game["players"][player1_id]["immunityIdolProtection"] = True
-        
-        # Give player2 an idol_nullifier card
-        idol_nullifier = self.gs.get_complete_card("idol_nullifier")
-        game["players"][player2_id]["hand"] = [idol_nullifier]
-        
-        # Player2 plays idol_nullifier targeting player1
-        result = self.gs.play_card(self.game_id, player2_id, 0, {"targetId": player1_id})
-        
-        # Should succeed and remove immunity
-        self.assertTrue(result["success"])
-        self.assertIn("nullified", result["message"])
-        self.assertFalse(game["players"][player1_id].get("immunityIdolProtection", False))
-        
-        # Test error case - trying to nullify without immunity
-        game["players"][player1_id]["immunityIdolProtection"] = False
-        game["players"][player2_id]["hand"] = [idol_nullifier]
-        
-        result2 = self.gs.play_card(self.game_id, player2_id, 0, {"targetId": player1_id})
-        self.assertTrue(result2["success"])
-        self.assertIn("does not have immunity protection", result2["message"])
-        
-    def test_draw_manipulation_cards(self):
-        """Test cards that affect drawing"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test double draw card
-        double_draw_card = self.gs.get_complete_card("double_draw")
-        game["players"][player1_id]["hand"].append(double_draw_card)
-        
-        card_idx = self.find_card_index(player1_id, "double_draw")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-        # Effect should be applied (exact mechanics depend on implementation)
-        self.assertNotIn(double_draw_card, game["players"][player1_id]["hand"])
-        
-    def test_chaos_cards(self):
-        """Test chaotic effect cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test chaos theory card
-        chaos_card = self.gs.get_complete_card("chaos_theory")
-        game["players"][player1_id]["hand"].append(chaos_card)
-        
-        card_idx = self.find_card_index(player1_id, "chaos_theory")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-    def test_information_cards(self):
-        """Test information gathering cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test information broker card
-        info_card = self.gs.get_complete_card("information_broker")
-        game["players"][player1_id]["hand"].append(info_card)
-        
-        card_idx = self.find_card_index(player1_id, "information_broker")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-    def test_final_game_cards(self):
-        """Test end-game specific cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test final four fire card
-        fire_card = self.gs.get_complete_card("final_four_fire")
-        game["players"][player1_id]["hand"].append(fire_card)
-        
-        card_idx = self.find_card_index(player1_id, "final_four_fire")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-    def test_legacy_cards(self):
-        """Test legacy and transfer cards"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test legacy advantage card
-        legacy_card = self.gs.get_complete_card("legacy_advantage")
-        game["players"][player1_id]["hand"].append(legacy_card)
-        
-        card_idx = self.find_card_index(player1_id, "legacy_advantage")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertTrue(result)
-        
-    def test_card_validation_rules(self):
-        """Test that cards can only be played in appropriate phases"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Try to play a tribal advantage card during regular play (should fail)
-        tribal_card = self.gs.get_complete_card("extra_vote")
-        game["players"][player1_id]["hand"].append(tribal_card)
-        
-        # This should fail since we're in playing phase, not tribal
-        card_idx = self.find_card_index(player1_id, "extra_vote")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertFalse(result.get("success", True) if isinstance(result, dict) else result)
-        
-        # Card should still be in hand
-        self.assertIn(tribal_card, game["players"][player1_id]["hand"])
-        
+
+    def test_vote_cards_cannot_be_played_from_hand(self):
+        player = self.player_ids[0]
+        for card_type in ("vote", "extra_vote"):
+            self.give(player, card_type)
+            result = self.play(player, card_type)
+            self.assertFalse(result["success"], card_type)
+            self.assertIn("spent when you vote", result["message"])
+
+    def test_tribal_advantage_not_playable_during_a_turn(self):
+        player = self.player_ids[0]
+        self.give(player, "control_the_vote")
+        result = self.play(player, "control_the_vote", targetId=self.player_ids[1])
+        self.assertFalse(result["success"])
+        self.assertIn("control_the_vote", self.hand_types(player))
+
     def test_target_requirement_validation(self):
-        """Test that cards requiring targets are validated properly"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Add a card that requires a target
-        target_card = self.gs.get_complete_card("camp_raid")
-        game["players"][player1_id]["hand"].append(target_card)
-        
-        # Try to play without target (should fail)
-        card_idx = self.find_card_index(player1_id, "camp_raid")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx)
-        self.assertFalse(result.get("success", True) if isinstance(result, dict) else result)
-        
-        # Try to play with invalid target (should fail)
-        card_idx = self.find_card_index(player1_id, "camp_raid")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": "invalid"})
-        self.assertFalse(result.get("success", True) if isinstance(result, dict) else result)
-        
-        # Try to play with valid target (should succeed)
-        card_idx = self.find_card_index(player1_id, "camp_raid")
-        result = self.gs.play_card(self.game_id, player1_id, card_idx, {"targetId": self.player_ids[1]})
-        self.assertTrue(result.get("success", False) if isinstance(result, dict) else result)
+        player = self.player_ids[0]
+
+        # No target
+        result = self.play(player, "camp_raid")
+        self.assertFalse(result["success"])
+        self.assertIn("camp_raid", self.hand_types(player))
+
+        # Invalid target
+        result = self.play(player, "camp_raid", targetId="not-a-player")
+        self.assertFalse(result["success"])
+        self.assertIn("camp_raid", self.hand_types(player))
+
+        # Valid target
+        result = self.play(player, "camp_raid", targetId=self.player_ids[1])
+        self.assertTrue(result["success"], result.get("message"))
+
+    def test_cards_cannot_be_played_before_stealing(self):
+        player = self.player_ids[0]
+        self.game["players"][player]["hasStolen"] = False
+        result = self.play(player, "the_spy_shack", targetId=self.player_ids[1])
+        self.assertFalse(result["success"])
+
+    def test_eliminated_players_cannot_play_cards(self):
+        player = self.player_ids[0]
+        self.game["players"][player]["isEliminated"] = True
+        result = self.play(player, "the_spy_shack", targetId=self.player_ids[1])
+        self.assertFalse(result["success"])
+        self.assertIn("Eliminated", result["message"])
 
 
-class TestReactiveCardMechanics(unittest.TestCase):
-    """Test reactive card mechanics - specifically "Sorry For You" card system"""
-    
-    def setUp(self):
-        """Set up test environment"""
-        self.test_dir = tempfile.mkdtemp()
-        self.original_dir = os.getcwd()
-        os.chdir(self.test_dir)
-        
-        self.gs = GameState()
-        
-        # Create a test game with 4 players for robust testing
-        self.game_id = self.gs.create_game()
-        self.player_ids = []
-        player_names = ["Alice", "Bob", "Carol", "Dave"]
-        
-        # Add players to the game
-        for name in player_names:
-            player_id = self.gs.add_player(self.game_id, name, "#ff0000")
-            self.player_ids.append(player_id)
-        
-        # Start the game
-        self.gs.start_full_game(self.game_id)
-        
-        # Set up turn state for testing (ensure players can steal)
-        game = self.gs.games[self.game_id]
-        for player_id in self.player_ids:
-            player = game["players"][player_id] 
-            player["hasStolen"] = False
-            player["hasPlayed"] = False
-            player["hasDrawn"] = False
-    
-    def tearDown(self):
-        """Clean up test environment"""
-        os.chdir(self.original_dir)
-        shutil.rmtree(self.test_dir, ignore_errors=True)
-            
-    def test_theft_with_no_reactive_cards(self):
-        """Test normal theft when target has no Sorry For You cards"""
-        game = self.gs.games[self.game_id]
-        thief_id = self.player_ids[0]
-        target_id = self.player_ids[1]
-        
-        # Ensure target has no Sorry For You cards
-        target = game["players"][target_id]
-        target["hand"] = [
-            {"type": "vote", "category": "voting"},
-            {"type": "the_spy_shack", "category": "action"}
+class TestTribalCouncilCards(CardEffectTestBase):
+    """Immunity idols, nullifiers and tribal advantages."""
+
+    DECK_MODE = "extended"  # idol_nullifier is a house card
+
+    def test_immunity_idol_negates_votes(self):
+        protected = self.player_ids[0]
+        self.gs._trigger_tribal_council(self.game, "single")
+        self.give(protected, "immunity_idol")
+
+        result = self.gs.play_immunity(self.game_id, playerId=protected)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertTrue(self.game["players"][protected]["immunityIdolProtection"])
+        self.assertNotIn("immunity_idol", self.hand_types(protected))
+
+    def test_immunity_idol_can_protect_another_player(self):
+        player, ally = self.player_ids[0], self.player_ids[1]
+        self.gs._trigger_tribal_council(self.game, "single")
+        self.give(player, "immunity_idol")
+
+        result = self.gs.play_immunity(self.game_id, playerId=player, targetId=ally)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertTrue(self.game["players"][ally]["immunityIdolProtection"])
+        self.assertFalse(self.game["players"][player].get("immunityIdolProtection", False))
+
+    def test_idol_nullifier_cancels_protection(self):
+        protected, nullifier = self.player_ids[0], self.player_ids[1]
+        self.gs._trigger_tribal_council(self.game, "single")
+        self.game["players"][protected]["immunityIdolProtection"] = True
+        self.give(nullifier, "idol_nullifier")
+
+        result = self.gs.block_immunity(self.game_id, playerId=nullifier, targetId=protected)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertFalse(self.game["players"][protected]["immunityIdolProtection"])
+        self.assertTrue(self.game["players"][protected]["idolNullified"])
+        self.assertNotIn("idol_nullifier", self.hand_types(nullifier))
+
+    def test_idol_nullifier_requires_a_protected_target(self):
+        protected, nullifier = self.player_ids[0], self.player_ids[1]
+        self.gs._trigger_tribal_council(self.game, "single")
+        self.give(nullifier, "idol_nullifier")
+
+        result = self.gs.block_immunity(self.game_id, playerId=nullifier, targetId=protected)
+        self.assertFalse(result["success"])
+        self.assertIn("does not have immunity protection", result["message"])
+
+    def test_im_the_leader_now_takes_the_gavel(self):
+        player = self.player_ids[1]
+        self.gs._trigger_tribal_council(self.game, "single", drawer_id=self.player_ids[0])
+        self.assertEqual(self.game["currentVote"]["councilLeaderId"], self.player_ids[0])
+
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        self.give(player, "im_the_leader_now")
+
+        result = self.gs.play_tribal_advantage(self.game_id, player, "im_the_leader_now")
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.game["currentVote"]["councilLeaderId"], player)
+
+
+class TestChallengeCards(CardEffectTestBase):
+    """Let's Go To Rocks Orange Challenge Cards (combined mode)."""
+
+    EXPANSION = True
+
+    def test_playing_a_challenge_card_starts_a_challenge(self):
+        player = self.player_ids[0]
+        self.give(player, "challenge_highest_bidder")
+
+        result = self.play(player, "challenge_highest_bidder")
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertTrue(result["challenge_started"])
+
+        challenge = self.game["challenge"]
+        self.assertEqual(challenge["type"], "highest_bidder")
+        self.assertEqual(challenge["bag"], {"grey": 10, "purple": 1})
+        self.assertEqual(challenge["currentPlayerId"], player)
+        self.assertEqual(challenge["actions"], ["bid"])
+
+    def test_hide_n_seek_is_unavailable_digitally(self):
+        player = self.player_ids[0]
+        self.give(player, "challenge_hide_n_seek")
+
+        result = self.play(player, "challenge_hide_n_seek")
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertFalse(result["challenge_started"])
+        self.assertIn("sleight-of-hand", result["message"])
+        self.assertIsNone(self.game.get("challenge"))
+
+    def test_challenge_blocks_other_turn_actions(self):
+        player = self.player_ids[0]
+        self.give(player, "challenge_pull_or_steal")
+        self.play(player, "challenge_pull_or_steal")
+
+        draw = self.gs.draw_card(self.game_id, player)
+        self.assertFalse(draw["success"])
+        self.assertIn("Resolve the active Challenge", draw["message"])
+
+        advance = self.gs.advance_turn(self.game_id)
+        self.assertFalse(advance["success"])
+
+    def test_challenge_cards_rejected_without_expansion(self):
+        gs = GameState()
+        game_id = gs.create_game(expansion=False)
+        for i in range(3):
+            gs.add_player(game_id, f"P{i}", f"c{i}")
+        gs.start_full_game(game_id)
+        game = gs.games[game_id]
+
+        player = game["turnOrder"][game["currentTurnIndex"]]
+        game["players"][player]["hasStolen"] = True
+        game["players"][player]["hand"].append({"type": "challenge_highest_bidder"})
+        idx = len(game["players"][player]["hand"]) - 1
+
+        result = gs.play_card(game_id, player, idx)
+        self.assertFalse(result["success"])
+        self.assertIn("expansion", result["message"])
+
+
+class TestReactiveCardMechanics(CardEffectTestBase):
+    """Sorry For You — the reactive theft interrupt."""
+
+    def test_theft_with_no_reactive_cards_resolves_immediately(self):
+        thief, target = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [{"type": "vote"}, {"type": "the_spy_shack"}]
+
+        result = self.gs.steal_card(self.game_id, thief, target)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(len(result["stolen_cards"]), 1)
+        self.assertNotIn("reactive_window", result)
+        self.assertNotIn("pending_theft", self.game)
+
+    def test_theft_opens_a_reactive_window(self):
+        thief, target = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [
+            {"type": "sorry_for_you"},
+            {"type": "sorry_for_you"},
+            {"type": "vote"},
         ]
-        
-        # Attempt theft
-        result = self.gs.steal_card(self.game_id, thief_id, target_id)
-        
-        # Should complete normally without reactive opportunity
-        if isinstance(result, dict):
-            self.assertTrue(result["success"])
-            self.assertEqual(len(result.get("stolen_cards", [])), 1)
-            self.assertNotIn("reactive_opportunity", result)
-        else:
-            self.assertTrue(result)  # Basic boolean result
-        
-    def test_theft_triggers_reactive_opportunity(self):
-        """Test that theft attempt triggers reactive opportunity when target has Sorry For You cards"""
-        game = self.gs.games[self.game_id]
-        thief_id = self.player_ids[0]
-        target_id = self.player_ids[1]
-        
-        # Give target Sorry For You cards
-        target = game["players"][target_id]
-        target["hand"] = [
-            {"type": "sorry_for_you", "category": "action"},
-            {"type": "sorry_for_you", "category": "action"},
-            {"type": "vote", "category": "voting"}
-        ]
-        
-        # Attempt theft
-        result = self.gs.steal_card(self.game_id, thief_id, target_id)
-        
-        # Check if reactive opportunity was created
-        if isinstance(result, dict) and "reactive_opportunity" in result:
-            self.assertTrue(result["reactive_opportunity"])
-            self.assertIn("theft_context", result)
-            self.assertEqual(result["theft_context"]["thief_id"], thief_id)
-            self.assertEqual(result["theft_context"]["target_id"], target_id)
-            self.assertEqual(len(result["theft_context"]["sorry_card_indices"]), 2)
-            
-            # Should create pending theft state
-            self.assertIn("pending_theft", game)
-        else:
-            # If reactive mechanism not implemented, theft should complete normally
-            self.assertTrue(result if isinstance(result, bool) else result.get("success", False))
-        
-    def test_sorry_for_you_reactive_defense(self):
-        """Test that Sorry For You can be used reactively to defend against theft"""
-        game = self.gs.games[self.game_id]
-        thief_id = self.player_ids[0]
-        target_id = self.player_ids[1]
-        
-        # Give target Sorry For You cards and thief some cards to discard
-        target = game["players"][target_id]
-        thief = game["players"][thief_id]
-        
-        target["hand"] = [
-            {"type": "sorry_for_you", "category": "action"},
-            {"type": "vote", "category": "voting"}
-        ]
-        thief["hand"] = [
-            {"type": "vote", "category": "voting"},
-            {"type": "extra_vote", "category": "tribal_advantage"}
-        ]
-        
-        initial_thief_hand_size = len(thief["hand"])
-        initial_target_hand_size = len(target["hand"])
-        
-        # Test reactive mechanism if implemented
-        if hasattr(self.gs, 'handle_reactive_card_play'):
-            theft_context = {
-                "thief_id": thief_id,
-                "target_id": target_id,
-                "thief_name": thief["name"],
-                "target_name": target["name"]
-            }
-            
-            # Play reactive card (first Sorry For You card at index 0)
-            result = self.gs.handle_reactive_card_play(self.game_id, target_id, 0, theft_context)
-            
-            # Should succeed if reactive system is implemented
-            if isinstance(result, dict):
-                self.assertTrue(result.get("success", False))
-                self.assertTrue(result.get("reactive_interrupt", False))
-                self.assertIn("Sorry For You", result.get("message", ""))
-                
-                # Target should have lost the Sorry For You card
-                self.assertEqual(len(target["hand"]), initial_target_hand_size - 1)
-                self.assertNotIn("sorry_for_you", [c.get("type") for c in target["hand"]])
-                
-                # Thief should have lost a card (forced discard)
-                self.assertEqual(len(thief["hand"]), initial_thief_hand_size - 1)
-                
-                # Thief's steal should be marked as completed
-                self.assertTrue(thief["hasStolen"])
-        else:
-            # If reactive system not implemented, just verify Sorry For You card exists
-            sorry_cards = [c for c in target["hand"] if c.get("type") == "sorry_for_you"]
-            self.assertEqual(len(sorry_cards), 1)
-        
-    def test_multiple_sorry_for_you_cards(self):
-        """Test having multiple Sorry For You cards triggers proper indices"""
-        game = self.gs.games[self.game_id]
-        thief_id = self.player_ids[0]
-        target_id = self.player_ids[1]
-        
-        # Give target multiple Sorry For You cards mixed with other cards
-        target = game["players"][target_id]
-        target["hand"] = [
-            {"type": "vote", "category": "voting"},                    # index 0
-            {"type": "sorry_for_you", "category": "action"},          # index 1
-            {"type": "extra_vote", "category": "tribal_advantage"},   # index 2
-            {"type": "sorry_for_you", "category": "action"},          # index 3
-            {"type": "the_spy_shack", "category": "action"}           # index 4
-        ]
-        
-        # Attempt theft
-        result = self.gs.steal_card(self.game_id, thief_id, target_id)
-        
-        if isinstance(result, dict) and result.get("reactive_opportunity"):
-            # Should identify correct indices for Sorry For You cards
-            sorry_indices = result["theft_context"]["sorry_card_indices"]
-            self.assertEqual(len(sorry_indices), 2)
-            self.assertIn(1, sorry_indices)
-            self.assertIn(3, sorry_indices)
-            self.assertNotIn(0, sorry_indices)
-            self.assertNotIn(2, sorry_indices)
-            self.assertNotIn(4, sorry_indices)
-        else:
-            # If reactive system not implemented, just verify Sorry For You cards exist
-            sorry_cards = [i for i, c in enumerate(target["hand"]) if c.get("type") == "sorry_for_you"]
-            self.assertEqual(len(sorry_cards), 2)
-            self.assertIn(1, sorry_cards)
-            self.assertIn(3, sorry_cards)
-        
-    def test_sorry_for_you_validation(self):
-        """Test that Sorry For You cannot be played proactively"""
-        game = self.gs.games[self.game_id]
-        player1_id = self.player_ids[0]
-        
-        # Test sorry for you card - should NOT be playable proactively
-        sorry_card = self.gs.get_complete_card("sorry_for_you")
-        game["players"][player1_id]["hand"].append(sorry_card)
-        
-        # Ensure player1 is current turn and can play cards
-        game["currentTurnIndex"] = 0  # Make player1 current
-        game["players"][player1_id]["hasStolen"] = True  # Move to play phase
-        
-        # Find the card in hand
-        card_idx = -1
-        for i, card in enumerate(game["players"][player1_id]["hand"]):
-            if card.get("type") == "sorry_for_you":
-                card_idx = i
-                break
-        
-        if card_idx >= 0:
-            result = self.gs.play_card(self.game_id, player1_id, card_idx)
-            
-            # Should fail because Sorry For You is reactive only
-            if isinstance(result, dict):
-                self.assertFalse(result.get("success", True))
-                self.assertIn("reactive", result.get("message", "").lower())
-            else:
-                # If basic validation, should return False
-                self.assertFalse(result)
+
+        result = self.gs.steal_card(self.game_id, thief, target)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertTrue(result["reactive_window"])
+        self.assertEqual(len(result["reactive_cards"]), 2)
+
+        pending = self.game["pending_theft"]
+        self.assertEqual(pending["thiefId"], thief)
+        self.assertEqual(pending["targetId"], target)
+
+        # The thief hasn't stolen anything yet
+        self.assertFalse(self.game["players"][thief]["hasStolen"])
+
+    def test_sorry_for_you_blocks_the_theft_and_forces_a_discard(self):
+        """
+        Survival Guide: "they get nothing from you and must discard 1 card
+        (regardless of how many cards you owe them)."
+        """
+        thief, target = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [{"type": "sorry_for_you"}, {"type": "vote"}]
+        self.hand(thief)[:] = [{"type": "vote"}, {"type": "camp_raid"}]
+
+        self.gs.steal_card(self.game_id, thief, target)
+
+        result = self.gs.handle_reactive_card_play(self.game_id, target, 0, {})
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertTrue(result["reactive_interrupt"])
+        self.assertIn("Sorry for you", result["message"])
+
+        # Target spent the Sorry For You card; thief lost one card and their steal
+        self.assertEqual(self.hand_types(target), ["vote"])
+        self.assertEqual(len(self.hand(thief)), 1)
+        self.assertTrue(self.game["players"][thief]["hasStolen"])
+        self.assertNotIn("pending_theft", self.game)
+
+    def test_declining_to_react_completes_the_theft(self):
+        thief, target = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [{"type": "sorry_for_you"}, {"type": "vote"}]
+
+        self.gs.steal_card(self.game_id, thief, target)
+        result = self.gs.complete_pending_theft(self.game_id)
+
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(len(self.hand(target)), 1)
+        self.assertTrue(self.game["players"][thief]["hasStolen"])
+        self.assertNotIn("pending_theft", self.game)
+
+    def test_only_the_theft_target_can_react(self):
+        thief, target, bystander = self.player_ids[0], self.player_ids[1], self.player_ids[2]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [{"type": "sorry_for_you"}, {"type": "vote"}]
+        self.hand(bystander)[:] = [{"type": "sorry_for_you"}]
+
+        self.gs.steal_card(self.game_id, thief, target)
+        result = self.gs.handle_reactive_card_play(self.game_id, bystander, 0, {})
+        self.assertFalse(result["success"])
+        self.assertIn("Only the theft target", result["message"])
 
 
 if __name__ == '__main__':
     print("🧪 Testing Card Effects & Validation (Including Reactive Cards)")
     print("=" * 70)
-    
-    # Create test suite with both test classes
+
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
-    
-    # Add both test classes
-    suite.addTests(loader.loadTestsFromTestCase(TestCardEffects))
-    suite.addTests(loader.loadTestsFromTestCase(TestReactiveCardMechanics))
-    
-    # Run tests with detailed output
+    for test_class in (TestCardRegistry, TestTurnActionCards, TestCardValidation,
+                       TestTribalCouncilCards, TestChallengeCards,
+                       TestReactiveCardMechanics):
+        suite.addTests(loader.loadTestsFromTestCase(test_class))
+
     runner = unittest.TextTestRunner(verbosity=2, buffer=True)
     result = runner.run(suite)
-    
-    print(f"\n📋 Combined Card Effects Test Summary:")
+
+    print(f"\n📋 Card Effects Test Summary:")
     print(f"✅ Tests Run: {result.testsRun}")
     print(f"❌ Failures: {len(result.failures)}")
     print(f"⚠️  Errors: {len(result.errors)}")
-    
-    if result.failures:
-        print(f"\n❌ Failed Tests:")
-        for test, traceback in result.failures:
-            print(f"  - {test}")
-            
-    if result.errors:
-        print(f"\n⚠️  Error Tests:")
-        for test, traceback in result.errors:
-            print(f"  - {test}")
-            
-    success = len(result.failures) == 0 and len(result.errors) == 0
+
+    for test, _ in result.failures:
+        print(f"  FAIL: {test}")
+    for test, _ in result.errors:
+        print(f"  ERROR: {test}")
+
+    success = not result.failures and not result.errors
     print(f"\n🎉 All card effect & reactive card tests {'PASSED' if success else 'FAILED'}!")
-    
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)

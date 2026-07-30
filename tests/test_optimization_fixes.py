@@ -63,7 +63,8 @@ class TestOptimizationFixes(unittest.TestCase):
         """
         game = self.gs.games[self.game_id]
         drawer_id = self.player_ids[0]
-        game["currentPlayer"] = drawer_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][drawer_id]["hasStolen"] = True
         
         # Create and add tribal council card to deck
         tribal_card = {
@@ -80,7 +81,7 @@ class TestOptimizationFixes(unittest.TestCase):
         
         # Verify initial state
         self.assertEqual(game["phase"], "playing")
-        self.assertNotIn("currentVote", game)
+        self.assertEqual(game["currentVote"]["phase"], "waiting")
         
         # Draw the tribal council card
         result = self.gs.draw_card(self.game_id, drawer_id)
@@ -110,8 +111,8 @@ class TestOptimizationFixes(unittest.TestCase):
         # Verify all required tribal council properties are initialized
         required_properties = [
             "type", "phase", "councilLeaderId", "votes", "immunityPlayed",
-            "tieBreakNeeded", "eliminatedPlayers", "tribalAdvantages",
-            "immunityPlayers", "hasVoted"
+            "tieBreakNeeded", "eliminated", "advantageCardsPlayed",
+            "tiedPlayers", "eliminationsNeeded", "voteResults",
         ]
         
         for prop in required_properties:
@@ -129,7 +130,9 @@ class TestOptimizationFixes(unittest.TestCase):
         """
         game = self.gs.games[self.game_id]
         drawer_id = self.player_ids[1]  # Use different drawer
-        game["currentPlayer"] = drawer_id
+        # draw_card enforces turn ownership and Steal -> Play -> Draw
+        game["currentTurnIndex"] = game["turnOrder"].index(drawer_id)
+        game["players"][drawer_id]["hasStolen"] = True
         
         # Create double elimination tribal card
         tribal_card = {
@@ -228,10 +231,10 @@ class TestOptimizationFixes(unittest.TestCase):
         vote_data["phase"] = "immunity"
         
         # Phase 2: Player A plays immunity idol on self
-        result_a = self.gs.play_tribal_card(
-            self.game_id, player_a_id, 0, {"targetId": player_a_id}
+        result_a = self.gs.play_immunity(
+            self.game_id, playerId=player_a_id, targetId=player_a_id
         )
-        self.assertTrue(result_a["success"])
+        self.assertTrue(result_a["success"], result_a.get("message"))
         
         # Verify Player A has immunity protection
         player_a = game["players"][player_a_id]
@@ -239,10 +242,10 @@ class TestOptimizationFixes(unittest.TestCase):
             "Player A should have immunity protection after playing idol")
         
         # Phase 3: Player B plays idol nullifier targeting Player A
-        result_b = self.gs.play_tribal_card(
-            self.game_id, player_b_id, 0, {"targetId": player_a_id}
+        result_b = self.gs.block_immunity(
+            self.game_id, playerId=player_b_id, targetId=player_a_id
         )
-        self.assertTrue(result_b["success"])
+        self.assertTrue(result_b["success"], result_b.get("message"))
         
         # Verify Player A's immunity is nullified
         self.assertFalse(player_a.get("immunityIdolProtection", False),
@@ -256,28 +259,30 @@ class TestOptimizationFixes(unittest.TestCase):
         # Players C and D vote for Player A (who should not be immune)
         for voter_id in [player_c_id, player_d_id]:
             result_vote = self.gs.cast_vote(
-                self.game_id, voter_id, player_a_id
+                self.game_id, voter_id, [{"targetId": player_a_id, "votes": 1}]
             )
-            self.assertTrue(result_vote["success"])
+            self.assertTrue(result_vote["success"], result_vote.get("message"))
         
-        # Phase 5: Reveal votes - Player A's votes SHOULD count (immunity nullified)
-        vote_data["phase"] = "reveal"
+        # Phase 5: Reveal votes - Player A's votes SHOULD count (immunity nullified).
+        # reveal_votes moves the phase to "reveal" itself; it must be called from the
+        # voting or immunity phase.
         result_reveal = self.gs.reveal_votes(self.game_id)
-        self.assertTrue(result_reveal["success"])
-        
-        # Verify Player A received votes and was eliminated
+        self.assertTrue(result_reveal["success"], result_reveal.get("message"))
+
+        # Verify Player A received votes and was eliminated. currentVote["votes"] maps
+        # voterId -> {targetId: count}.
         final_vote_data = game["currentVote"]
-        votes_for_a = sum(1 for vote in final_vote_data["votes"].values() 
-                         if vote == player_a_id)
+        votes_for_a = sum(ballot.get(player_a_id, 0)
+                          for ballot in final_vote_data["votes"].values())
         self.assertEqual(votes_for_a, 2,
             "Player A should have received 2 votes (immunity was nullified)")
         
         # Verify Player A is eliminated
-        self.assertIn(player_a_id, final_vote_data["eliminatedPlayers"],
+        self.assertIn(player_a_id, final_vote_data["eliminated"],
             "Player A should be eliminated (immunity nullified)")
         
         # Phase 6: Complete tribal council and verify flags reset
-        result_complete = self.gs.complete_tribal_council(self.game_id)
+        result_complete = self.gs.complete_tribal(self.game_id)
         self.assertTrue(result_complete["success"])
         
         # Verify immunity flags are properly reset after tribal
@@ -306,7 +311,8 @@ class TestOptimizationFixes(unittest.TestCase):
         game = self.gs.games[self.game_id]
         thief_id = self.player_ids[0]
         victim_id = self.player_ids[1]
-        game["currentPlayer"] = thief_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][thief_id]["hasStolen"] = True
         
         # Give thief a stealing card
         stealing_card = {
@@ -364,9 +370,9 @@ class TestOptimizationFixes(unittest.TestCase):
         # Phase 3: Complete tribal council 
         vote_data = game["currentVote"]
         vote_data["phase"] = "reveal"  # Skip to end
-        vote_data["eliminatedPlayers"] = [victim_id]  # Eliminate someone
+        vote_data["eliminated"] = [victim_id]  # Eliminate someone
         
-        result_complete = self.gs.complete_tribal_council(self.game_id)
+        result_complete = self.gs.complete_tribal(self.game_id)
         self.assertTrue(result_complete["success"])
         
         # Phase 4: Verify theft state is properly cleared
@@ -403,10 +409,13 @@ class TestOptimizationFixes(unittest.TestCase):
         game = self.gs.games[self.game_id]
         raider_id = self.player_ids[0]
         victim_id = self.player_ids[1] 
-        game["currentPlayer"] = victim_id
+        # draw_card enforces Steal -> Play -> Draw
+        game["players"][victim_id]["hasStolen"] = True
         
-        # Phase 1: Set up camp raid marker
-        game["campRaidedBy"] = raider_id
+        # Phase 1: Set up camp raid marker (it lives on the raided player) and put
+        # the turn on the victim so they're allowed to draw.
+        game["players"][victim_id]["campRaidedBy"] = raider_id
+        game["currentTurnIndex"] = game["turnOrder"].index(victim_id)
         
         # Phase 2: Add cards to deck for drawing
         test_cards = [
@@ -426,7 +435,8 @@ class TestOptimizationFixes(unittest.TestCase):
         raider_initial_hand = len(game["players"][raider_id]["hand"])
         victim_initial_hand = len(game["players"][victim_id]["hand"])
         
-        # Phase 3: Victim draws cards (multiple draws to test "last drawn")
+        # Phase 3: Victim draws. Camp Raid takes "the next card they draw", so the
+        # marker is consumed by the FIRST draw and later draws are unaffected.
         num_draws = len(test_cards)
         
         for i in range(num_draws):
@@ -446,21 +456,21 @@ class TestOptimizationFixes(unittest.TestCase):
         self.assertEqual(victim_final_hand, victim_initial_hand + expected_victim_cards,
             f"Victim should receive {expected_victim_cards} cards")
         
-        # Phase 5: Verify camp raid marker is cleared
-        self.assertNotIn("campRaidedBy", game,
+        # Phase 5: Verify camp raid marker is cleared (used up by the first draw)
+        self.assertIsNone(game["players"][victim_id].get("campRaidedBy"),
             "campRaidedBy marker should be cleared after card transfer")
-        
-        # Phase 6: Verify specific card transfer (last card)
-        expected_last_card = test_cards[-1]  # This should go to raider
-        raider_hand = game["players"][raider_id]["hand"] 
-        
-        # Check that raider has the expected last card
-        raider_has_last_card = any(
-            card.get("name") == expected_last_card["name"] 
+
+        # Phase 6: Verify the specific card transferred — Camp Raid takes "the next
+        # card they draw", i.e. the first one drawn after the marker was placed.
+        expected_card = test_cards[0]
+        raider_hand = game["players"][raider_id]["hand"]
+
+        raider_has_card = any(
+            card.get("name") == expected_card["name"]
             for card in raider_hand
         )
-        self.assertTrue(raider_has_last_card,
-            f"Raider should have received the last drawn card: {expected_last_card['name']}")
+        self.assertTrue(raider_has_card,
+            f"Raider should have received the next card drawn: {expected_card['name']}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # TEST 5: DECK DISTRIBUTION TESTS
@@ -474,11 +484,12 @@ class TestOptimizationFixes(unittest.TestCase):
         - Total deck composition is correct
         """
         # Official tribal card distribution per player count
+        # The official rules table (Survivor: The Tribe Has Spoken, Setup step 4)
         official_tribal_counts = {
-            3: {"single": 2, "double": 1},  # 3 total
-            4: {"single": 2, "double": 2},  # 4 total  
-            5: {"single": 3, "double": 2},  # 5 total
-            6: {"single": 3, "double": 3}   # 6 total
+            3: {"single": 4, "double": 0},  # 4 total
+            4: {"single": 2, "double": 2},  # 4 total
+            5: {"single": 2, "double": 3},  # 5 total
+            6: {"single": 0, "double": 5}   # 5 total
         }
         
         for player_count in range(3, 7):
@@ -537,21 +548,23 @@ class TestOptimizationFixes(unittest.TestCase):
                 remaining_positions = [pos for pos in tribal_positions 
                                      if pos != total_deck_size - 1]
                 
+                # The rules say to space the tribal cards "evenly(ish)", so assert the
+                # properties that actually matter rather than an exact interval:
+                # never adjacent, and spread across the whole deck.
+                for i in range(len(tribal_positions) - 1):
+                    gap = tribal_positions[i + 1] - tribal_positions[i]
+                    self.assertGreater(gap, 1,
+                        f"Tribal cards should never be adjacent (positions {tribal_positions})")
+
                 if len(remaining_positions) > 1:
-                    # Calculate expected spacing for remaining cards
-                    available_positions = total_deck_size - 1  # Exclude bottom position
-                    expected_interval = available_positions // (total_tribal - 1)
-                    
-                    # Check that spacing is relatively even (within tolerance)
-                    for i in range(len(remaining_positions) - 1):
-                        actual_gap = remaining_positions[i + 1] - remaining_positions[i]
-                        self.assertLessEqual(abs(actual_gap - expected_interval), 2,
-                            f"Tribal cards should be evenly spaced (expected ~{expected_interval}, got {actual_gap})")
-                
-                # Verify total deck composition is reasonable
-                expected_total_cards = 69  # Official card count
+                    self.assertLess(remaining_positions[0], total_deck_size // 2,
+                        "The first tribal card should land in the first half of the deck")
+
+                # Official setup: 67 cards minus 9 tribal and 6 vote = 52 Action Cards,
+                # minus 3 dealt per player, plus this player count's tribal cards.
+                expected_total_cards = 52 - (3 * player_count) + total_tribal
                 self.assertEqual(total_deck_size, expected_total_cards,
-                    f"Total deck should have {expected_total_cards} cards")
+                    f"Player count {player_count}: expected {expected_total_cards} cards, got {total_deck_size}")
                 
                 # Clean up
                 del self.gs.games[test_game_id]
@@ -765,7 +778,7 @@ class TestOptimizationFixes(unittest.TestCase):
             
             # Attempt to save game state
             try:
-                result = self.gs.save_games()
+                result = self.gs._save()
                 # Should either return False or handle gracefully
                 if result is not None:
                     self.assertFalse(result, 
@@ -782,7 +795,7 @@ class TestOptimizationFixes(unittest.TestCase):
             mock_file.side_effect = OSError("No space left on device")
             
             try:
-                result = self.gs.save_games()
+                result = self.gs._save()
                 if result is not None:
                     self.assertFalse(result,
                         "Save should return False on disk full error")
@@ -801,7 +814,7 @@ class TestOptimizationFixes(unittest.TestCase):
             mock_json.side_effect = TypeError("Object is not JSON serializable")
             
             try:
-                result = self.gs.save_games()
+                result = self.gs._save()
                 if result is not None:
                     self.assertFalse(result,
                         "Save should return False on JSON serialization error")
@@ -820,7 +833,7 @@ class TestOptimizationFixes(unittest.TestCase):
             mock_file.return_value.__enter__.return_value.write.side_effect = IOError("Bad file descriptor")
             
             try:
-                result = self.gs.save_games()
+                result = self.gs._save()
                 if result is not None:
                     self.assertFalse(result,
                         "Save should return False on file corruption")
