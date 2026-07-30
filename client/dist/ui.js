@@ -938,11 +938,11 @@ function renderPlayerHand(gameState, containerId = 'playerHand') {
 
     container.innerHTML = `
         <p class="tribe-label">${icon('cards')} Your hand <span style="letter-spacing:0; color:var(--text-faint)">· ${player.hand.length}</span></p>
-        <div class="hand-rail">${html}</div>
+        <div class="hand-grid">${html}</div>
     `;
 
     // Animate cards entering the hand
-    const handRail = container.querySelector('.hand-rail');
+    const handRail = container.querySelector('.hand-grid');
     if (handRail) animateCardEntrance(handRail);
 
     // Setup card interactions
@@ -963,23 +963,85 @@ function createCardElement(card, index, currentPhase) {
     const requiresTarget = cardInfo?.requiresTarget;
     const category = cardInfo?.category || 'action';
     const escapedName = escapeHtml(cardInfo?.name || card.type);
-    const escapedDesc = escapeHtml(cardInfo?.description || '');
 
+    // Mini face: the whole hand fits on screen at once. Rules and the play
+    // action live in the card sheet a tap opens.
     return `
-        <div class="card-button card-cat-${escapeHtml(category)} ${isPlayable ? 'playable' : 'locked'} touch-target"
+        <div class="card-button card-mini card-cat-${escapeHtml(category)} ${isPlayable ? 'playable' : 'locked'} touch-target"
+             role="button" tabindex="0"
              data-card-index="${index}"
              data-card-type="${card.type}"
-             data-requires-target="${requiresTarget}"
-             data-card-name="${escapedName}"
-             data-card-category="${escapeHtml(category)}"
-             data-card-phases="${escapeHtml(JSON.stringify(cardInfo?.playablePhases || []))}">
-            <button class="card-info-btn" data-card-type="${card.type}" aria-label="Card info">?</button>
+             aria-label="${escapedName}${isPlayable ? ' — playable now' : ''}">
             <div class="card-category">${escapeHtml(CATEGORY_LABELS[category] || category)}</div>
             <div class="card-name">${escapedName}</div>
-            <div class="card-description">${escapedDesc}</div>
-            ${requiresTarget ? `<div class="card-target-indicator">${icon('target')} needs a target</div>` : ''}
+            <div class="card-mini-badges">
+                ${requiresTarget ? `<span class="card-mini-badge" title="Needs a target">${icon('target')}</span>` : ''}
+                ${cardInfo?.reactiveOnly ? `<span class="card-mini-badge" title="Plays itself when you are raided">${icon('alert')}</span>` : ''}
+                ${isPlayable ? `<span class="card-mini-badge card-mini-now">now</span>` : ''}
+            </div>
         </div>
     `;
+}
+
+/**
+ * The card sheet — tap a card in the grid to read it and (when legal) play it.
+ * Doubles as the confirmation step: no card leaves the hand on a single tap.
+ */
+function openCardSheet(cardIndex) {
+    const gameState = window.SurvivorGame?.fullGameState;
+    const playerId = window.SurvivorGame?.localGameState?.playerId;
+    const hand = gameState?.players?.[playerId]?.hand || [];
+    const card = hand[cardIndex];
+    if (!card) return;
+
+    const cardInfo = window.SurvivorGame?.getCardInfo(card.type);
+    const currentPhase = window.SurvivorGame?.getCurrentTurnPhase(gameState, playerId);
+    const isPlayable = window.SurvivorGame?.canPlayCard(card, currentPhase);
+    const category = cardInfo?.category || 'action';
+    const phases = (cardInfo?.playablePhases || []).filter(ph => ph !== 'reactive_theft');
+
+    const timingChips = phases.map(ph =>
+        `<span class="card-sheet-phase">${escapeHtml(CardTooltipManager.formatPhaseName(ph))}</span>`
+    ).join('');
+
+    let footer;
+    if (cardInfo?.reactiveOnly) {
+        footer = `<p class="card-sheet-note">${icon('alert')} This card plays itself — when someone
+                  tries to raid you, you'll be offered it on the spot.</p>`;
+    } else if (isPlayable) {
+        footer = `
+            ${cardInfo?.requiresTarget ? `<p class="card-sheet-note">${icon('target')} You'll choose a target next.</p>` : ''}
+            <button class="btn btn-primary btn-enhanced touch-target" id="cardSheetPlayBtn">
+                Play This Card
+            </button>`;
+    } else {
+        footer = `<p class="card-sheet-note card-sheet-locked-note">${icon('hourglass')} Not playable right now.</p>`;
+    }
+
+    showModal(`
+        <div class="card-sheet card-cat-${escapeHtml(category)}">
+            <p class="card-category">${escapeHtml(CATEGORY_LABELS[category] || category)}</p>
+            <p class="card-sheet-desc">${escapeHtml(cardInfo?.description || '')}</p>
+            ${timingChips ? `<div class="card-sheet-timing">
+                <span class="card-sheet-timing-label">Playable during</span>${timingChips}
+            </div>` : ''}
+            ${footer}
+        </div>
+    `, { title: cardInfo?.name || card.type });
+
+    setTimeout(() => {
+        document.getElementById('cardSheetPlayBtn')?.addEventListener('click', () => {
+            hideModal();
+            // The hand may have shifted while the sheet was open (a raid, a
+            // state push) — only play if this index still holds the same card.
+            const freshHand = window.SurvivorGame?.fullGameState?.players?.[playerId]?.hand || [];
+            if (freshHand[cardIndex]?.type !== card.type) {
+                showToast('Your hand changed — check your cards', 'warning');
+                return;
+            }
+            beginCardPlay(cardIndex, card.type);
+        });
+    }, 0);
 }
 
 // HTML escaping utility for XSS prevention
@@ -1034,90 +1096,20 @@ let activePointerId = null;
 
 function setupCardInteractions() {
     CardTooltipManager.hide();
-    document.querySelectorAll('.card-button').forEach(cardElement => {
-        const cardType = cardElement.dataset.cardType;
+    document.querySelectorAll('.card-mini').forEach(cardElement => {
+        const cardIndex = parseInt(cardElement.dataset.cardIndex);
 
-        // Info button (tooltip trigger)
-        const infoBtn = cardElement.querySelector('.card-info-btn');
-        if (infoBtn) {
-            infoBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                CardTooltipManager.show(cardType, cardElement);
-            });
-        }
-
-        // Unified pointer events for hover + touch
-        cardElement.addEventListener('pointerenter', () => {
-            CardTooltipManager.show(cardType, cardElement);
+        cardElement.addEventListener('click', () => {
+            hapticFeedback('light');
+            openCardSheet(cardIndex);
         });
-        cardElement.addEventListener('pointerleave', () => {
-            CardTooltipManager.hideDelayed();
-        });
-
-        // Skip play interactions for locked cards
-        if (cardElement.classList.contains('locked')) return;
-
-        // Pointer down — start long-press timer and add press feedback
-        cardElement.addEventListener('pointerdown', (e) => {
-            activePointerId = e.pointerId;
-            longPressTriggered = false;
-            cardElement.classList.add('pressing');
-            cardElement.setPointerCapture(e.pointerId);
-
-            longPressTimer = setTimeout(() => {
-                longPressTriggered = true;
-                hapticFeedback('medium');
-                CardTooltipManager.show(cardType, cardElement);
-                cardElement.classList.remove('pressing');
-                cardElement.classList.add('inspecting');
-            }, LONG_PRESS_MS);
-        });
-
-        // Pointer up — if not long-press, treat as tap (play card)
-        cardElement.addEventListener('pointerup', (e) => {
-            clearTimeout(longPressTimer);
-            cardElement.classList.remove('pressing', 'inspecting');
-
-            if (longPressTriggered) {
-                // Long-press completed — tooltip shown, don't play card
-                longPressTriggered = false;
-                return;
-            }
-
-            // Short tap — play the card
-            handleCardClick(e);
-        });
-
-        // Pointer cancel — clean up state
-        cardElement.addEventListener('pointercancel', () => {
-            clearTimeout(longPressTimer);
-            longPressTriggered = false;
-            cardElement.classList.remove('pressing', 'inspecting');
-        });
-
-        // Pointer move — cancel long-press if finger moves too far
-        cardElement.addEventListener('pointermove', (e) => {
-            if (!longPressTimer) return;
-            // Allow small movements (5px) but cancel on larger drags
-            const rect = cardElement.getBoundingClientRect();
-            const inBounds = e.clientX >= rect.left - 5 && e.clientX <= rect.right + 5 &&
-                             e.clientY >= rect.top - 5 && e.clientY <= rect.bottom + 5;
-            if (!inBounds) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-                cardElement.classList.remove('pressing');
+        cardElement.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openCardSheet(cardIndex);
             }
         });
-
-        // Prevent context menu on long-press (mobile)
         cardElement.addEventListener('contextmenu', (e) => e.preventDefault());
-    });
-
-    // Hide tooltip when tapping elsewhere
-    document.addEventListener('pointerdown', (e) => {
-        if (!e.target.closest('.card-button') && !e.target.closest('.card-tooltip')) {
-            CardTooltipManager.hide();
-        }
     });
 }
 
@@ -1140,26 +1132,6 @@ function setupPlayerCardEvents(playerCard) {
     if (leaderBtn) {
         leaderBtn.addEventListener('click', handleLeaderClick);
     }
-}
-
-function handleCardClick(event) {
-    // Find the card-button element (pointer events may fire on children)
-    const cardElement = event.target.closest('.card-button');
-    if (!cardElement) return;
-
-    // Skip if the info button was clicked
-    if (event.target.closest('.card-info-btn')) return;
-
-    const cardIndex = parseInt(cardElement.dataset.cardIndex);
-    const cardType = cardElement.dataset.cardType;
-
-    // Haptic feedback on card interaction
-    hapticFeedback('medium');
-
-    beginCardPlay(cardIndex, cardType);
-
-    // Add visual feedback
-    addCardPlayAnimation(cardElement);
 }
 
 /**

@@ -2508,3 +2508,127 @@
   .player-name .rename-btn:hover,
   .player-name .rename-btn:focus-visible { color: var(--torch); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HAND GRID + CARD SHEET
+   The hand shows every card at once as named minis; tapping one opens the
+   sheet with the full rules and the Play button. No card leaves the hand on
+   a single tap.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .hand-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 0.55rem;
+    padding: 0.85rem 0.1rem 1rem;
+  }
+
+  .hand-grid .card-mini {
+    aspect-ratio: auto;
+    min-height: 84px;
+    padding: 0.55rem 0.55rem 0.5rem;
+    border-radius: 11px;
+  }
+  .hand-grid .card-mini .card-category {
+    font-size: 0.54rem;
+    margin-bottom: 0.2rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hand-grid .card-mini .card-name {
+    font-size: 0.88rem;
+    line-height: 1.12;
+  }
+  .hand-grid .card-mini.playable:hover { transform: translateY(-3px); }
+
+  .card-mini-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: auto;
+    padding-top: 0.4rem;
+    min-height: 1.15rem;
+  }
+  .card-mini-badge {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-faint);
+  }
+  .card-mini-badge .icon { width: 0.8rem; height: 0.8rem; }
+  .card-mini-now {
+    font-family: var(--font-label);
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--torch);
+    border: 1px solid color-mix(in oklch, var(--torch) 55%, transparent);
+    border-radius: var(--radius-full);
+    padding: 0.05rem 0.4rem;
+    margin-left: auto;
+  }
+
+  /* ── The card sheet ── */
+  .card-sheet {
+    position: relative;
+    padding-top: 0.55rem;
+  }
+  /* same category rule the minis wear, across the top of the sheet */
+  .card-sheet::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--cat, var(--text-faint));
+  }
+  .card-sheet .card-category { margin-bottom: 0.5rem; }
+
+  .card-sheet-desc {
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+    color: var(--text);
+    margin: 0 0 0.85rem;
+  }
+
+  .card-sheet-timing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+  }
+  .card-sheet-timing-label {
+    font-family: var(--font-label);
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-right: 0.15rem;
+  }
+  .card-sheet-phase {
+    font-family: var(--font-label);
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--torch);
+    border: 1px solid color-mix(in oklch, var(--torch) 45%, transparent);
+    border-radius: var(--radius-full);
+    padding: 0.12rem 0.55rem;
+  }
+
+  .card-sheet-note {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin: 0 0 0.8rem;
+  }
+  .card-sheet-note .icon { flex: none; width: 1rem; height: 1rem; color: var(--torch); }
+  .card-sheet-locked-note { margin-bottom: 0.2rem; }
+  .card-sheet-locked-note .icon { color: var(--text-faint); }
+
+  #cardSheetPlayBtn { width: 100%; }
+}
