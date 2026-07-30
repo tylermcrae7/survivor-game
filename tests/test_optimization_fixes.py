@@ -432,6 +432,14 @@ class TestOptimizationFixes(unittest.TestCase):
         for card in reversed(test_cards):
             game["deck"].insert(0, card.copy())
         
+        # A Sorry For You in the victim's dealt hand would (correctly) open the
+        # reactive gate on consumption — this test pins the plain transfer path,
+        # so make the hand deterministic first.
+        game["players"][victim_id]["hand"] = [
+            c for c in game["players"][victim_id]["hand"]
+            if c.get("type") != "sorry_for_you"
+        ]
+
         # Get initial hand sizes
         raider_initial_hand = len(game["players"][raider_id]["hand"])
         victim_initial_hand = len(game["players"][victim_id]["hand"])
@@ -441,6 +449,9 @@ class TestOptimizationFixes(unittest.TestCase):
         num_draws = len(test_cards)
         
         for i in range(num_draws):
+            # One draw per turn now (official rule) — simulate a fresh turn each time
+            game["players"][victim_id]["hasStolen"] = True
+            game["players"][victim_id]["hasDrawn"] = False
             result = self.gs.draw_card(self.game_id, victim_id)
             self.assertTrue(result["success"], f"Draw {i+1} should succeed")
         

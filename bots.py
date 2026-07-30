@@ -144,8 +144,12 @@ def _choose_card_play(game, bot_id, rng):
             continue
 
         if card_type == "camp_raid":
-            target = _biggest_threat(game, bot_id)
-            if target and _hand_count(game, target) >= 1:
+            # It's a trap now: pick the card leader who isn't already marked
+            candidates = [p for p in _alive(game) if p != bot_id
+                          and not game["players"][p].get("campRaidedBy")]
+            if candidates:
+                target = sorted(candidates,
+                                key=lambda p: (-_hand_count(game, p), p))[0]
                 return idx, {"targetId": target}
 
         elif card_type == "the_spy_shack":
@@ -226,6 +230,19 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
     if phase in ("lobby", "finished"):
         return None
 
+    # ── Reactive theft window (Sorry For You) — outranks everything: the gate
+    #    freezes the game until the victim answers ──
+    theft = game.get("pending_theft")
+    if theft and theft.get("reactive_window_open"):
+        target = theft.get("targetId")
+        if target and is_bot(game, target):
+            idx = _find_card(game, target, "sorry_for_you")
+            if idx is not None:
+                return _act("handle_reactive_card_play", playerId=target,
+                            cardIdx=idx)
+            return _act("complete_pending_theft")
+        return None  # a human decides
+
     # ── Reward Challenge interaction (blocks everything else) ──
     it = game.get("interaction")
     if it:
@@ -302,18 +319,6 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
                 action = "pull" if "pull" in actions else action
         return _act("challenge_action", playerId=cp, action=action, value=value)
 
-    # ── Reactive theft window (Sorry For You) ──
-    theft = game.get("pending_theft")
-    if theft and theft.get("reactive_window_open"):
-        target = theft.get("targetId")
-        if target and is_bot(game, target):
-            idx = _find_card(game, target, "sorry_for_you")
-            if idx is not None:
-                return _act("handle_reactive_card_play", playerId=target,
-                            cardIdx=idx)
-            return _act("complete_pending_theft")
-        return None  # a human decides
-
     # ── Tribal Council ──
     if phase == "tribal_council":
         return _tribal_action(game, age, rng)
@@ -338,32 +343,25 @@ def _turn_action(game, mem, rng):
         return None
     player = game["players"][current]
 
-    # hasStolen resets at the start of every turn — that's our fresh-turn signal
+    # The server's own turn flags drive the whole sequence now: one steal,
+    # at most one play (the server marks hasPlayed), one draw, end.
     if not player.get("hasStolen"):
-        mem.pop(current, None)
         target = _steal_target(game, current)
         if target is None:
             return _act("advance_turn")
         return _act("steal_card", thiefId=current, targetId=target)
 
-    bot_mem = mem.setdefault(current, {})
+    if player.get("hasDrawn"):
+        return _act("advance_turn")
 
-    if not bot_mem.get("play_done"):
-        bot_mem["play_done"] = True
-        if rng.random() < PLAY_CHANCE:
-            play = _choose_card_play(game, current, rng)
-            if play:
-                idx, params = play
-                return _act("play_card", playerId=current, cardIdx=idx,
-                            params=params)
-        # fall through to draw on the next step
+    if not player.get("hasPlayed") and rng.random() < PLAY_CHANCE:
+        play = _choose_card_play(game, current, rng)
+        if play:
+            idx, params = play
+            return _act("play_card", playerId=current, cardIdx=idx,
+                        params=params)
 
-    if not bot_mem.get("drawn"):
-        bot_mem["drawn"] = True
-        return _act("draw_card", playerId=current)
-
-    mem.pop(current, None)
-    return _act("advance_turn")
+    return _act("draw_card", playerId=current)
 
 
 def _tribal_action(game, age, rng):

@@ -28,8 +28,9 @@ const GAME_PHASES = {
 
 const TURN_PHASES = {
     STEAL: "turn_steal",
-    PLAY: "turn_play", 
-    DRAW: "turn_draw"
+    PLAY: "turn_play",
+    DRAW: "turn_draw",
+    DONE: "turn_done"
 };
 
 const TRIBAL_PHASES = {
@@ -133,12 +134,12 @@ function getCurrentTurnPhase(gameState, playerId) {
     
     if (currentPlayerId !== playerId) return 'waiting';
     
-    // Determine phase based on player state
-    if (!player.hasStolen) {
-        return TURN_PHASES.STEAL;
-    } else {
-        return TURN_PHASES.PLAY;
-    }
+    // Mirror of the server's phase machine: Steal -> Play (one card, optional)
+    // -> Draw (ends the turn) -> Done
+    if (!player.hasStolen) return TURN_PHASES.STEAL;
+    if (player.hasDrawn) return TURN_PHASES.DONE;
+    if (player.hasPlayed) return TURN_PHASES.DRAW;
+    return TURN_PHASES.PLAY;
 }
 
 function getPlayableCards(hand, currentPhase) {

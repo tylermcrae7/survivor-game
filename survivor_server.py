@@ -371,7 +371,8 @@ class GameState:
         player_id = str(uuid.uuid4())[:8]
         g['players'][player_id] = {
             'id': player_id, 'name': name, 'color': color, 'hand': [],
-            'isEliminated': False, 'hasStolen': False, 'hasVoted': False, 'extraVotes': 0,
+            'isEliminated': False, 'hasStolen': False, 'hasPlayed': False,
+            'hasDrawn': False, 'hasVoted': False, 'extraVotes': 0,
             'characterCards': 2, 'isActive': True, 'isCouncilLeader': False,
             'immunityPlayed': False
         }
@@ -452,7 +453,7 @@ class GameState:
         self.rules_engine.sync_vote_counters(enriched_game)
         # Strip hidden information (secret rock pulls, secret throws/fingers)
         # before it leaves the server — these keys reveal only at the reveal step.
-        for hidden_holder in ("challenge", "interaction"):
+        for hidden_holder in ("challenge", "interaction", "pending_theft"):
             holder = enriched_game.get(hidden_holder)
             if isinstance(holder, dict):
                 for key in [k for k in holder if k.startswith("_")]:
@@ -628,6 +629,7 @@ class GameState:
 
         # Physically spend the cards used to vote
         spent = self.rules_engine.spend_vote_cards(voter, total_votes_cast)
+        game.setdefault("discard", []).extend(spent)
         current_vote.setdefault("cardsSpent", []).extend(c.get("type") for c in spent)
         self.rules_engine.sync_vote_counters(game)
 
@@ -1063,7 +1065,18 @@ class GameState:
             inheritance_results = self.rules_engine.process_elimination_inheritance(game, player_id)
             inheritance_messages.extend(inheritance_results)
 
+            # "put your cards face up on top of the Discard Pile" — whatever an
+            # Inheritance didn't claim leaves the game via the discard
+            leftover = game["players"][player_id].get("hand") or []
+            if leftover:
+                game.setdefault("discard", []).extend(leftover)
+                game["players"][player_id]["hand"] = []
+
             logger.info(f"Player {player_id} eliminated and added to jury in game {gid}")
+
+        # The Tribal Council Card itself goes face up on the Discard Pile
+        game.setdefault("discard", []).append(
+            {"type": f"tribal_council_{current_vote.get('type', 'single')}"})
 
         # ── Return 1 Vote Card to every player still in the game ──
         # "After voting has ended, return 1 Vote Card to every player who still has
@@ -1145,6 +1158,8 @@ class GameState:
             # Fresh turn — the new current player still owes a Steal before drawing
             for player in game["players"].values():
                 player["hasStolen"] = False
+                player["hasPlayed"] = False
+                player["hasDrawn"] = False
 
             message = (
                 f"Tribal council completed - {len(voted_out_players)} voted out "
@@ -1938,7 +1953,9 @@ class GameState:
             # Set up pending theft state for reactive interrupt window
             game["pending_theft"] = {
                 "thiefId": thief_id,
+                "thiefIds": [thief_id],
                 "targetId": target_id,
+                "source": "steal",
                 "reactive_window_open": True
             }
             self._save()
@@ -2039,6 +2056,15 @@ class GameState:
             hand.insert(card_idx, played_card)
             return {"success": False, "message": effect_result.get("message", "Card effect failed")}
         
+        # Official rule: "Play 1 card from your hand if you'd like to." The one
+        # turn-play is spent now; tribal/reactive plays don't touch the flag.
+        if current_phase == "turn_play":
+            player["hasPlayed"] = True
+
+        # "place it face up on the Discard Pile"
+        if card.get("category") != "tribal_council" and card.get("type") != "goodwill_gamble":
+            game.setdefault("discard", []).append({"type": card.get("type")})
+
         # Handle tribal council card triggers
         if card.get("category") == "tribal_council":
             self._trigger_tribal_council(
@@ -2120,6 +2146,10 @@ class GameState:
         Return an error message if an unfinished Challenge or Reward Challenge
         interaction blocks other turn actions.
         """
+        theft = game.get("pending_theft")
+        if theft and theft.get("reactive_window_open"):
+            victim = game["players"].get(theft.get("targetId"), {}).get("name", "someone")
+            return f"Waiting on {victim} - they may play Sorry For You"
         challenge = game.get("challenge")
         if challenge and challenge.get("phase") not in (None, "complete"):
             return f"Resolve the active Challenge ({challenge.get('name')}) before continuing your turn"
@@ -2262,6 +2292,13 @@ class GameState:
                 "success": False,
                 "message": "You must steal a card first — your turn is Steal, then Play (optional), then Draw.",
             }
+        # "End your turn by taking the top card from the Draw Pile." One draw,
+        # and the turn is over.
+        if player.get("hasDrawn"):
+            return {
+                "success": False,
+                "message": "You already drew — drawing ends your turn. Tap End Turn.",
+            }
 
         if game.get("pending_theft", {}).get("reactive_window_open"):
             return {
@@ -2271,7 +2308,22 @@ class GameState:
 
         deck = game.get("deck", [])
         if not deck:
-            return {"success": True, "message": "Deck is empty - no cards to draw"}
+            discard = game.get("discard") or []
+            if discard:
+                # The table would do exactly this: shuffle the Discard Pile into
+                # a fresh Draw Pile (used Tribal Council Cards return with it,
+                # which is what keeps the game finishable).
+                random.shuffle(discard)
+                game["deck"] = discard
+                game["discard"] = []
+                deck = game["deck"]
+                logger.info(f"Draw Pile empty in {gid} — reshuffled {len(deck)} discards")
+            else:
+                # Nothing anywhere to draw — the draw step still ends the turn
+                player["hasDrawn"] = True
+                self._save()
+                return {"success": True,
+                        "message": "The Draw Pile is empty — your turn ends"}
 
         # Get number of cards to draw (including draw bonuses)
         draw_count = self.rules_engine.get_card_draw_count(player)
@@ -2305,6 +2357,10 @@ class GameState:
                 player["hand"].append(drawn_card)
                 hand_cards.append(drawn_card)
                 drawn_cards.append(resolved_card)
+
+        # The one draw of the turn is spent — whether it was an Action Card or
+        # the Tribal Council card that ends everything.
+        player["hasDrawn"] = True
 
         # Process card draw effects (Camp Raid, etc.). This must be handed the exact
         # objects that went into the hand — passing the resolved copies meant the
@@ -2358,9 +2414,11 @@ class GameState:
         game["challenge"] = None
         game["interaction"] = None
 
-        # Reset hasStolen for all players at end of turn
+        # Fresh turn for the next player: steal, one play, one draw
         for player in game["players"].values():
             player["hasStolen"] = False
+            player["hasPlayed"] = False
+            player["hasDrawn"] = False
         
         # Find next non-eliminated player
         original_index = current_index
@@ -2541,6 +2599,8 @@ class GameState:
             player["hand"] = []
             player["isEliminated"] = False
             player["hasStolen"] = False
+            player["hasPlayed"] = False
+            player["hasDrawn"] = False
             player["hasVoted"] = False
             player["extraVotes"] = 0
             player["characterCards"] = 2
@@ -2556,7 +2616,6 @@ class GameState:
             player.pop("temporaryImmunity", None)
             player.pop("voteStolen", None)
             player.pop("voteBanned", None)
-            player.pop("drawBonus", None)
         
         # Clear tribal council state
         if "currentVote" in game:
@@ -2628,9 +2687,9 @@ class GameState:
         if not card.get("reactive_only", False):
             return {"success": False, "message": "This is not a reactive card"}
         
-        # Remove card from hand
+        # Remove card from hand — it goes to the discard once the block lands
         played_card = hand.pop(card_idx)
-        
+
         # Execute reactive interrupt
         thief_id = pending_theft.get("thiefId")
         interrupt_result = self.rules_engine.execute_reactive_interrupt(
@@ -2638,6 +2697,8 @@ class GameState:
         )
         
         if interrupt_result.get("success"):
+            # The played Sorry For You goes face up on the Discard Pile
+            game.setdefault("discard", []).append({"type": "sorry_for_you"})
             # Close reactive window (execute_reactive_interrupt may already have)
             game.pop("pending_theft", None)
             self._save()
@@ -2664,8 +2725,20 @@ class GameState:
         
         thief_id = pending_theft.get("thiefId")
         target_id = pending_theft.get("targetId")
-        
-        # Execute the theft
+        resume = pending_theft.get("_resume")
+
+        if resume:
+            # A card-effect taking (Spy Shack, Alliance, Camp Raid, a Reward
+            # Challenge...) — the victim declined, so the held take executes now.
+            from rules_engine import execute_take_spec
+            take_result = execute_take_spec(game, resume)
+            game.pop("pending_theft", None)
+            self.rules_engine.sync_vote_counters(game)
+            self._save()
+            return {"success": True,
+                    "message": take_result.get("message", "The cards change hands")}
+
+        # Legacy path: the turn-steal
         theft_result = self.rules_engine.execute_theft(game, thief_id, target_id)
 
         # Close reactive window (execute_theft may already have)

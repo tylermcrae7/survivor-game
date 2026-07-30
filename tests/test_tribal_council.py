@@ -155,9 +155,11 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.gs.advance_tribal_phase(self.game_id, "advantage_play")
 
         control_card = {"type": "control_the_vote"}
-        game["players"][player_id]["hand"].append(control_card)
-
-        # Setup deals exactly 1 Vote Card each
+        # Deterministic hands: both hold their Vote Card, no Sorry For You in the
+        # target's hand (that case is covered below)
+        game["players"][player_id]["hand"] = [{"type": "vote"}, control_card]
+        game["players"][target_id]["hand"] = [{"type": "vote"}, {"type": "camp_raid"}]
+        self.gs.rules_engine.sync_vote_counters(game)
         self.assertEqual(game["players"][player_id]["mandatoryVotes"], 1)
         self.assertEqual(game["players"][target_id]["mandatoryVotes"], 1)
 
@@ -170,6 +172,34 @@ class TestTribalCouncilFlow(unittest.TestCase):
 
         # Verify card was removed from hand
         self.assertNotIn(control_card, game["players"][player_id]["hand"])
+
+        # W2: without your own Vote Card, Control The Vote is refused —
+        # "You MUST use that Vote Card in addition to YOUR Vote Card"
+        third_id = self.player_ids[2]
+        game["players"][third_id]["hand"] = [{"type": "control_the_vote"}]
+        game["players"][player_id]["hand"] = [{"type": "vote"}, {"type": "vote"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+        result = self.gs.play_tribal_advantage(self.game_id, third_id, "control_the_vote", player_id)
+        self.assertFalse(result["success"])
+        self.assertIn("your own Vote Card", result.get("message", ""))
+        # The card was NOT consumed by the refusal
+        self.assertIn("control_the_vote",
+                      [c.get("type") for c in game["players"][third_id]["hand"]])
+
+        # W4: a target holding Sorry For You gets the reactive window
+        game["players"][third_id]["hand"] = [{"type": "vote"}, {"type": "control_the_vote"}]
+        game["players"][player_id]["hand"] = [{"type": "vote"}, {"type": "sorry_for_you"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+        result = self.gs.play_tribal_advantage(self.game_id, third_id, "control_the_vote", player_id)
+        self.assertTrue(result["success"], result.get("message"))
+        pending = game.get("pending_theft") or {}
+        self.assertTrue(pending.get("reactive_window_open"))
+        self.assertEqual(pending.get("source"), "Control The Vote")
+        # Declining hands the Vote Card over
+        done = self.gs.complete_pending_theft(self.game_id)
+        self.assertTrue(done["success"], done.get("message"))
+        self.assertIn("vote", [c.get("type") for c in game["players"][third_id]["hand"]])
+        self.assertNotIn("vote", [c.get("type") for c in game["players"][player_id]["hand"]])
 
     def test_tribal_advantage_goodwill_gamble(self):
         """Goodwill Gamble moves to the recipient and counts as 1 mandatory vote."""

@@ -251,8 +251,9 @@ class TestTribalCouncilTriggers(unittest.TestCase):
         # Test both single and double elimination
         for elimination_type in ["single", "double"]:
             with self.subTest(elimination_type=elimination_type):
-                # Reset game state
+                # Reset game state (fresh turn: one draw per turn is the rule now)
                 game["phase"] = "playing"
+                game["players"][current_player]["hasDrawn"] = False
                 if "currentVote" in game:
                     del game["currentVote"]
                 

@@ -179,6 +179,13 @@ def _human_move(gs, gid, human, rng):
     if not me:
         return False
 
+    theft = game.get("pending_theft")
+    if theft and theft.get("reactive_window_open"):
+        if theft.get("targetId") == human:
+            gs.complete_pending_theft(gid)
+            return True
+        return False
+
     it = game.get("interaction")
     if it:
         if it.get("phase") == "picking" and human in it.get("awaiting", []):
@@ -223,13 +230,6 @@ def _human_move(gs, gid, human, rng):
                     action = "pull" if "pull" in actions else action
                 gs.challenge_action(gid, playerId=human, action=action, value=value)
                 return True
-        return False
-
-    theft = game.get("pending_theft")
-    if theft and theft.get("reactive_window_open"):
-        if theft.get("targetId") == human:
-            gs.complete_pending_theft(gid)
-            return True
         return False
 
     if phase == "playing":

@@ -134,6 +134,10 @@ def main():
             'description': 'Access Gate Tests — shared island code for the public tunnel (14 tests)'
         },
         {
+            'file': 'tests/test_rules_enforcement.py',
+            'description': 'Rules Enforcement — turn discipline, Camp Raid trap, universal Sorry For You gate'
+        },
+        {
             'file': 'tests/test_bots.py',
             'description': 'Computer Players — lifecycle, Hall of Fame guard, decisions, full bot games to completion'
         }

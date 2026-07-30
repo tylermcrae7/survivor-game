@@ -186,9 +186,32 @@ class TestTurnActionCards(CardEffectTestBase):
         result = self.play(raider, "camp_raid", targetId=victim)
         self.assertTrue(result["success"], result.get("message"))
         self.assertNotIn("camp_raid", self.hand_types(raider))
-        # Camp Raid steals 2 random cards from the target
-        self.assertEqual(self.hand(victim), [])
-        self.assertEqual(self.hand_types(raider).count("immunity_idol"), 2)
+        # Nothing moves at play time — the trap sits face up on the victim
+        self.assertEqual(len(self.hand(victim)), 2)
+        self.assertEqual(self.game["players"][victim].get("campRaidedBy"), raider)
+
+        # A second Camp Raid can't stack on the same player
+        second = self.player_ids[2]
+        self.give(second, "camp_raid")
+        self.game["turnOrder"] = self.game.get("turnOrder") or self.player_ids
+        self.game["currentTurnIndex"] = self.game["turnOrder"].index(second)
+        self.game["players"][second]["hasStolen"] = True
+        result = self.play(second, "camp_raid", targetId=victim)
+        self.assertFalse(result["success"])
+        self.assertIn("already has", result.get("message", ""))
+
+        # The trap springs on the victim's next draw: the drawn card transfers
+        self.game["turnOrder"] = self.game.get("turnOrder") or self.player_ids
+        self.game["currentTurnIndex"] = self.game["turnOrder"].index(victim)
+        self.game["players"][victim]["hasStolen"] = True
+        self.game["players"][victim]["hasDrawn"] = False
+        self.game["deck"] = [{"type": "vote"}]
+        raider_before = len(self.hand(raider))
+        result = self.gs.draw_card(self.game_id, playerId=victim)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(len(self.hand(raider)), raider_before + 1)
+        self.assertIn("vote", self.hand_types(raider))
+        self.assertIsNone(self.game["players"][victim].get("campRaidedBy"))
 
     def test_the_spy_shack_looks_and_takes_one(self):
         """Survival Guide: "Look at any player's cards and take one." """
@@ -206,6 +229,7 @@ class TestTurnActionCards(CardEffectTestBase):
 
         # Without naming the card to take, the play is rejected pre-consumption
         self.give(spy, "the_spy_shack")
+        self.game["players"][spy]["hasPlayed"] = False
         result = self.play(spy, "the_spy_shack", targetId=victim)
         self.assertFalse(result["success"])
         self.assertIn("the_spy_shack", self.hand_types(spy))
@@ -221,8 +245,10 @@ class TestTurnActionCards(CardEffectTestBase):
         self.assertIn("immunity_idol", self.hand_types(asker))
         self.assertNotIn("immunity_idol", self.hand_types(victim))
 
-        # Asking for something they don't have takes nothing
+        # Asking for something they don't have takes nothing (fresh turn —
+        # the official rule allows only one play per turn)
         self.give(asker, "knowledge_is_power")
+        self.game["players"][asker]["hasPlayed"] = False
         result = self.play(asker, "knowledge_is_power", targetId=victim, cardType="camp_raid")
         self.assertTrue(result["success"])
         self.assertIn("does not have", result["message"])

@@ -667,6 +667,36 @@ st, resp = api("/api/player/rename", {"gameId": rn_gid, "playerId": rn_pid, "new
 check("rename_locked_after_start", resp.get("success") is False and "started" in resp.get("message", ""), resp)
 api("/api/game/delete", {"gameId": rn_gid})
 
+# ── Turn discipline: one steal, one play, one draw (2026-07-30 review) ───────
+st, resp = api("/api/game/create", {})
+td_gid = resp.get("gameId")
+td_pids = []
+for name, color in (("Uno", "red"), ("Dos", "blue"), ("Tres", "green")):
+    st, resp = api("/api/player/join", {"gameId": td_gid, "name": name, "color": color})
+    td_pids.append(resp.get("playerId"))
+api("/api/game/start_full", {"gameId": td_gid})
+game = state(td_gid)
+td_cur = game["turnOrder"][game["currentTurnIndex"]]
+td_victim = next(p for p in game["turnOrder"] if p != td_cur)
+api("/api/turn/steal", {"gameId": td_gid, "thiefId": td_cur, "targetId": td_victim})
+api("/api/reactive/complete_theft", {"gameId": td_gid})
+st, resp = api("/api/turn/draw", {"gameId": td_gid, "playerId": td_cur})
+check("first_draw_succeeds", resp.get("success"), resp)
+if not resp.get("tribal_triggered"):
+    st, resp = api("/api/turn/draw", {"gameId": td_gid, "playerId": td_cur})
+    check("second_draw_refused", resp.get("success") is False
+          and "End Turn" in str(resp.get("message", "")), resp)
+    game = state(td_gid)
+    hand = game["players"][td_cur].get("hand") or []
+    playable_idx = next((i for i, c in enumerate(hand)
+                         if c.get("type") == "inheritance"), None)
+    if playable_idx is not None:
+        st, resp = api("/api/turn/play_card",
+                       {"gameId": td_gid, "playerId": td_cur, "cardIdx": playable_idx,
+                        "targetId": td_victim})
+        check("play_after_draw_refused", resp.get("success") is False, resp)
+api("/api/game/delete", {"gameId": td_gid})
+
 # ── Computer players: lifecycle + they actually take their turns ─────────────
 st, resp = api("/api/game/create", {})
 bot_gid = resp.get("gameId")

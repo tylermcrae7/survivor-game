@@ -388,17 +388,21 @@ function renderTurnInfo(gameState) {
     `;
     announce(`It is ${currentPlayer.name}'s turn`);
 
-    // STEAL → PLAY → DRAW tracker for the player whose turn it is
+    // STEAL → PLAY → DRAW tracker for the player whose turn it is.
+    // One steal, at most one play, one draw — the draw ends the turn.
     if (turnPhaseIndicator) {
         const stolen = !!currentPlayer.hasStolen;
+        const played = !!currentPlayer.hasPlayed;
+        const drawn = !!currentPlayer.hasDrawn;
         const step = (label, state) => `<span class="step ${state}">${label}</span>`;
+        const playState = !stolen ? '' : (played || drawn) ? 'done' : 'now';
         turnPhaseIndicator.innerHTML = `
             <div class="turn-steps" aria-label="Turn order: steal, then play, then draw">
                 ${step('Steal', stolen ? 'done' : 'now')}
                 <span class="sep">→</span>
-                ${step('Play', stolen ? 'now' : '')}
+                ${step('Play', playState)}
                 <span class="sep">→</span>
-                ${step('Draw', '')}
+                ${step('Draw', drawn ? 'done' : (played ? 'now' : ''))}
             </div>
         `;
     }
@@ -678,6 +682,7 @@ function createPlayerCard(player, gameState) {
                     ${renderLives(player)}
                     ${isLeader ? `<span class="player-tag gold">${icon('crown')} Leader</span>` : ''}
                     ${hasNecklace ? `<span class="player-tag gold" title="Wearing the Immunity Idol Necklace — cannot be voted for">${icon('necklace')} Immune</span>` : ''}
+                    ${player.campRaidedBy ? `<span class="player-tag raid-tag" title="Camp Raid: their next drawn card goes to the raider">${icon('target')} Raided</span>` : ''}
                     ${!isEliminated ? `<span class="player-tag">${icon('cards')} ${cardCount}</span>` : ''}
                 </div>
             </div>
@@ -715,6 +720,8 @@ function renderLivesTracker(gameState) {
             stealable ? 'steal-target' : ''
         ].filter(Boolean).join(' ');
 
+        const raidTag = player.campRaidedBy
+            ? `<span class="player-tag raid-tag" title="Camp Raid: their next drawn card goes to the raider">${icon('target')}</span>` : '';
         const meta = stealable
             ? `<span class="steal-hint">${icon('swap')} steal</span>`
             : `<span class="row-meta">
@@ -728,6 +735,7 @@ function renderLivesTracker(gameState) {
                 <span class="lives-dot" style="background: ${escapeHtml(player.color || '#666')}">${escapeHtml(player.name.charAt(0).toUpperCase())}</span>
                 <span class="lives-name">${escapeHtml(formatPlayerName(player, 12))}${player.isBot ? ` <span class="bot-badge">${icon('bot')}</span>` : ''}${isMe ? ' <small style="color:var(--text-faint)">(you)</small>' : ''}</span>
                 ${renderLives(player)}
+                ${raidTag}
                 ${meta}
             </div>
         `;
@@ -1929,7 +1937,8 @@ const PHASE_GUIDANCE = {
     'lobby':       { icon: 'users',  text: 'Gathering the tribe', action: 'Share the fire code and wait for everyone to arrive.' },
     'turn_steal':  { icon: 'swap',   text: 'Steal', action: 'Tap a tribe member to steal a random card.' },
     'turn_play':   { icon: 'cards',  text: 'Play', action: 'Play a card if you like, then draw to end your turn.' },
-    'turn_draw':   { icon: 'draw',   text: 'Draw', action: 'Take the top card of the Draw Pile.' },
+    'turn_draw':   { icon: 'draw',   text: 'Draw', action: 'Card played — take the top card of the Draw Pile to end your turn.' },
+    'turn_done':   { icon: 'check',  text: 'Turn over', action: 'You drew — tap End Turn to pass the torch.' },
     'playing':     { icon: 'hourglass', text: 'On the island', action: 'Wait for the torch to come around.' },
     'tribal_council': { icon: 'torch', text: 'Tribal Council', action: 'Someone drew a Tribal Council card. The tribe must vote.' },
     'voting':      { icon: 'ballot', text: 'The vote', action: 'Tap a name to write it on your parchment.' },
@@ -1970,7 +1979,7 @@ function renderPhaseGuidance(gameState) {
     let key = gameState.phase || 'lobby';
     if (key === 'playing' && isMyTurn) {
         const turnPhase = window.SurvivorGame?.getCurrentTurnPhase?.(gameState, myId);
-        if (turnPhase === 'turn_steal' || turnPhase === 'turn_play') key = turnPhase;
+        if (['turn_steal', 'turn_play', 'turn_draw', 'turn_done'].includes(turnPhase)) key = turnPhase;
     } else if (key === 'tribal_council') {
         const sub = gameState.currentVote?.phase;
         if (sub === 'voting') key = 'voting';
@@ -2350,25 +2359,33 @@ function renderReactiveTheft(gameState) {
     reactiveTheftKey = key;
     if (!open) return;
 
-    const thiefName = gameState.players?.[pending.thiefId]?.name || 'Someone';
+    const thiefIds = pending.thiefIds || [pending.thiefId];
+    const thiefNames = thiefIds
+        .map(id => gameState.players?.[id]?.name || 'Someone');
+    const thiefName = thiefNames.join(' and ');
     const targetName = gameState.players?.[pending.targetId]?.name || 'them';
 
     if (me === pending.targetId) {
         showRaidDialog(gameState, pending, thiefName);
-    } else if (me === pending.thiefId) {
+    } else if (thiefIds.includes(me)) {
         showReactiveWaitBanner(targetName);
     }
 }
 
 /** Defender's blocking choice: burn the Sorry For You, or let the raid land. */
 function showRaidDialog(gameState, pending, thiefName) {
+    // The gate covers every taking the Guide names — say which card is doing it
+    const source = pending.source && pending.source !== 'steal' ? pending.source : null;
+    const raidLine = source
+        ? `<strong>${escapeHtml(thiefName)}</strong> ${pending.thiefIds?.length > 1 ? 'are' : 'is'}
+           coming for your cards — <em>${escapeHtml(source)}</em>.`
+        : `<strong>${escapeHtml(thiefName)}</strong> is raiding your camp for a random card.`;
     const content = `
         <div class="raid-dialog">
             <div class="raid-mark">${icon('torch-out', 'raid-icon')}</div>
-            <p class="raid-line"><strong>${escapeHtml(thiefName)}</strong> is raiding your camp
-            for a random card.</p>
+            <p class="raid-line">${raidLine}</p>
             <p class="picker-hint">You're holding <em>Sorry For You</em> — play it and they get
-            nothing (and must discard a card), or let them take their prize.</p>
+            nothing (each raider must discard a card), or let them take their prize.</p>
             <div class="raid-actions">
                 <button class="btn btn-primary touch-target" data-raid="play">
                     ${icon('x')} Sorry for you!
@@ -2380,7 +2397,7 @@ function showRaidDialog(gameState, pending, thiefName) {
         </div>
     `;
 
-    showModal(content, { title: 'Camp Raid!', showClose: false });
+    showModal(content, { title: source ? `${source}!` : 'Camp Raid!', showClose: false });
     Haptics.trigger('warning');
 
     setTimeout(() => {

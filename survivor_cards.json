@@ -205,7 +205,7 @@
       "type": "camp_raid",
       "category": "action",
       "name": "Camp Raid",
-      "description": "Steal 2 random cards from target player",
+      "description": "Place face up in front of any player \u2014 you take the next card they draw, no matter what it is. You can't play this on a player who already has a Camp Raid in front of them",
       "playable_phases": [
         "turn_play"
       ],

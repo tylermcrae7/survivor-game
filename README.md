@@ -99,7 +99,7 @@ Counts are per the card registry (`survivor_cards.json`). *(Extended)* marks hou
 |------|-------|--------|
 | Hidden Immunity Idol | 4 | Negate all votes against you at Tribal Council |
 | Goodwill Gamble | 3 | Give to another player before voting; counts as 1 vote and MUST be used at that Tribal |
-| Control The Vote | 2 | Choose the next Council Leader |
+| Control The Vote | 2 | Take a player's Vote Card before voting — you MUST cast it alongside your own |
 | I'm The Leader Now | 1 | Become the Council Leader immediately |
 | Idol Nullifier *(Extended)* | 2 | Cancel someone's played idol |
 | Steal A Vote *(Extended)* | 2 | Take another player's vote; they can't vote, you vote twice |
@@ -110,9 +110,9 @@ Counts are per the card registry (`survivor_cards.json`). *(Extended)* marks hou
 | Card | Count | Effect |
 |------|-------|--------|
 | Sorry For You | 7 | REACTIVE — when someone tries to take your cards: they get nothing and discard 1 |
-| Inheritance | 6 | Mark a player — when they're eliminated, you inherit their cards |
+| Inheritance | 6 | Mark a player — when they're eliminated, you inherit their cards *(digital adaptation of the color-bound original)* |
 | Let's Form An Alliance | 4 | You and an ally each steal a card from a victim |
-| Camp Raid | 3 | Steal 2 random cards from a target |
+| Camp Raid | 3 | Place face-up on a player — their next drawn card is yours (one raid per player) |
 | The Spy Shack | 3 | Look at a player's hand and take one card |
 | Knowledge Is Power | 3 | Name a card type — if the target holds it, it's yours |
 | Reward Challenge: Do Or Die | 3 | Live rock-paper-scissors; winner steals 2 |

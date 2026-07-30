@@ -28,6 +28,8 @@ convention as the Rocks challenge engine).
 """
 
 import logging
+
+from rules_engine import request_take
 import random
 from typing import Any, Dict, List, Optional
 
@@ -255,12 +257,16 @@ class InteractionEngine:
 
         winner = a if RPS_BEATS[throw_a] == throw_b else b
         loser = b if winner == a else a
-        moved = self._steal_random(game, winner, loser, 2)
         it["lastRound"] = {"round": it["round"], "picks": picks, "outcome": f"{winner} wins"}
+        # The Guide names Do Or Die as Sorry-For-You-able — route through the gate
+        pending, take = request_take(
+            game, [winner], loser, "Do Or Die",
+            {"kind": "random_each", "takes": [{"thiefId": winner, "count": 2}]})
+        outcome = (f"{self._name(game, loser)} is holding Sorry For You!"
+                   if pending else take.get("message", ""))
         return self._finish(
             game, it,
-            f"{self._name(game, winner)} wins {picks[winner]} over {picks[loser]} and "
-            f"steals {moved} card(s) from {self._name(game, loser)}!"
+            f"{self._name(game, winner)} wins {picks[winner]} over {picks[loser]} — {outcome}"
         )
 
     # ── Power Pair resolution ──
@@ -292,19 +298,21 @@ class InteractionEngine:
         pair_value = next(v for v in values if values.count(v) == 2)
         pair = [p for p, v in picks.items() if v == pair_value]
         odd_one = next(p for p, v in picks.items() if v != pair_value)
-        taken = []
-        for thief in pair:
-            moved = self._steal_random(game, thief, odd_one, 1)
-            if moved:
-                taken.append(self._name(game, thief))
+        pending, take = request_take(
+            game, pair, odd_one, "Power Pair",
+            {"kind": "random_each",
+             "takes": [{"thiefId": t, "count": 1} for t in pair]})
+        taken = [] if pending else [take.get("message", "")]
         it["lastRound"] = {"round": it["round"], "picks": picks, "outcome": "pair"}
         pair_names = " and ".join(self._name(game, p) for p in pair)
-        return self._finish(
-            game, it,
-            f"{pair_names} matched on {pair_value} — they each steal a card from "
-            f"{self._name(game, odd_one)}!" if taken else
-            f"{pair_names} matched on {pair_value}, but {self._name(game, odd_one)} had no cards to take."
-        )
+        if pending:
+            outcome = f"{pair_names} matched on {pair_value} — but {self._name(game, odd_one)} is holding Sorry For You!"
+        elif taken:
+            outcome = (f"{pair_names} matched on {pair_value} — they each steal a card from "
+                       f"{self._name(game, odd_one)}!")
+        else:
+            outcome = f"{pair_names} matched on {pair_value}, but {self._name(game, odd_one)} had no cards to take."
+        return self._finish(game, it, outcome)
 
     # ── Numbers Game resolution ──
 
@@ -348,12 +356,12 @@ class InteractionEngine:
                 or players[victim_id].get("isEliminated", False)):
             return {"success": False, "message": "Choose another player still in the game"}
 
-        moved = self._steal_random(game, player_id, victim_id, 2)
-        return self._finish(
-            game, it,
-            f"{self._name(game, player_id)} steals {moved} card(s) from "
-            f"{self._name(game, victim_id)}!"
-        )
+        pending, take = request_take(
+            game, [player_id], victim_id, "It's A Numbers Game",
+            {"kind": "random_each", "takes": [{"thiefId": player_id, "count": 2}]})
+        outcome = (f"{self._name(game, victim_id)} is holding Sorry For You!"
+                   if pending else take.get("message", ""))
+        return self._finish(game, it, outcome)
 
     # ── phase: give (tie swap / all-match discard — a card of YOUR choice) ──
 
@@ -405,7 +413,8 @@ class InteractionEngine:
                 "exchange the cards they chose."
             )
 
-        # discard: the pulled cards simply leave the game
+        # discard: the pulled cards go face up on the Discard Pile
+        game.setdefault("discard", []).extend(pulled.values())
         names = ", ".join(self._name(game, p) for p in pulled) or "nobody"
         return self._finish(game, it, f"Cards discarded by {names}.")
 

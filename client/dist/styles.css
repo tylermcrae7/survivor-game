@@ -2652,3 +2652,9 @@
   .bot-remove-btn:hover,
   .bot-remove-btn:focus-visible { color: var(--danger); }
 }
+
+/* Camp Raid marker — the trap sits face up for everyone to see */
+@layer components {
+  .raid-tag { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 45%, var(--line)); }
+  .raid-tag .icon { width: 0.85rem; height: 0.85rem; }
+}

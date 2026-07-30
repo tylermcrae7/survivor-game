@@ -86,6 +86,123 @@ REQUIRED_CARD_FIELDS = [
 ]
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# THE TAKING GATE — Sorry For You, everywhere the Survival Guide says it applies
+# ═══════════════════════════════════════════════════════════════════════════════════
+#
+# "Play ANY time someone tries to take cards from you... This includes any card
+#  they attempt to steal from you at the start of their turn or any cards they
+#  would steal from you as an effect of another card."
+#
+# Every path that takes cards from a hand calls request_take(). If the victim
+# holds a Sorry For You, a reactive window opens (game["pending_theft"]) holding
+# a hidden resume spec; the take executes only if the victim declines. If they
+# play the card, EVERY thief in the gate discards 1 — the Guide's multi-taker rule.
+
+def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
+	"""Perform the actual card-taking a gate was holding back."""
+	victim = game["players"].get(spec.get("victimId"))
+	if not victim:
+		return {"success": False, "message": "Victim is gone"}
+	names = lambda pid: game["players"].get(pid, {}).get("name", "?")
+	kind = spec.get("kind")
+	moved: List[str] = []
+
+	if kind == "random_each":
+		for take in spec.get("takes", []):
+			thief = game["players"].get(take.get("thiefId"))
+			if not thief:
+				continue
+			for _ in range(int(take.get("count", 1))):
+				hand = victim.get("hand") or []
+				if not hand:
+					break
+				card = hand.pop(random.randrange(len(hand)))
+				thief.setdefault("hand", []).append(card)
+				moved.append(f"{names(take['thiefId'])} took a card")
+		message = ("; ".join(moved) + f" from {victim.get('name')}") if moved 			else f"{victim.get('name')} had no cards to take"
+		return {"success": True, "message": message, "moved": len(moved)}
+
+	if kind == "index":
+		thief = game["players"].get(spec.get("thiefId"))
+		hand = victim.get("hand") or []
+		idx = spec.get("index")
+		if thief is None or not isinstance(idx, int) or not 0 <= idx < len(hand):
+			return {"success": True, "message": f"{victim.get('name')}'s card was out of reach"}
+		card = hand.pop(idx)
+		thief.setdefault("hand", []).append(card)
+		return {"success": True,
+		        "message": f"{names(spec['thiefId'])} took {card.get('name', 'a card')} from {victim.get('name')}"}
+
+	if kind == "by_type":
+		thief = game["players"].get(spec.get("thiefId"))
+		wanted = spec.get("cardType")
+		hand = victim.get("hand") or []
+		for i2, card in enumerate(hand):
+			if card.get("type") == wanted:
+				hand.pop(i2)
+				thief.setdefault("hand", []).append(card)
+				return {"success": True,
+				        "message": f"{names(spec['thiefId'])} demanded and received "
+				                   f"{card.get('name', wanted)} from {victim.get('name')}"}
+		return {"success": True,
+		        "message": f"{victim.get('name')} does not have a {wanted} card"}
+
+	if kind == "vote_card":
+		thief = game["players"].get(spec.get("thiefId"))
+		hand = victim.get("hand") or []
+		for i2, card in enumerate(hand):
+			if card.get("type") == "vote":
+				stolen = hand.pop(i2)
+				thief.setdefault("hand", []).append(stolen)
+				return {"success": True,
+				        "message": f"{names(spec['thiefId'])} took {victim.get('name')}'s Vote Card "
+				                   "— they must use it at this Tribal Council"}
+		return {"success": True,
+		        "message": f"{victim.get('name')} had no Vote Card to take"}
+
+	return {"success": False, "message": f"Unknown take spec: {kind}"}
+
+
+def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
+                 source: str, spec: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+	"""
+	Route a taking through the Sorry For You gate.
+
+	Returns (pending, result): pending=True means a reactive window opened and
+	nothing has moved yet; pending=False means the take already executed.
+	"""
+	victim = game["players"].get(victim_id)
+	if not victim or victim.get("isEliminated"):
+		return False, {"success": True, "message": "Their camp stands empty"}
+
+	spec = {**spec, "victimId": victim_id}
+	live_thieves = [t for t in thief_ids
+	                if t in game["players"] and t != victim_id]
+	if not live_thieves:
+		return False, {"success": True, "message": "No one left to take the cards"}
+
+	holds_sfy = any(c.get("type") == "sorry_for_you"
+	                for c in (victim.get("hand") or []))
+	if not holds_sfy:
+		return False, execute_take_spec(game, spec)
+
+	game["pending_theft"] = {
+		"thiefId": live_thieves[0],
+		"thiefIds": live_thieves,
+		"targetId": victim_id,
+		"source": source,
+		"reactive_window_open": True,
+		"_resume": spec,
+	}
+	return True, {
+		"success": True,
+		"reactive_window": True,
+		"message": f"{victim.get('name')} is holding Sorry For You — the raid hangs in the air",
+	}
+
+
 class SurvivorRulesEngine:
 	"""
 	Consolidated rules engine for Survivor game mechanics.
@@ -456,10 +573,16 @@ class SurvivorRulesEngine:
 			current_player = turn_order[game.get("currentTurnIndex", 0)]
 			if current_player == player_id:
 				player = game["players"][player_id]
+				# Official turn: Steal -> Play (ONE card, optional) -> Draw (ends
+				# the turn). The phase machine enforces exactly that:
+				#   turn_steal -> turn_play -> (played) turn_draw -> (drew) turn_done
 				if not player.get("hasStolen"):
 					return "turn_steal"
-				else:
-					return "turn_play"
+				if player.get("hasDrawn"):
+					return "turn_done"
+				if player.get("hasPlayed"):
+					return "turn_draw"
+				return "turn_play"
 			else:
 				return "waiting"
 				
@@ -502,6 +625,12 @@ class SurvivorRulesEngine:
 		# unhelpful when the real answer is "this card only works in response to theft".
 		if card.get("reactive_only", False) and current_phase != "reactive_theft":
 			return False, "This is a reactive card and can only be played in response to theft"
+
+		# One play per turn, and the turn ends when you draw — say so plainly
+		if current_phase == "turn_draw" and "turn_play" in card.get("playable_phases", []):
+			return False, "You already played a card this turn — draw to end your turn"
+		if current_phase == "turn_done":
+			return False, "You drew — your turn is over. End your turn."
 
 		# Check if card is playable in current phase
 		playable_phases = card.get("playable_phases", [])
@@ -580,6 +709,13 @@ class SurvivorRulesEngine:
 			return self._validate_action_card_play(game, player_id, card, phase, params)
 		elif category == "vote":
 			return self._validate_vote_card_play(game, player_id, card, phase, params)
+		elif category == "tribal_advantage":
+			if card.get("type") == "control_the_vote":
+				blocked = self._control_the_vote_block_reason(
+					game, player_id, params.get("targetId"))
+				if blocked:
+					return False, blocked
+			return True, "Tribal advantage play is valid"
 		elif category == "challenge":
 			return self._validate_challenge_card_play(game, player_id, card, phase, params)
 		elif category == "tribal_council":
@@ -725,6 +861,26 @@ class SurvivorRulesEngine:
 		logger.info(f"Advanced tribal phase from {current_phase_str} to {target_phase}")
 		return True, f"Advanced to {target_phase} phase"
 		
+	def _control_the_vote_block_reason(self, game: Dict[str, Any], player_id: str,
+	                                   target_id: str) -> str:
+		"""Why Control The Vote can't be played right now ('' = it can).
+
+		Survival Guide: "take any player's Vote Card. You MUST use that Vote Card
+		in addition to YOUR Vote Card" — so you must still hold your own Vote
+		Card, and the target must actually have one to take.
+		"""
+		def holds_vote(pid):
+			return any(c.get("type") == "vote"
+			           for c in (game["players"].get(pid, {}).get("hand") or []))
+		if not holds_vote(player_id):
+			return ("Control The Vote is used in addition to your own Vote Card — "
+			        "you no longer have one to cast alongside it")
+		if not target_id or target_id not in game["players"]:
+			return "Control The Vote requires a valid target player"
+		if not holds_vote(target_id):
+			return f"{game['players'][target_id].get('name', 'That player')} has no Vote Card to take"
+		return ""
+
 	def play_tribal_advantage(self, game: Dict[str, Any], player_id: str, advantage_type: str, target_id: str = None) -> Dict[str, Any]:
 		"""
 		Play a tribal advantage card during appropriate tribal phases.
@@ -756,9 +912,17 @@ class SurvivorRulesEngine:
 				
 		if tribal_card_idx is None:
 			return {"success": False, "message": f"Player does not have a {advantage_type} advantage card"}
-			
-		# Remove the card from hand
+
+		if advantage_type == "control_the_vote":
+			blocked = self._control_the_vote_block_reason(game, player_id, target_id)
+			if blocked:
+				return {"success": False, "message": blocked}
+
+		# Remove the card from hand; it lands on the Discard Pile
+		# (Goodwill Gamble instead moves to its recipient)
 		advantage_card = hand.pop(tribal_card_idx)
+		if advantage_type != "goodwill_gamble":
+			game.setdefault("discard", []).append({"type": advantage_type})
 		
 		# Execute advantage effect
 		advantage_effects = {
@@ -837,7 +1001,13 @@ class SurvivorRulesEngine:
 		# (Missing parameters used to surface only in the effect, after the card
 		#  had already been consumed with no result.)
 
-		if card_type == "the_spy_shack":
+		if card_type == "camp_raid":
+			target = game["players"].get(params.get("targetId") or "")
+			if target is not None and target.get("campRaidedBy"):
+				return False, (f"{target.get('name', 'That player')} already has a "
+				               "Camp Raid in front of them")
+
+		elif card_type == "the_spy_shack":
 			# Official: "Look at any player's cards and take one." — the take is
 			# part of the play, so the chosen card must be named up front.
 			target = game["players"].get(params.get("targetId") or "")
@@ -1199,21 +1369,15 @@ class SurvivorRulesEngine:
 		player = game["players"][player_id]
 		target = game["players"][target_id]
 
-		# Take exactly one physical Vote Card out of the target's hand
-		stolen = None
-		for i, hand_card in enumerate(target.get("hand", []) or []):
-			if hand_card.get("type") == "vote":
-				stolen = target["hand"].pop(i)
-				break
-
-		if stolen is None:
-			self.sync_vote_counters(game)
-			return {"message": f"{player['name']} played Control The Vote, but {target['name']} had no Vote Card to take"}
-
-		player.setdefault("hand", []).append(stolen)
+		# The vote take is a taking — Sorry For You may answer it
+		pending, result = request_take(
+			game, [player_id], target_id, "Control The Vote",
+			{"kind": "vote_card", "thiefId": player_id})
+		if pending:
+			return {"message": f"{player['name']} reaches for {target['name']}'s Vote Card — "
+			                   f"but {target['name']} is holding Sorry For You"}
 		self.sync_vote_counters(game)
-
-		return {"message": f"{player['name']} took {target['name']}'s Vote Card — they must use it at this Tribal Council"}
+		return {"message": result.get("message", "The Vote Card changes hands")}
 
 	def _effect_goodwill_gamble(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""
@@ -1290,20 +1454,28 @@ class SurvivorRulesEngine:
 		return {"message": f"{player['name']} nullified {target['name']}'s immunity idol!"}
 		
 	def _effect_sorry_for_you(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Sorry For You reactive card effect."""
-		thief_id = params.get("thiefId")
-		if not thief_id or thief_id not in game["players"]:
+		"""
+		Execute Sorry For You reactive card effect.
+
+		Guide: the taker "gets nothing from you and must discard 1 card" — and
+		when a card let more than one player take from you, "each of those
+		players gets nothing, and must EACH discard 1 card instead."
+		"""
+		thief_ids = params.get("thiefIds") or ([params["thiefId"]] if params.get("thiefId") else [])
+		thief_ids = [t for t in thief_ids if t in game["players"]]
+		if not thief_ids:
 			return {"message": "Sorry For You requires the thief's player ID"}
-			
-		player = game["players"][player_id]
-		thief = game["players"][thief_id]
-		
-		# Thief gets nothing and must discard a card
-		if thief.get("hand"):
-			discarded = thief["hand"].pop()
-			return {"message": f"Sorry for you, {thief['name']}! Your theft failed and you discarded {discarded.get('name', 'a card')}"}
-		else:
-			return {"message": f"Sorry for you, {thief['name']}! Your theft failed but you have no cards to discard"}
+
+		lines = []
+		for tid in thief_ids:
+			thief = game["players"][tid]
+			if thief.get("hand"):
+				discarded = thief["hand"].pop()
+				game.setdefault("discard", []).append(discarded)
+				lines.append(f"{thief['name']} discarded {discarded.get('name', 'a card')}")
+			else:
+				lines.append(f"{thief['name']} had nothing to discard")
+		return {"message": f"Sorry for you! The raid fails — {'; '.join(lines)}"}
 			
 	def _effect_the_spy_shack(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""
@@ -1329,14 +1501,15 @@ class SurvivorRulesEngine:
 			# Defensive — validate_play rejects this before the card is consumed
 			return {"message": "The Spy Shack requires choosing which card to take", "spied_hand": target_hand}
 
-		taken = target_hand.pop(take_index)
-		player.setdefault("hand", []).append(taken)
+		pending, result = request_take(
+			game, [player_id], target_id, "The Spy Shack",
+			{"kind": "index", "thiefId": player_id, "index": take_index})
+		if pending:
+			return {"message": f"{player['name']} spied on {target['name']}'s camp — "
+			                   f"but {target['name']} is holding Sorry For You"}
 		self.sync_vote_counters(game)
-
-		return {
-			"message": f"{player['name']} spied on {target['name']}'s hand and took {self.resolve_card(taken).get('name', 'a card')}",
-			"spied_hand": target_hand,
-		}
+		return {"message": result.get("message", "The Spy Shack takes its prize"),
+		        "spied_hand": target_hand}
 		
 	def _effect_knowledge_is_power(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""Execute Knowledge Is Power card effect."""
@@ -1350,37 +1523,39 @@ class SurvivorRulesEngine:
 			
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
-		# Look for the requested card type in target's hand
-		for i, hand_card in enumerate(target.get("hand", [])):
-			if hand_card.get("type") == requested_card_type:
-				# Take the card
-				taken_card = target["hand"].pop(i)
-				player["hand"].append(taken_card)
-				return {"message": f"{player['name']} demanded and received {taken_card.get('name', requested_card_type)} from {target['name']}"}
-				
-		return {"message": f"{target['name']} does not have a {requested_card_type} card"}
+
+		# The demand is a taking — Sorry For You may answer it
+		pending, result = request_take(
+			game, [player_id], target_id, "Knowledge Is Power",
+			{"kind": "by_type", "thiefId": player_id, "cardType": requested_card_type})
+		if pending:
+			return {"message": f"{player['name']} demands a {requested_card_type} — "
+			                   f"but {target['name']} is holding Sorry For You"}
+		self.sync_vote_counters(game)
+		return {"message": result.get("message", "The demand is made")}
 		
 	def _effect_camp_raid(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Camp Raid card effect."""
+		"""
+		Execute Camp Raid card effect.
+
+		Survival Guide: "Place this card face up in front of any player. You take
+		the next card they draw at the end of their turn, no matter what it is,
+		but only after they look at it. You can't play this card on a player who
+		already has a Camp Raid in front of them."
+
+		Nothing is taken now — the campRaidedBy marker is consumed by
+		process_card_draw_effects on the target's next draw.
+		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
 			return {"message": "Camp Raid requires a valid target player"}
-			
+
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
-		stolen_cards = []
-		for _ in range(min(2, len(target.get("hand", [])))):
-			if target["hand"]:
-				stolen_card = target["hand"].pop(random.randint(0, len(target["hand"]) - 1))
-				player["hand"].append(stolen_card)
-				stolen_cards.append(stolen_card.get("name", "a card"))
-				
-		if stolen_cards:
-			return {"message": f"{player['name']} raided {target['name']}'s camp and stole {', '.join(stolen_cards)}"}
-		else:
-			return {"message": f"{target['name']} had no cards to steal"}
+
+		target["campRaidedBy"] = player_id
+		return {"message": f"{player['name']} placed a Camp Raid in front of "
+		                   f"{target['name']} — their next drawn card belongs to {player['name']}"}
 			
 	def _effect_inheritance(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""Execute Inheritance card effect."""
@@ -1410,25 +1585,18 @@ class SurvivorRulesEngine:
 		ally = game["players"][ally_id]
 		victim = game["players"][victim_id]
 		
-		stolen_cards = []
-		
-		# Each ally steals one card from victim
-		if victim.get("hand"):
-			# Player steals first
-			stolen_card = victim["hand"].pop(random.randint(0, len(victim["hand"]) - 1))
-			player["hand"].append(stolen_card)
-			stolen_cards.append(f"{player['name']} stole {stolen_card.get('name', 'a card')}")
-			
-		if victim.get("hand"):
-			# Ally steals second
-			stolen_card = victim["hand"].pop(random.randint(0, len(victim["hand"]) - 1))
-			ally["hand"].append(stolen_card)
-			stolen_cards.append(f"{ally['name']} stole {stolen_card.get('name', 'a card')}")
-			
-		if stolen_cards:
-			return {"message": f"Alliance formed! {' and '.join(stolen_cards)} from {victim['name']}"}
-		else:
-			return {"message": f"{victim['name']} had no cards for the alliance to steal"}
+		# Both partners take from the victim — one Sorry For You answers BOTH
+		# ("each of those players gets nothing, and must EACH discard 1 card")
+		pending, result = request_take(
+			game, [player_id, ally_id], victim_id, "Let's Form An Alliance",
+			{"kind": "random_each",
+			 "takes": [{"thiefId": player_id, "count": 1},
+			           {"thiefId": ally_id, "count": 1}]})
+		if pending:
+			return {"message": f"{player['name']} and {ally['name']} descend on "
+			                   f"{victim['name']}'s camp — but {victim['name']} is holding Sorry For You"}
+		self.sync_vote_counters(game)
+		return {"message": f"Alliance formed! {result.get('message', 'The raid is done')}"}
 			
 	def _effect_reward_challenge_do_or_die(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""
@@ -1600,16 +1768,25 @@ class SurvivorRulesEngine:
 		if defender_id not in game["players"] or thief_id not in game["players"]:
 			return {"success": False, "message": "Invalid player IDs for reactive interrupt"}
 			
+		# Every thief the gate was holding pays the discard, not just the first
+		pending = game.get("pending_theft") or {}
+		thief_ids = pending.get("thiefIds") or [thief_id]
+		source = pending.get("source", "steal")
+
 		# Execute the card effect for reactive interrupt
-		effect_result = self.execute_card_effect(game, defender_id, reactive_card, {"thiefId": thief_id})
-		
+		effect_result = self.execute_card_effect(
+			game, defender_id, reactive_card,
+			{"thiefId": thief_id, "thiefIds": thief_ids})
+
 		if not effect_result.get("success", False):
 			return effect_result
-			
-		# Mark the thief's steal as completed (they don't get to try again)
-		thief = game["players"][thief_id]
-		thief["hasStolen"] = True
-		
+
+		# Only the turn-steal consumes the thief's steal step — a blocked card
+		# effect (Spy Shack, Alliance, ...) has nothing to do with their steal.
+		if source == "steal":
+			thief = game["players"][thief_id]
+			thief["hasStolen"] = True
+
 		# Clear any pending theft state
 		if "pending_theft" in game:
 			del game["pending_theft"]
@@ -1642,39 +1819,34 @@ class SurvivorRulesEngine:
 			
 		# Handle Camp Raid effects - check if someone has Camp Raid placed on this player
 		camp_raider_id = player.get("campRaidedBy")
+		if camp_raider_id and game["players"].get(camp_raider_id, {}).get("isEliminated"):
+			# The raider was voted out before collecting — the trap fizzles
+			player["campRaidedBy"] = None
+			camp_raider_id = None
 		if camp_raider_id and camp_raider_id in game["players"]:
-			# Last drawn card goes to the camp raider instead
-			raider = game["players"][camp_raider_id]
+			# The trap springs on the drawn card ("only after they look at it") —
+			# but a Sorry For You in the drawer's hand can still answer it.
 			stolen_card = drawn_cards[-1]  # Take the last card drawn
-			
-			# Remove from player's hand and give to raider. Match by identity so a
-			# resolved copy of the card can never fool the check.
 			hand = player.get("hand", [])
 			index = next((i for i, c in enumerate(hand) if c is stolen_card), None)
 			if index is None:
 				index = next((i for i, c in enumerate(hand) if c == stolen_card), None)
 			if index is not None:
-				hand.pop(index)
-				raider.setdefault("hand", []).append(stolen_card)
-				player["campRaidedBy"] = None  # Use up the camp raid
-				drawn_cards[-1] = {"type": "stolen_by_camp_raid", "original": stolen_card}
-				logger.info(f"Camp Raid: {camp_raider_id} stole {stolen_card.get('type')} from {player_id}")
-				
+				player["campRaidedBy"] = None  # the trap is spent either way
+				pending, result = request_take(
+					game, [camp_raider_id], player_id, "Camp Raid",
+					{"kind": "index", "thiefId": camp_raider_id, "index": index})
+				if not pending:
+					drawn_cards[-1] = {"type": "stolen_by_camp_raid", "original": stolen_card}
+					logger.info(f"Camp Raid: {camp_raider_id} took the drawn card from {player_id}")
+
 		return drawn_cards
 		
 	def get_card_draw_count(self, player: Dict[str, Any]) -> int:
-		"""
-		Get the number of cards a player should draw (including Double Draw effects).
-		
-		Args:
-		player: Player object
-		
-		Returns:
-		Number of cards to draw
-		"""
-		draw_count = 1 + player.get("drawBonus", 0)
-		player["drawBonus"] = 0  # Reset bonus after calculating
-		return draw_count
+		"""The rulebook draw is exactly one card — no card grants extra draws.
+		(A phantom 'drawBonus' mechanic lived here with nothing ever setting it;
+		removed so no latent multi-draw path exists.)"""
+		return 1
 		
 	def process_elimination_inheritance(self, game: Dict[str, Any], eliminated_player_id: str) -> List[str]:
 		"""
