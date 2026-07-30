@@ -110,7 +110,13 @@ class TestTribalCouncilFlow(unittest.TestCase):
         result = self.gs.advance_tribal_phase(self.game_id, "voting")
         self.assertTrue(result)
         self.assertEqual(game["currentVote"]["phase"], "voting")
-        
+
+        # The idol window and the reveal require a full Voting Box now —
+        # every living player votes (or passes) before the phase can advance
+        for voter_id in self.player_ids:
+            target = next(p for p in self.player_ids if p != voter_id)
+            self.gs.cast_vote(self.game_id, voter_id, [{"targetId": target, "votes": 1}])
+
         # Advance to immunity phase
         result = self.gs.advance_tribal_phase(self.game_id, "immunity")
         self.assertTrue(result)
@@ -522,11 +528,20 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.gs._trigger_tribal_council(game, "single")
         self.gs.start_voting(self.game_id, "elimination")
 
-        # Everyone else votes for the soon-to-be-immune player
+        # Everyone else votes for the soon-to-be-immune player; the immune
+        # player's Vote Card was stolen earlier, so they legally pass the box
+        # (it must still reach everyone before the idol window or the tally)
+        game["players"][immune_player_id]["hand"] = [
+            c for c in game["players"][immune_player_id]["hand"]
+            if c.get("type") not in ("vote", "goodwill_gamble", "extra_vote")
+        ]
+        self.gs.rules_engine.sync_vote_counters(game)
         for voter_id in self.player_ids:
             if voter_id != immune_player_id:
                 self.gs.cast_vote(self.game_id, voter_id,
                                   [{"targetId": immune_player_id, "votes": 1}])
+            else:
+                self.gs.cast_vote(self.game_id, voter_id, [])
 
         # Idol is played after the votes are in, before the tally
         self.gs.advance_tribal_phase(self.game_id, "immunity")

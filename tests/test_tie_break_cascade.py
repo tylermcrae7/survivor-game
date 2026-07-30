@@ -259,10 +259,12 @@ class TieBreakCascadeTest(unittest.TestCase):
 
         # Hand-set a 3-way tie for most votes
         current_vote["phase"] = "voting"
+        # Full Voting Box: everyone appears (b and c pass with empty ballots)
         current_vote["votes"] = {
             self.pids[3]: {a: 1},
             leader: {b: 1},
             a: {c: 1},
+            b: {}, c: {},
         }
         reveal = self.gs.reveal_votes(self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
@@ -285,10 +287,12 @@ class TieBreakCascadeTest(unittest.TestCase):
         self.gs._trigger_tribal_council(self.game, "double", drawer_id=leader)
         current_vote = self.game["currentVote"]
         current_vote["phase"] = "voting"
+        # Full Voting Box: everyone appears (b and c pass with empty ballots)
         current_vote["votes"] = {
             self.pids[3]: {a: 1},
             leader: {b: 1},
             a: {c: 1},
+            b: {}, c: {},
         }
         self.gs.reveal_votes(self.game_id)
 

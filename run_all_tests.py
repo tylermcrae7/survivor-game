@@ -138,6 +138,10 @@ def main():
             'description': 'Rules Enforcement — turn discipline, Camp Raid trap, universal Sorry For You gate'
         },
         {
+            'file': 'tests/ui/test_ui_rules_checklist.py',
+            'description': 'UI Rules Verification — the browser-side twin of the compliance checklist (39 checks, 2 real browsers)'
+        },
+        {
             'file': 'tests/test_bots.py',
             'description': 'Computer Players — lifecycle, Hall of Fame guard, decisions, full bot games to completion'
         }

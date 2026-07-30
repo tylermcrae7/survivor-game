@@ -454,6 +454,17 @@ async function submitAccessCode() {
  *   · 'survivorState'               (join details, used to rejoin)
  *   · the state manager's cache     (survivor-game-state + survivor-metadata)
  */
+async function passVotingBox() {
+    const gameId = localGameState.gameId;
+    const voterId = localGameState.playerId;
+    if (!gameId || !voterId) return;
+    // No Vote Card in hand — the box still has to reach you and move on
+    const result = await safeApiCall('/vote/cast', { gameId, voterId, votesData: [] });
+    if (result && result.success) {
+        (window.SurvivorUI?.showToast || window.showToast)('The Voting Box passes you by', 'info');
+    }
+}
+
 async function addBot() {
     const gameId = localGameState.gameId;
     if (!gameId) { toast('Join a game first', 'warning'); return; }
@@ -706,7 +717,7 @@ async function revealVotes() {
         return;
     }
     console.log('Revealing votes...');
-    const result = await safeApiCall('/vote/reveal', { gameId: localGameState.gameId });
+    const result = await safeApiCall('/vote/reveal', { gameId: localGameState.gameId, playerId: localGameState.playerId });
     if (result && result.success) {
         (window.SurvivorUI?.showToast || window.showToast)('Votes revealed!', 'success');
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
@@ -719,12 +730,12 @@ async function revealVotes() {
 
 async function openDiscussion() {
     if (!localGameState.gameId) return;
-    await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'discussion' });
+    await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'discussion', playerId: localGameState.playerId });
 }
 
 async function startVotingPhase() {
     if (!localGameState.gameId) return;
-    const result = await safeApiCall('/vote/start', { gameId: localGameState.gameId, voteType: 'elimination' });
+    const result = await safeApiCall('/vote/start', { gameId: localGameState.gameId, voteType: 'elimination', playerId: localGameState.playerId });
     if (result && result.success) {
         (window.SurvivorUI?.showToast || window.showToast)('It is time to vote', 'info');
     }
@@ -732,7 +743,7 @@ async function startVotingPhase() {
 
 async function openImmunity() {
     if (!localGameState.gameId) return;
-    await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'immunity' });
+    await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'immunity', playerId: localGameState.playerId });
 }
 
 function proceedToVoting() {
@@ -748,7 +759,7 @@ async function completeTribal() {
         return;
     }
     console.log('Completing tribal council...');
-    const result = await safeApiCall('/tribal/complete', { gameId: localGameState.gameId });
+    const result = await safeApiCall('/tribal/complete', { gameId: localGameState.gameId, playerId: localGameState.playerId });
     if (result && result.success) {
         (window.SurvivorUI?.showToast || window.showToast)('Tribal council completed!', 'success');
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
@@ -764,7 +775,7 @@ async function resetTribal() {
     if (!confirm('Are you sure you want to reset the tribal council?')) return;
 
     console.log('Resetting tribal council...');
-    const result = await safeApiCall('/tribal/reset', { gameId: localGameState.gameId });
+    const result = await safeApiCall('/tribal/reset', { gameId: localGameState.gameId, playerId: localGameState.playerId });
     if (result && result.success) {
         (window.SurvivorUI?.showToast || window.showToast)('Tribal council reset!', 'success');
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
@@ -825,6 +836,7 @@ window.SurvivorGame = {
     wipeLocalGame,
     addBot,
     removeBot,
+    passVotingBox,
     leaveGame,
     wipeGame,
     createGame,

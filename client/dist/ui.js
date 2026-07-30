@@ -357,6 +357,12 @@ function updateVotingInfo(gameState) {
         }
         if (!chipEls.length) chipEls.push(`<span class="vote-chip spent">No Vote Card</span>`);
         chips = `<div class="my-votes"><span>Your parchment</span>${chipEls.join('')}</div>`;
+        if (!mandatory && !extra && !voted) {
+            // "Pass the box to the player on your left (even if they don't
+            // have a Vote Card)" — the tally waits until it has reached everyone
+            chips += `<button class="btn btn-secondary btn-enhanced touch-target pass-box-btn"
+                        data-action="passVotingBox">Pass the Voting Box</button>`;
+        }
     }
 
     votingInfo.innerHTML = `
@@ -365,6 +371,8 @@ function updateVotingInfo(gameState) {
             ${voteCount} of ${playerCount} ballots in the box
         </p>
     `;
+    votingInfo.querySelector('[data-action="passVotingBox"]')
+        ?.addEventListener('click', () => window.SurvivorGame?.passVotingBox());
 }
 
 function renderTurnInfo(gameState) {

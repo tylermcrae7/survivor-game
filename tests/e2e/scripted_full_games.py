@@ -103,6 +103,12 @@ def state(gid):
     return s if isinstance(s, dict) else {}
 
 
+
+def _leader(gid):
+    """The current Council Leader's id — tribal controls are leader-only now."""
+    g = state(gid)
+    return (g.get("currentVote") or {}).get("councilLeaderId")
+
 def name(game, pid):
     return game["players"].get(pid, {}).get("name", pid)
 
@@ -144,26 +150,38 @@ def run_tribal(gid, target):
     log(f"    tribal council — leader {name(game, leader)}, "
         f"{game['currentVote']['type']} elimination, target {name(game, target)}")
 
-    api("/api/vote/start", {"gameId": gid, "voteType": "elimination"})
+    api("/api/vote/start", {"gameId": gid, "voteType": "elimination", "playerId": _leader(gid)})
     game = state(gid)
 
     spent = 0
+    necklace = game.get("necklaceHolder")
     for voter in alive(game):
-        vote_for = target if voter != target else next(p for p in alive(game) if p != target)
         votes = max(1, game["players"][voter].get("mandatoryVotes", 1))
-        _, r = api("/api/vote/cast", {"gameId": gid, "voterId": voter,
-                                      "votesData": [{"targetId": vote_for, "votes": votes}]})
-        if r.get("success"):
-            spent += votes
-        elif "no Vote Card" in str(r.get("message", "")):
+        # Legal targets only: alive, not self, not the Necklace wearer
+        options = [p for p in alive(game) if p != voter and p != necklace]
+        preferred = [p for p in options if p == target] + [p for p in options if p != target]
+        placed = False
+        for vote_for in preferred:
+            _, r = api("/api/vote/cast", {"gameId": gid, "voterId": voter,
+                                          "votesData": [{"targetId": vote_for, "votes": votes}]})
+            if r.get("success"):
+                spent += votes
+                placed = True
+                break
+            if "no Vote Card" in str(r.get("message", "")):
+                _, r = api("/api/vote/cast", {"gameId": gid, "voterId": voter, "votesData": []})
+                placed = bool(r.get("success"))
+                break
+        if not placed:
+            # Last resort: pass the box so the tally can proceed
             api("/api/vote/cast", {"gameId": gid, "voterId": voter, "votesData": []})
 
     after_voting = state(gid)
     left_in_hands = sum(1 for p in after_voting["players"].values()
                         for c in p["hand"] if c["type"] == "vote")
 
-    api("/api/tribal/advance", {"gameId": gid, "phase": "immunity"})
-    api("/api/vote/reveal", {"gameId": gid})
+    api("/api/tribal/advance", {"gameId": gid, "phase": "immunity", "playerId": _leader(gid)})
+    api("/api/vote/reveal", {"gameId": gid, "playerId": _leader(gid)})
     game = state(gid)
     cv = game["currentVote"]
     log(f"      votes: { {name(game, k): v for k, v in cv.get('voteResults', {}).items()} } — {cv.get('resolution')}")
@@ -174,7 +192,7 @@ def run_tribal(gid, target):
         cv = game["currentVote"]
     voted_out = list(cv.get("eliminated", []))
 
-    _, done = api("/api/tribal/complete", {"gameId": gid})
+    _, done = api("/api/tribal/complete", {"gameId": gid, "playerId": _leader(gid)})
     assert done.get("success"), done
     after = state(gid)
     returned = {name(after, pid): sum(1 for c in p["hand"] if c["type"] == "vote")
@@ -341,7 +359,7 @@ for attempt in range(8):
         if eg["phase"] == "tribal_council":
             wearer = eg.get("necklaceHolder")
             if wearer and not necklace_blocked:
-                api("/api/vote/start", {"gameId": egid, "voteType": "elimination"})
+                api("/api/vote/start", {"gameId": egid, "voteType": "elimination", "playerId": _leader(egid)})
                 eg = state(egid)
                 voter = next(p for p in alive(eg) if p != wearer)
                 _, r = api("/api/vote/cast", {"gameId": egid, "voterId": voter,

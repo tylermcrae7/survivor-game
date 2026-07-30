@@ -819,6 +819,13 @@ class GameState:
         if current_vote.get("phase") not in ("voting", "immunity"):
             return {"success": False, "message": "Voting must be in progress to reveal votes"}
 
+        # "The Leader tallies AFTER everyone has voted" — every living player
+        # must have placed a ballot (or passed the box) before the reveal.
+        missing = self._ballot_box_missing(game)
+        if missing:
+            return {"success": False,
+                    "message": f"The Voting Box hasn't reached everyone — waiting on {missing}"}
+
         # Advance to reveal phase
         current_vote["phase"] = "reveal"
 
@@ -1148,13 +1155,18 @@ class GameState:
             if "turnOrder" in game and game["turnOrder"]:
                 turn_order = game["turnOrder"]
 
-                # "I'm The Leader Now" gives its player the next turn once tribal ends
+                # "I'm The Leader Now" gives its player the next turn once tribal
+                # ends — "or the player after you if you are eliminated."
                 pending = game.pop("pendingTurnPlayerId", None)
                 if pending and pending in turn_order and not game["players"][pending].get("isEliminated", False):
                     game["currentTurnIndex"] = turn_order.index(pending)
                 else:
-                    # Find next active player
-                    current_index = game.get("currentTurnIndex", 0)
+                    # Walk from the ITLN player's seat if they were eliminated,
+                    # otherwise from the drawer's seat as usual.
+                    if pending and pending in turn_order:
+                        current_index = turn_order.index(pending)
+                    else:
+                        current_index = game.get("currentTurnIndex", 0)
                     attempts = 0
                     while attempts < len(turn_order):
                         current_index = (current_index + 1) % len(turn_order)
@@ -1354,6 +1366,14 @@ class GameState:
             "message": "Tribal council reset - game returned to playing phase"
         }
 
+    def _ballot_box_missing(self, game):
+        """Names of living players who haven't voted or passed yet ('' = full box)."""
+        current_vote = game.get("currentVote") or {}
+        living = [pid for pid, p in game["players"].items()
+                  if not p.get("isEliminated", False)]
+        missing = [pid for pid in living if pid not in (current_vote.get("votes") or {})]
+        return ", ".join(game["players"][pid].get("name", pid) for pid in missing)
+
     def advance_tribal_phase(self, gid, target_phase=None, **kwargs):
         """
         Advance tribal council to a specific phase with validation.
@@ -1378,6 +1398,14 @@ class GameState:
         game = self.games[gid]
 
         # Use rules engine to advance tribal phase with validation
+        # The idol window and the reveal both require a full Voting Box —
+        # "Immunity Idol ... can only be played AFTER all players have voted."
+        if target_phase in ("immunity", "reveal")                 and (game.get("currentVote") or {}).get("phase") == "voting":
+            missing = self._ballot_box_missing(game)
+            if missing:
+                return {"success": False,
+                        "message": f"The Voting Box hasn't reached everyone — waiting on {missing}"}
+
         success, message = self.rules_engine.advance_tribal_phase(game, target_phase)
         
         if success:
@@ -2922,6 +2950,20 @@ def handle(action, required):
             logger.warning(f"Missing required fields: {missing_fields}")
             return jsonify(success=False, message=f"Missing fields: {', '.join(missing_fields)}"), 400
 
+        # ── Leader-only tribal controls (rulebook: the Leader starts the vote,
+        #    tallies, and closes the council). Enforced here at the API layer so
+        #    no phone can act for the Leader; internal callers (bots, tests) use
+        #    GameState directly and are trusted.
+        LEADER_ONLY = {'advance_tribal_phase', 'reveal_votes', 'complete_tribal',
+                       'start_voting', 'reset_tribal_council'}
+        if action in LEADER_ONLY:
+            cv = game_state.games[gid].get("currentVote") or {}
+            leader = cv.get("councilLeaderId")
+            caller = d.get('playerId')
+            if leader and caller != leader:
+                return jsonify(success=False,
+                               message="Only the Tribal Council Leader can do that"), 403
+
         kwargs = {k: v for k, v in d.items() if k != 'gameId'}
 
         # Get game state before action for comparison
@@ -3335,6 +3377,52 @@ def _validate_winner_fields(data):
     except ValueError:
         return None, None, "Invalid date format (use YYYY-MM-DD)"
     return name, date, None
+
+
+# ── Test hooks (SURVIVOR_TEST_HOOKS=1 only — never enabled in production) ────
+# The UI verification suite needs deterministic hands to stage rule scenarios
+# (a Sorry For You defense, a Camp Raid marker, a locked card sheet...).
+if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
+    @app.route('/api/test/set_hand', methods=['POST'])
+    def test_set_hand():
+        data = request.get_json(silent=True) or {}
+        gid, pid = data.get('gameId'), data.get('playerId')
+        hand = data.get('hand')
+        game = game_state.games.get(gid)
+        if not game or pid not in game.get("players", {}) or not isinstance(hand, list):
+            return jsonify(success=False, message="bad test hook call"), 400
+        game["players"][pid]["hand"] = [{"type": c} if isinstance(c, str) else c for c in hand]
+        game_state.rules_engine.sync_vote_counters(game)
+        game_state._save()
+        socketio.emit('state_update', game_state.get_game_state(gid) or {}, to=gid)
+        return jsonify(success=True)
+
+    @app.route('/api/test/stack_deck', methods=['POST'])
+    def test_stack_deck():
+        data = request.get_json(silent=True) or {}
+        gid = data.get('gameId')
+        top = data.get('top')
+        game = game_state.games.get(gid)
+        if not game or not isinstance(top, list):
+            return jsonify(success=False, message="bad test hook call"), 400
+        cards = [{"type": c} if isinstance(c, str) else c for c in top]
+        game["deck"] = cards + (game.get("deck") or [])
+        game_state._save()
+        return jsonify(success=True)
+
+    @app.route('/api/test/set_flags', methods=['POST'])
+    def test_set_flags():
+        data = request.get_json(silent=True) or {}
+        gid, pid = data.get('gameId'), data.get('playerId')
+        game = game_state.games.get(gid)
+        if not game or pid not in game.get("players", {}):
+            return jsonify(success=False, message="bad test hook call"), 400
+        for key in ("hasStolen", "hasPlayed", "hasDrawn", "characterCards", "campRaidedBy"):
+            if key in data:
+                game["players"][pid][key] = data[key]
+        game_state._save()
+        socketio.emit('state_update', game_state.get_game_state(gid) or {}, to=gid)
+        return jsonify(success=True)
 
 
 @app.route('/api/winners/records', methods=['GET'])

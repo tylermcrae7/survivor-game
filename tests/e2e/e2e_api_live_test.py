@@ -94,6 +94,12 @@ def state(gid):
     return s if isinstance(s, dict) else {}
 
 
+
+def _leader(gid):
+    """The current Council Leader's id — tribal controls are leader-only now."""
+    g = state(gid)
+    return (g.get("currentVote") or {}).get("councilLeaderId")
+
 def alive(game):
     return [pid for pid, p in game["players"].items() if not p.get("isEliminated")]
 
@@ -105,40 +111,46 @@ def cast_all_votes(gid, game, target, skip=()):
     for voter in order:
         if voter in skip:
             continue
-        vote_for = target if voter != target else next(p for p in order if p != target)
         votes = max(1, game["players"][voter].get("mandatoryVotes", 1))
-        st, resp = api("/api/vote/cast", {"gameId": gid, "voterId": voter,
-                                          "votesData": [{"targetId": vote_for, "votes": votes}]})
-        if resp.get("success"):
-            ok.append(True)
-            continue
-        message = str(resp.get("message", ""))
-        if "no Vote Card" in message:
-            # Their Vote Card was stolen during play — passing the box is legal.
-            print(f"   {game['players'][voter]['name']} has no Vote Card, passes")
+        necklace = game.get("necklaceHolder")
+        options = [p for p in order if p != voter and p != necklace]
+        preferred = [p for p in options if p == target] + [p for p in options if p != target]
+        placed = False
+        for vote_for in preferred:
+            st, resp = api("/api/vote/cast", {"gameId": gid, "voterId": voter,
+                                              "votesData": [{"targetId": vote_for, "votes": votes}]})
+            if resp.get("success"):
+                placed = True
+                break
+            message = str(resp.get("message", ""))
+            if "no Vote Card" in message:
+                # Their Vote Card was stolen during play — passing the box is legal.
+                print(f"   {game['players'][voter]['name']} has no Vote Card, passes")
+                st, resp = api("/api/vote/cast", {"gameId": gid, "voterId": voter, "votesData": []})
+                placed = bool(resp.get("success"))
+                break
+        if not placed:
+            # The box must reach everyone — pass rather than leave it short
             api("/api/vote/cast", {"gameId": gid, "voterId": voter, "votesData": []})
-            ok.append(True)
-            continue
-        print(f"   vote fail {game['players'][voter]['name']}: {message}")
-        ok.append(False)
+        ok.append(placed)
     return all(ok)
 
 
 def run_tribal(gid, target):
     """Run a complete tribal council that votes `target` out. Returns the final state."""
     game = state(gid)
-    api("/api/vote/start", {"gameId": gid, "voteType": "elimination"})
+    api("/api/vote/start", {"gameId": gid, "voteType": "elimination", "playerId": _leader(gid)})
     game = state(gid)
     cast_all_votes(gid, game, target)
-    api("/api/tribal/advance", {"gameId": gid, "phase": "immunity"})
-    api("/api/vote/reveal", {"gameId": gid})
+    api("/api/tribal/advance", {"gameId": gid, "phase": "immunity", "playerId": _leader(gid)})
+    api("/api/vote/reveal", {"gameId": gid, "playerId": _leader(gid)})
     game = state(gid)
     cv = game.get("currentVote", {})
     if cv.get("tieBreakNeeded"):
         api("/api/vote/tiebreak", {"gameId": gid, "leaderId": cv.get("councilLeaderId"),
                                    "chosenId": target})
     voted_out = list(state(gid).get("currentVote", {}).get("eliminated", []))
-    api("/api/tribal/complete", {"gameId": gid})
+    api("/api/tribal/complete", {"gameId": gid, "playerId": _leader(gid)})
     return state(gid), voted_out
 
 
@@ -282,7 +294,7 @@ check("eliminations_needed_matches_card_type",
       f"type={cv.get('type')} needed={cv.get('eliminationsNeeded')}")
 
 # ── vote card economy (F2) ──
-api("/api/vote/start", {"gameId": gid, "voteType": "elimination"})
+api("/api/vote/start", {"gameId": gid, "voteType": "elimination", "playerId": _leader(gid)})
 g = state(gid)
 st, resp = api("/api/vote/cast", {"gameId": gid, "voterId": bob,
                                   "votesData": [{"targetId": bob, "votes": 1}]})
@@ -302,8 +314,8 @@ st, resp = api("/api/vote/cast", {"gameId": gid, "voterId": bob,
                                   "votesData": [{"targetId": alice, "votes": 1}]})
 check("double_vote_rejected", not resp.get("success"), resp.get("message"))
 
-api("/api/tribal/advance", {"gameId": gid, "phase": "immunity"})
-st, resp = api("/api/vote/reveal", {"gameId": gid})
+api("/api/tribal/advance", {"gameId": gid, "phase": "immunity", "playerId": _leader(gid)})
+st, resp = api("/api/vote/reveal", {"gameId": gid, "playerId": _leader(gid)})
 check("reveal_votes", resp.get("success"), resp.get("message", ""))
 g = state(gid)
 cv = g.get("currentVote", {})
@@ -322,7 +334,7 @@ check("most_votes_is_voted_out", len(voted_out) == 1 and voted_out[0] in expecte
       f"eliminated={voted_out} voteResults={vote_results}")
 cards_before = {pid: p.get("characterCards") for pid, p in g["players"].items()}
 
-st, resp = api("/api/tribal/complete", {"gameId": gid})
+st, resp = api("/api/tribal/complete", {"gameId": gid, "playerId": _leader(gid)})
 check("tribal_complete", resp.get("success"), resp.get("message", ""))
 g = state(gid)
 
@@ -345,7 +357,7 @@ vote_have = {p["name"]: sum(1 for c in p.get("hand", []) if c.get("type") == "vo
 check("vote_card_returned_to_everyone_still_in", all(v >= 1 for v in vote_have.values()), vote_have)
 
 # ── second vote-out eliminates and juries ──
-api("/api/tribal/advance", {"gameId": gid, "phase": "discussion"}) if g.get("phase") == "tribal_council" else None
+api("/api/tribal/advance", {"gameId": gid, "phase": "discussion", "playerId": _leader(gid)}) if g.get("phase") == "tribal_council" else None
 g = state(gid)
 if g.get("phase") == "playing":
     # Force another tribal by walking turns
@@ -595,7 +607,7 @@ if wearer:
             turns += 1
             eg, tribal = play_turn(egid, eg)
     if eg.get("phase") == "tribal_council":
-        api("/api/vote/start", {"gameId": egid, "voteType": "elimination"})
+        api("/api/vote/start", {"gameId": egid, "voteType": "elimination", "playerId": _leader(egid)})
         eg = state(egid)
         voter = next(p for p in eg["turnOrder"] if p != wearer and not eg["players"][p].get("isEliminated"))
         st, resp = api("/api/vote/cast", {"gameId": egid, "voterId": voter,

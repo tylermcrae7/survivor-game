@@ -256,11 +256,16 @@ class TestOptimizationFixes(unittest.TestCase):
         # Phase 4: Move to voting phase and cast votes
         vote_data["phase"] = "voting"
         
-        # Players C and D vote for Player A (who should not be immune)
+        # Players C and D vote for Player A (who should not be immune) — and A
+        # and B place their own ballots too: the box must reach everyone now
         for voter_id in [player_c_id, player_d_id]:
             result_vote = self.gs.cast_vote(
                 self.game_id, voter_id, [{"targetId": player_a_id, "votes": 1}]
             )
+            self.assertTrue(result_vote["success"], result_vote.get("message"))
+        for voter_id in [player_a_id, player_b_id]:
+            # A and B hold no Vote Cards in this fixture — they pass the box
+            result_vote = self.gs.cast_vote(self.game_id, voter_id, [])
             self.assertTrue(result_vote["success"], result_vote.get("message"))
         
         # Phase 5: Reveal votes - Player A's votes SHOULD count (immunity nullified).

@@ -996,6 +996,11 @@ class SurvivorRulesEngine:
 					return False, "Alliance requires both ally and victim player IDs"
 				if ally_id not in game["players"] or victim_id not in game["players"]:
 					return False, "Alliance requires valid ally and victim players"
+				# "Pick a player to be your partner ... you can't steal from each other."
+				if ally_id == player_id:
+					return False, "Your alliance partner must be another player"
+				if victim_id in (player_id, ally_id):
+					return False, "Alliance partners can't steal from each other — pick a victim outside the alliance"
 
 		# ── Card-specific parameter validation, BEFORE the card leaves the hand ──
 		# (Missing parameters used to surface only in the effect, after the card

@@ -146,8 +146,12 @@ class TestNecklace(RocksTestBase):
 
         self.gs._trigger_tribal_council(self.game, "single")
         self.gs.start_voting(self.game_id, "elimination")
-        # Simulate a tribal where nobody ended up with votes
-        self.game["currentVote"]["votes"] = {}
+        # Simulate a tribal where nobody ended up with votes — every living
+        # player passed the box (it must reach everyone before the tally)
+        self.game["currentVote"]["votes"] = {
+            pid: {} for pid, p in self.game["players"].items()
+            if not p.get("isEliminated", False)
+        }
         self.gs.reveal_votes(self.game_id)
 
         current_vote = self.game["currentVote"]
