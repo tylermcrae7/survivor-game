@@ -2,7 +2,7 @@
 # Survivor Voting App – Flask & Socket.IO
 # (Pythonista-friendly; persistence, extra-vote cards, leader swap, reset)
 
-import uuid, time, os, json, socket, re, sys, threading, random
+import uuid, time, os, json, socket, re, sys, threading, random, hmac, hashlib
 import logging
 from pathlib import Path
 from functools import wraps
@@ -37,6 +37,64 @@ ALLOWED_ORIGINS = os.environ.get(
     'ALLOWED_ORIGINS',
     '*'  # Default to permissive for local dev; set env var for production
 ).split(',')
+
+# ───────────────────────── Access Gate ─────────────────────────
+# One shared "island code" gates the whole API when the app is exposed to the
+# internet (Cloudflare tunnel). No accounts: friends enter the code once, a
+# signed cookie remembers them, and changing the code revokes everyone.
+#
+#   SURVIVOR_ACCESS_CODE set   -> every /api/* call and Socket.IO connection
+#                                 requires the cookie from POST /api/access
+#   SURVIVOR_ACCESS_CODE unset -> gate disabled (LAN play, dev, tests)
+#
+# The cookie value is an HMAC derived from the code itself, so there is no
+# extra secret to manage and stale cookies die the moment the code changes.
+ACCESS_CODE = os.environ.get('SURVIVOR_ACCESS_CODE', '').strip()
+ACCESS_COOKIE = 'survivor_access'
+ACCESS_COOKIE_MAX_AGE = 90 * 24 * 3600  # one season
+_ACCESS_EXEMPT_PATHS = ('/api/access', '/api/access/check', '/api/ping')
+
+# Brute-force throttle: attempts per client IP within the window
+_ACCESS_ATTEMPT_LIMIT = 10
+_ACCESS_ATTEMPT_WINDOW = 60.0
+_access_attempts = {}
+
+
+def gate_enabled():
+    return bool(ACCESS_CODE)
+
+
+def _access_token():
+    """The cookie value that proves knowledge of the current access code."""
+    return hmac.new(ACCESS_CODE.encode(), b'survivor-access-v1', hashlib.sha256).hexdigest()
+
+
+def _has_valid_access_cookie(cookies):
+    if not gate_enabled():
+        return True
+    supplied = cookies.get(ACCESS_COOKIE, '')
+    return bool(supplied) and hmac.compare_digest(supplied, _access_token())
+
+
+def _client_ip():
+    """Real client IP — behind the Cloudflare tunnel it's in CF-Connecting-IP."""
+    return (request.headers.get('CF-Connecting-IP')
+            or request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+            or request.remote_addr or 'unknown')
+
+
+def _access_rate_limited(ip):
+    """True if this IP has burned its attempt budget for the current window."""
+    now = time.time()
+    attempts = [t for t in _access_attempts.get(ip, []) if now - t < _ACCESS_ATTEMPT_WINDOW]
+    _access_attempts[ip] = attempts
+    if len(attempts) >= _ACCESS_ATTEMPT_LIMIT:
+        return True
+    attempts.append(now)
+    # Don't let the map grow unbounded under a distributed guessing attempt
+    if len(_access_attempts) > 10000:
+        _access_attempts.clear()
+    return False
 
 # ───────────────────────── Flask / Socket.IO ─────────────────────────
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
@@ -2725,6 +2783,71 @@ def spa_fallback(path):
         return send_from_directory(app.static_folder, "index-optimized.html")
     return send_from_directory(app.static_folder, "index.html")
 
+# ───────────────────────────── Access Gate ─────────────────────────────
+@app.before_request
+def enforce_access_gate():
+    """
+    When SURVIVOR_ACCESS_CODE is set, every API call needs the access cookie.
+
+    Pages and static assets stay fetchable (they hold no game data — the client
+    shows its own gate screen), and the gate endpoints themselves are exempt so
+    the code can actually be entered.
+    """
+    if not gate_enabled():
+        return None
+    path = request.path
+    if not path.startswith('/api/') or path in _ACCESS_EXEMPT_PATHS:
+        return None
+    if _has_valid_access_cookie(request.cookies):
+        return None
+    return jsonify(success=False, gated=True,
+                   message="This island is code-locked — enter the access code first"), 401
+
+
+@app.route('/api/access/check', methods=['GET'])
+@safe_api_call
+def api_access_check():
+    """Is the gate up, and does this browser already hold a valid cookie?"""
+    return jsonify(
+        success=True,
+        gated=gate_enabled(),
+        ok=_has_valid_access_cookie(request.cookies),
+    )
+
+
+@app.route('/api/access', methods=['POST'])
+@safe_api_call
+def api_access():
+    """Trade the shared access code for the signed access cookie."""
+    if not gate_enabled():
+        return jsonify(success=True, message="No access code is required")
+
+    ip = _client_ip()
+    if _access_rate_limited(ip):
+        logger.warning(f"Access gate rate limit hit from {ip}")
+        return jsonify(success=False,
+                       message="Too many attempts — wait a minute and try again"), 429
+
+    data = request.get_json(silent=True) or {}
+    supplied = str(data.get('code', '')).strip()
+
+    if not supplied or not hmac.compare_digest(supplied.lower(), ACCESS_CODE.lower()):
+        logger.warning(f"Access gate: wrong code from {ip}")
+        return jsonify(success=False, message="That's not the code. The island stays hidden."), 403
+
+    response = jsonify(success=True, message="Welcome ashore")
+    forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
+    response.set_cookie(
+        ACCESS_COOKIE, _access_token(),
+        max_age=ACCESS_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite='Lax',
+        secure=(forwarded_proto == 'https'),
+    )
+    logger.info(f"Access gate: code accepted for {ip}")
+    return response
+
+
 # ───────────────────────────── REST API ─────────────────────────────
 @app.route('/api/ping', methods=['GET'])
 @safe_api_call
@@ -3136,7 +3259,14 @@ def on_disconnect():
 
 @socketio.on('connect')
 def on_connect():
-    """Handle client connect with logging"""
+    """
+    Handle client connect. When the access gate is up, the websocket handshake
+    must carry the access cookie — refusing here keeps ungated clients from
+    receiving state_update broadcasts.
+    """
+    if gate_enabled() and not _has_valid_access_cookie(request.cookies):
+        logger.warning(f"Socket connection refused by access gate: {request.sid}")
+        return False
     logger.debug(f"Client connected: {request.sid}")
 
 @socketio.on('heartbeat')

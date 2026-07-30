@@ -128,6 +128,10 @@ def main():
         {
             'file': 'tests/test_reward_interactions.py',
             'description': 'Reward Challenge Interactions — Do Or Die / Power Pair / Numbers Game / Spy Shack (25 tests)'
+        },
+        {
+            'file': 'tests/test_access_gate.py',
+            'description': 'Access Gate Tests — shared island code for the public tunnel (14 tests)'
         }
     ]
     

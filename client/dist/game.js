@@ -393,6 +393,54 @@ async function safeApiCall(endpoint, data = {}, method = 'POST') {
     }
 }
 
+/**
+ * Access gate (public tunnel). The server holds the shared island code; the
+ * client just checks whether this browser is already trusted and, if not,
+ * shows the gate screen before anything else.
+ */
+async function checkAccessGate() {
+    try {
+        const response = await fetch('/api/access/check', { cache: 'no-store' });
+        const data = await response.json();
+        if (data.gated && !data.ok) {
+            const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+            showScreen('accessScreen');
+            setTimeout(() => document.getElementById('accessCodeInput')?.focus(), 300);
+            return false;
+        }
+    } catch (error) {
+        // Offline / LAN without gate — carry on, the API will say if it minds
+        console.warn('Access check failed:', error);
+    }
+    return true;
+}
+
+async function submitAccessCode() {
+    const input = document.getElementById('accessCodeInput');
+    const code = input?.value.trim();
+    const toast = window.SurvivorUI?.showToast || window.showToast;
+    if (!code) { toast('Enter the access code', 'warning'); input?.focus(); return; }
+
+    try {
+        const response = await fetch('/api/access', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            toast('Welcome ashore', 'success');
+            // Reload so every module boots with the cookie (sockets included)
+            setTimeout(() => location.reload(), 400);
+        } else {
+            toast(data.message || 'That code did not open the island', 'error');
+            input?.select();
+        }
+    } catch (error) {
+        toast('Could not reach the island — try again', 'error');
+    }
+}
+
 async function createGame() {
     // Deck options (F7): official 67-card box by default, optional house deck and
     // optional Let's Go To Rocks Challenge Cards.
@@ -691,6 +739,8 @@ window.SurvivorGame = {
     
     // Game Actions
     safeApiCall,
+    checkAccessGate,
+    submitAccessCode,
     createGame,
     showJoinForm,
     joinGame,

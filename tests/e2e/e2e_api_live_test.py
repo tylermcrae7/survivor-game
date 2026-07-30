@@ -9,9 +9,52 @@ Steal -> Play -> Draw order, the vote-card economy, the Survivor Character Card
 lives system, the tie-break cascade, final tribal, and the Let's Go To Rocks
 expansion (challenges + Immunity Idol Necklace).
 """
-import json, sys, urllib.request, urllib.error
+import http.cookiejar
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+# Cookie-aware opener: when the target server is code-locked (SURVIVOR_ACCESS_CODE
+# set on it, e.g. the live tunnel deployment), the gate cookie from /api/access
+# must ride on every request.
+_cookies = http.cookiejar.CookieJar()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_cookies))
+urllib.request.install_opener(_opener)
+
+
+def _unlock_gate(base):
+    """If the server is gated, unlock with the code from env or ~/.survivor-access-code."""
+    try:
+        with urllib.request.urlopen(base + "/api/access/check", timeout=10) as r:
+            check = json.loads(r.read().decode())
+    except Exception:
+        return  # server not up yet; the first real check will say so
+    if not check.get("gated") or check.get("ok"):
+        return
+    code = os.environ.get("SURVIVOR_ACCESS_CODE", "").strip()
+    if not code:
+        code_file = os.path.expanduser("~/.survivor-access-code")
+        if os.path.exists(code_file):
+            code = open(code_file).read().strip()
+    if not code:
+        print("FATAL: server is code-locked and no access code found "
+              "(set SURVIVOR_ACCESS_CODE or ~/.survivor-access-code)")
+        sys.exit(2)
+    req = urllib.request.Request(base + "/api/access",
+                                 data=json.dumps({"code": code}).encode(),
+                                 method="POST")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        reply = json.loads(r.read().decode())
+    if not reply.get("success"):
+        print(f"FATAL: access code rejected: {reply.get('message')}")
+        sys.exit(2)
+    print("(access gate unlocked for this test run)")
 
 BASE = "http://localhost:8080"
+_unlock_gate(BASE)
 results = []
 
 

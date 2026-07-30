@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>{{REPO_DIR}}/.venv/bin/python</string>
         <string>{{REPO_DIR}}/survivor_server.py</string>
     </array>
 
@@ -30,6 +30,14 @@
     <dict>
         <key>FLASK_ENV</key>
         <string>production</string>
+        <key>PORT</key>
+        <string>8080</string>
+        <!-- The shared island code. Change it here (then `launchctl unload` +
+             `load` this plist) to revoke every phone that has entered it. -->
+        <key>SURVIVOR_ACCESS_CODE</key>
+        <string>{{ACCESS_CODE}}</string>
+        <key>ALLOWED_ORIGINS</key>
+        <string>{{PUBLIC_ORIGIN}}</string>
     </dict>
 
     <key>ThrottleInterval</key>

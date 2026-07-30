@@ -2237,3 +2237,25 @@
     .finger-option:hover { transform: none; }
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESS GATE — the island is code-locked
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .access-card {
+    max-width: 22rem;
+    margin-inline: auto;
+  }
+
+  .access-hint {
+    text-align: center;
+  }
+
+  .access-input {
+    text-align: center;
+    font-family: var(--font-label);
+    font-size: 1.15rem;
+    letter-spacing: 0.18em;
+    text-transform: lowercase;
+  }
+}

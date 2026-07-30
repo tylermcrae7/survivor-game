@@ -37,24 +37,48 @@ TUNNEL_ID=$(cloudflared tunnel list | grep survivor-game | awk '{print $1}')
 echo "Tunnel ID: $TUNNEL_ID"
 
 # 6. Create Cloudflare config
+HOSTNAME="${SURVIVOR_HOSTNAME:-survivor.mctech.biz}"
 CRED_FILE="$HOME/.cloudflared/${TUNNEL_ID}.json"
 cat > "$HOME/.cloudflared/config.yml" << YAML
 tunnel: $TUNNEL_ID
 credentials-file: $CRED_FILE
 
 ingress:
-  - service: http://localhost:8080
+  - hostname: $HOSTNAME
+    service: http://localhost:8080
+  - service: http_status:404
 YAML
 
 echo ""
-echo "Cloudflare config written to ~/.cloudflared/config.yml"
+echo "Cloudflare config written to ~/.cloudflared/config.yml (hostname: $HOSTNAME)"
+
+# 6b. Route DNS for the hostname to this tunnel
+cloudflared tunnel route dns survivor-game "$HOSTNAME" || true
+
+# 6c. Access code — the shared "island code" that gates the public URL.
+#     Generated once and stored ONLY in the installed LaunchAgent (never in git).
+if [ -z "$SURVIVOR_ACCESS_CODE" ]; then
+    SURVIVOR_ACCESS_CODE=$(python3 - << 'PYEOF'
+import secrets
+words = ["torch","ember","tribe","idol","rock","tide","palm","reef","spear","flint",
+         "husk","vine","drift","coral","kelp","mango","lagoon","dune","cove","raft"]
+print(f"{secrets.choice(words)}-{secrets.choice(words)}-{secrets.randbelow(9000)+1000}")
+PYEOF
+)
+    echo ""
+    echo "Generated access code: $SURVIVOR_ACCESS_CODE"
+    echo "(Set SURVIVOR_ACCESS_CODE before running this script to choose your own.)"
+fi
 
 # 7. Install launchd services
 echo ""
 echo "Installing launchd services..."
 
-# Server plist
-sed "s|{{REPO_DIR}}|$REPO_DIR|g" "$SCRIPT_DIR/com.survivor-game.server.plist" \
+# Server plist (repo path + access code + public origin substituted in)
+sed -e "s|{{REPO_DIR}}|$REPO_DIR|g" \
+    -e "s|{{ACCESS_CODE}}|$SURVIVOR_ACCESS_CODE|g" \
+    -e "s|{{PUBLIC_ORIGIN}}|https://$HOSTNAME|g" \
+    "$SCRIPT_DIR/com.survivor-game.server.plist" \
     > "$HOME/Library/LaunchAgents/com.survivor-game.server.plist"
 
 # Tunnel plist
@@ -74,5 +98,9 @@ echo ""
 echo "Quick tunnel (no custom domain, temporary URL):"
 echo "  cloudflared tunnel --url http://localhost:8080"
 echo ""
-echo "To set up a custom domain, add a DNS route:"
-echo "  cloudflared tunnel route dns survivor-game survivor.yourdomain.com"
+echo "Public URL:   https://$HOSTNAME"
+echo "Access code:  $SURVIVOR_ACCESS_CODE   (friends enter this once per phone)"
+echo ""
+echo "To change the code later: edit SURVIVOR_ACCESS_CODE in"
+echo "  ~/Library/LaunchAgents/com.survivor-game.server.plist"
+echo "then: launchctl unload && launchctl load that plist. Old phones re-enter the new code."
