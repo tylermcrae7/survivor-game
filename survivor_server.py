@@ -1036,6 +1036,16 @@ class GameState:
             if not player:
                 continue
 
+            # Rulebook: Final Tribal starts "the moment there are only 2 players
+            # left ... This could happen at a Double Elimination Tribal Council
+            # after just the first player is voted out." Once the table is down
+            # to 2, remaining flips are spared.
+            alive_now = sum(1 for p in game["players"].values()
+                            if not p.get("isEliminated", False))
+            if alive_now <= 2 and (eliminated_players or survived_players):
+                logger.info(f"Double elimination stopped early in {gid} — down to 2 players")
+                break
+
             remaining = max(0, player.get("characterCards", 2) - 1)
             player["characterCards"] = remaining
             player_name = player.get("name", player_id)
@@ -2317,7 +2327,12 @@ class GameState:
                 game["deck"] = discard
                 game["discard"] = []
                 deck = game["deck"]
-                logger.info(f"Draw Pile empty in {gid} — reshuffled {len(deck)} discards")
+                # The official deck math guarantees Final Tribal before the pile
+                # empties (the bottom card is always a Tribal Council Card). If
+                # this fires, an elimination-count invariant broke somewhere —
+                # keep the game alive, but shout about it.
+                logger.error(f"INVARIANT: Draw Pile emptied mid-game in {gid} — "
+                             f"reshuffled {len(deck)} discards to keep the game alive")
             else:
                 # Nothing anywhere to draw — the draw step still ends the turn
                 player["hasDrawn"] = True

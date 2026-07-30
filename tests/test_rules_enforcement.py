@@ -256,6 +256,77 @@ def test_reward_challenge_steals_go_through_the_gate():
         os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_three_players_left_rule():
+    """
+    Rulebook: "If there are only 3 players left and 2 players would be
+    eliminated at the same time (leaving you with only 1 player left in the
+    game), the Tribal Council Leader decides which of the tied players is
+    eliminated. Immediately begin The Final Tribal Council."
+
+    And the flip side: a double whose targets can absorb the flips delivers
+    BOTH of them — the deck's elimination math depends on it.
+    """
+    gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
+    try:
+        print("=== The 3-players-left rule ===")
+        engine = gs.rules_engine
+
+        # Case 1: both vote-getters on their last card -> leader decides ONE
+        game["players"][ana]["characterCards"] = 1
+        game["players"][ben]["characterCards"] = 1
+        game["players"][cam]["characterCards"] = 2
+        outcome = engine.resolve_tribal_eliminations(
+            game, {ana: 2, ben: 1}, protected_players=(), idol_players=(),
+            elimination_type="double")
+        print("both lethal:", outcome["reason"])
+        assert outcome["tieBreakNeeded"] is True
+        assert sorted(outcome["tiedPlayers"]) == sorted([ana, ben])
+        assert outcome["eliminationsNeeded"] == 1
+        assert outcome["finalTribalAfter"] is True
+
+        # Case 2: targets can absorb the flips -> the double delivers BOTH
+        game["players"][ana]["characterCards"] = 2
+        game["players"][ben]["characterCards"] = 2
+        outcome = engine.resolve_tribal_eliminations(
+            game, {ana: 2, ben: 1}, protected_players=(), idol_players=(),
+            elimination_type="double")
+        print("absorbable:", outcome["reason"])
+        assert outcome["tieBreakNeeded"] is False
+        assert sorted(outcome["eliminated"]) == sorted([ana, ben])
+        assert outcome["eliminationsNeeded"] == 2
+
+        # Case 3: one lethal, one absorbable -> both flip, one eliminated,
+        # exactly 2 remain and Final Tribal follows naturally
+        game["players"][ana]["characterCards"] = 1
+        game["players"][ben]["characterCards"] = 2
+        outcome = engine.resolve_tribal_eliminations(
+            game, {ana: 2, ben: 1}, protected_players=(), idol_players=(),
+            elimination_type="double")
+        assert sorted(outcome["eliminated"]) == sorted([ana, ben])
+        assert outcome["eliminationsNeeded"] == 2
+
+        print("✅ three-players-left rule\n")
+    finally:
+        os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_deck_math_never_strands():
+    """
+    Tyler's invariant: the tribal-card table (3p:4S / 4p:2S+2D / 5p:2S+3D /
+    6p:5D) guarantees Final Tribal before the Draw Pile empties, because every
+    Tribal delivers its full rating unless the game is ending. Verify the
+    arithmetic that the resolution code must now preserve.
+    """
+    print("=== Deck math invariant ===")
+    table = {3: (4, 0), 4: (2, 2), 5: (2, 3), 6: (0, 5)}
+    for n, (s_cards, d_cards) in table.items():
+        flips = s_cards + 2 * d_cards
+        adversarial_max_with_3_alive = 2 * n - 3
+        assert flips > adversarial_max_with_3_alive, (
+            f"{n} players: {flips} flips cannot force final-2")
+    print("✅ every player count is guaranteed to reach Final Tribal\n")
+
+
 if __name__ == "__main__":
     print("🧪 Rules Enforcement (Survival Guide review 2026-07-30)")
     print("=" * 60)
@@ -265,6 +336,8 @@ if __name__ == "__main__":
         test_camp_raid_is_a_trap()
         test_sorry_for_you_gates_every_taking()
         test_reward_challenge_steals_go_through_the_gate()
+        test_three_players_left_rule()
+        test_deck_math_never_strands()
         print("🎉 All rules-enforcement tests passed!")
     except AssertionError as e:
         print(f"❌ Test failed: {e}")

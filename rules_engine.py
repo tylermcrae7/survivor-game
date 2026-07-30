@@ -1223,15 +1223,12 @@ class SurvivorRulesEngine:
 					break
 			return out
 
-		# ── "Never leave only 1 player" guard (official 3-players-left rule) ──
+		# (The official 3-players-left rule is applied AFTER vote resolution, to
+		#  the players actually voted out — see the guard at the bottom. A
+		#  pre-emptive worst-case down-rating here silently cost a Double
+		#  Elimination its second flip and could strand games with 3+ players
+		#  and an empty Draw Pile.)
 		final_tribal_after = False
-		if needed == 2:
-			# Worst case: the two chosen players are the ones closest to elimination.
-			pool = with_votes or ladder(2)
-			worst = sorted(pool, key=lambda pid: players[pid].get("characterCards", 1))[:2]
-			if len(worst) >= 2 and players_left_after(worst) < 2:
-				needed = 1
-				final_tribal_after = True
 
 		result = {
 			"eliminated": [],
@@ -1260,7 +1257,7 @@ class SurvivorRulesEngine:
 
 		if not with_votes:
 			unclear(needed, [])
-			return result
+			return self._apply_three_left_rule(result, players, alive)
 
 		top_votes = counts[with_votes[0]]
 		tied_first = [pid for pid in with_votes if counts[pid] == top_votes]
@@ -1283,19 +1280,19 @@ class SurvivorRulesEngine:
 				f"{len(tied_first)} players tied with {top_votes} votes — "
 				"Council Leader decides which 2 are voted out"
 			)
-			return result
+			return self._apply_three_left_rule(result, players, alive)
 
 		if len(tied_first) == 2:
 			result["eliminated"] = list(tied_first)
 			result["reason"] = f"2 players tied with {top_votes} votes — both are voted out"
-			return result
+			return self._apply_three_left_rule(result, players, alive)
 
 		# Exactly one player has the most votes; resolve second place.
 		first = tied_first[0]
 		rest = [pid for pid in with_votes if pid != first]
 		if not rest:
 			unclear(1, [first])
-			return result
+			return self._apply_three_left_rule(result, players, alive)
 
 		second_votes = counts[rest[0]]
 		tied_second = [pid for pid in rest if counts[pid] == second_votes]
@@ -1310,6 +1307,62 @@ class SurvivorRulesEngine:
 				f"{players[first].get('name', first)} is voted out first; "
 				f"{len(tied_second)} players tied for second with {second_votes} votes — "
 				"Council Leader decides who else goes"
+			)
+		return self._apply_three_left_rule(result, players, alive)
+
+	def _apply_three_left_rule(self, result, players, alive):
+		"""
+		Official rulebook: "If there are only 3 players left and 2 players would
+		be ELIMINATED at the same time (leaving you with only 1 player left in
+		the game), the Tribal Council Leader decides which of the tied players
+		is eliminated. Immediately begin The Final Tribal Council."
+
+		This applies to the RESOLVED outcome — both chosen players actually on
+		their last Survivor Character Card — never pre-emptively. A double whose
+		targets can absorb the flips keeps both of them (the deck's elimination
+		math depends on every Tribal delivering its full rating).
+		"""
+		if len(alive) != 3 or result.get("eliminationsNeeded") != 2:
+			return result
+
+		def lethal(pid):
+			return players.get(pid, {}).get("characterCards", 2) <= 1
+
+		elim = result.get("eliminated") or []
+		if len(elim) == 2 and all(lethal(p) for p in elim):
+			# Both flips would land fatally — leader picks the one who goes
+			result["eliminated"] = []
+			result["tieBreakNeeded"] = True
+			result["tiedPlayers"] = list(elim)
+			result["eliminationsNeeded"] = 1
+			result["finalTribalAfter"] = True
+			result["reason"] = (
+				"3 players left and both vote-getters are on their last card — "
+				"the Council Leader decides who is eliminated, then Final Tribal begins"
+			)
+		elif (result.get("tieBreakNeeded") and not elim
+				and result.get("tiedPlayers")
+				and all(lethal(p) for p in result["tiedPlayers"])):
+			# A pure tie with every candidate on their last card — any two picks
+			# would leave 1 player. The leader decides which ONE is eliminated.
+			result["eliminationsNeeded"] = 1
+			result["finalTribalAfter"] = True
+			result["reason"] = (
+				"3 players left, all on their last card — the Council Leader "
+				"decides which one is eliminated, then Final Tribal begins"
+			)
+		elif (result.get("tieBreakNeeded") and len(elim) == 1 and lethal(elim[0])
+				and result.get("tiedPlayers")
+				and all(lethal(p) for p in result["tiedPlayers"])):
+			# The first player's flip already ends the game at 2 — any second
+			# pick would leave only 1. First goes; Final Tribal follows.
+			result["tieBreakNeeded"] = False
+			result["tiedPlayers"] = []
+			result["eliminationsNeeded"] = 1
+			result["finalTribalAfter"] = True
+			result["reason"] = (
+				f"{players[elim[0]].get('name', elim[0])} is voted out — with 3 left, "
+				"a second elimination would leave only 1. Final Tribal begins"
 			)
 		return result
 
