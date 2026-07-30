@@ -343,6 +343,8 @@
     color: var(--text-secondary);
   }
 
+  .game-info .chip[hidden] { display: none; }
+
   .game-info .chip {
     padding: 0.2rem 0.55rem;
     border: 1px solid var(--line);
@@ -814,7 +816,7 @@
     transition: border-color 200ms ease, box-shadow 200ms ease, opacity 300ms ease;
   }
 
-  .player-avatar, .lives-dot, .vote-result-avatar {
+  .player-avatar, .lives-dot, .vote-result-avatar, .vote-target-avatar {
     flex: 0 0 auto;
     width: 34px;
     height: 34px;
@@ -1142,6 +1144,15 @@
   }
   .leader-phrase::before { content: open-quote; color: var(--torch); }
   .leader-phrase::after { content: close-quote; color: var(--torch); }
+  .leader-attribution {
+    text-align: center;
+    font-family: var(--font-label);
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--track-label);
+    color: var(--text-faint);
+    margin-top: -0.4rem;
+    margin-bottom: var(--spacing-md);
+  }
 
   /* ── Voting: parchment ballots ── */
   .my-votes {
@@ -1591,7 +1602,9 @@
     color: var(--parchment-dim);
     min-height: 1.4em;
   }
-  .narrator-cursor { color: var(--torch); animation: stepGlow 1s steps(2) infinite; }
+  .narrator-cursor { color: var(--torch); animation: stepGlow 1s steps(2) infinite; font-size: 0.8em; }
+  .narrator-message:empty + .narrator-cursor { display: none; }
+  .narrator-text:has(.narrator-message:empty) { min-height: 0; }
   .narrator-panel.minimized .narrator-content { display: none; }
   .narrator-history { display: none; }
   .narrator-panel.show-history .narrator-history {

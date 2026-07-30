@@ -1,0 +1,36 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e3]:
+    - generic [ref=f6e7]: Survivor Narrator
+    - button "Toggle narrator sound" [ref=f6e8] [cursor=pointer]: sound
+    - button "Minimize narrator" [ref=f6e9] [cursor=pointer]: –
+  - link "Skip to content" [ref=f6e11] [cursor=pointer]:
+    - /url: "#app"
+  - generic [ref=f6e12]:
+    - banner [ref=f6e13]:
+      - generic [ref=f6e17]: SURVIVOR
+    - main [ref=f6e21]:
+      - region "Start screen" [ref=f6e22]:
+        - generic [ref=f6e23]:
+          - heading "Survivor" [level=1] [ref=f6e27]
+          - paragraph [ref=f6e28]: The Tribe Has Spoken
+        - generic [ref=f6e29]:
+          - generic [ref=f6e30]:
+            - generic [ref=f6e31]: Choose your deck
+            - group "Choose your deck" [ref=f6e32]:
+              - button "Official the 67-card box" [pressed] [ref=f6e33] [cursor=pointer]:
+                - text: Official
+                - generic [ref=f6e34]: the 67-card box
+              - button "Extended +7 house cards" [ref=f6e35] [cursor=pointer]:
+                - text: Extended
+                - generic [ref=f6e36]: +7 house cards
+            - combobox [ref=f6e37]
+            - generic [ref=f6e38] [cursor=pointer]:
+              - generic [ref=f6e41]:
+                - text: Add
+                - strong [ref=f6e42]: Let's Go To Rocks
+                - text: Challenges
+              - checkbox "Add Let's Go To Rocks Challenges" [ref=f6e43]
+            - paragraph [ref=f6e44]: Extended adds 7 house cards (Idol Nullifier, Steal A Vote, Block A Vote, Grant Immunity). Rocks adds the 5 Orange Challenge Cards and the Immunity Idol Necklace.
+          - generic [ref=f6e45]:
+            - button "Light the Fire" [ref=f6e46] [cursor=pointer]
+            - button "Join a Tribe" [ref=f6e49] [cursor=pointer]

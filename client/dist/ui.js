@@ -242,9 +242,14 @@ function showScreen(screenId) {
         }
     }
 
-    // Use View Transitions API if available (progressive enhancement)
-    if (document.startViewTransition) {
-        document.startViewTransition(() => applyScreenChange());
+    // Use View Transitions API if available (progressive enhancement).
+    // Rapid successive navigations (routing + socket updates landing together)
+    // would interrupt each other and spam "Transition was skipped" — only start
+    // a transition when none is in flight.
+    if (document.startViewTransition && !showScreen._transitioning) {
+        showScreen._transitioning = true;
+        const transition = document.startViewTransition(() => applyScreenChange());
+        transition.finished.finally(() => { showScreen._transitioning = false; });
     } else {
         applyScreenChange();
     }
@@ -281,6 +286,8 @@ function updateGameInfo(gameState) {
     const gameCodeEl = document.getElementById('gameCode');
     if (gameCodeEl && gameState.id) {
         gameCodeEl.textContent = gameState.id;
+        const chip = document.getElementById('gameChip');
+        if (chip) chip.hidden = false;
     }
 
     // Update game code (lobby display)
@@ -295,6 +302,8 @@ function updateGameInfo(gameState) {
         const player = gameState.players?.[window.SurvivorGame.localGameState.playerId];
         if (player) {
             playerInfo.textContent = player.name;
+            const chip = document.getElementById('playerChip');
+            if (chip) chip.hidden = false;
         }
     }
 
@@ -1184,9 +1193,11 @@ async function castVote(targetId) {
 
         // Every Vote/Goodwill Gamble card in hand MUST be cast at this tribal;
         // the server rejects partial ballots. Extra Votes may ride along too.
+        // A player whose Vote Card was stolen legally passes the box (empty ballot).
         const me = window.SurvivorGame?.fullGameState?.players?.[voterId];
+        const maxVotes = me?.maxVotes ?? 1;
         const votes = Math.max(1, me?.mandatoryVotes ?? 1);
-        const votesData = [{ targetId, votes }];
+        const votesData = maxVotes === 0 ? [] : [{ targetId, votes }];
         const result = await window.SurvivorNetwork?.GameAPI.castVote(gameId, voterId, votesData);
 
         if (result && result.success) {
@@ -1805,8 +1816,8 @@ function renderTribalCeremony(gameState) {
         const contentEl = document.getElementById('tribalAnnouncementContent');
         if (phraseEl) phraseEl.innerHTML = `
             <p class="leader-phrase">Welcome to Tribal Council. If anyone has a Tribal
-            Advantage Card, you may play it now — or anytime before we vote.
-            <span style="display:block; margin-top:0.3rem; font-size:0.8em; color:var(--text-faint)">— ${leaderName}</span></p>
+            Advantage Card, you may play it now — or anytime before we vote.</p>
+            <p class="leader-attribution">— ${leaderName}, Council Leader</p>
         `;
         if (contentEl) {
             contentEl.innerHTML = `<div class="panel"><div id="ceremonyHandAnnouncement"></div>${leaderBar('Open the Discussion', 'openDiscussion', 'speech')}</div>`;
