@@ -2437,3 +2437,69 @@
     opacity: 0.7;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HALL OF FAME — layout fix + editing, and the lobby rename affordance
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* The oversized title overlapping the panel works when the panel opens with
+     padding — here the list starts immediately, so the title sat on the names. */
+  #leaderboardScreen .screen-title {
+    margin-bottom: 0.45rem;
+  }
+
+  .hof-actions {
+    display: flex;
+    gap: 0.6rem;
+  }
+  .hof-actions .btn { flex: 1; }
+
+  .hof-edit-row { gap: 0.5rem; }
+
+  .hof-icon-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+  }
+  .hof-icon-btn .icon { width: 1.05rem; height: 1.05rem; }
+  .hof-icon-btn:hover,
+  .hof-icon-btn:focus-visible { color: var(--torch); border-color: var(--torch); }
+  .hof-icon-danger:hover,
+  .hof-icon-danger:focus-visible { color: var(--danger); border-color: var(--danger); }
+
+  #leaderboardList .picker-hint .icon {
+    width: 0.9rem;
+    height: 0.9rem;
+    vertical-align: -0.12em;
+  }
+
+  #hofAddBtn { width: 100%; margin-top: 0.35rem; }
+  #hofAddBtn .icon { width: 1rem; height: 1rem; vertical-align: -0.15em; }
+
+  /* Lobby rename — a quiet pencil beside your own name */
+  .player-name .rename-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.35rem;
+    padding: 0.2rem;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    vertical-align: middle;
+    transition: color 160ms ease;
+  }
+  .player-name .rename-btn .icon { width: 0.95rem; height: 0.95rem; }
+  .player-name .rename-btn:hover,
+  .player-name .rename-btn:focus-visible { color: var(--torch); }
+}

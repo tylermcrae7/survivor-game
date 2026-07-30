@@ -572,6 +572,54 @@ function renderPlayerList(gameState) {
     container.querySelectorAll('.player-card').forEach(card => {
         setupPlayerCardEvents(card);
     });
+    container.querySelector('[data-action="renameSelf"]')
+        ?.addEventListener('click', (e) => { e.stopPropagation(); showRenameForm(); });
+}
+
+/** Lobby-only: change your own name before the game starts. */
+function showRenameForm() {
+    const current = window.SurvivorGame?.fullGameState?.players?.[
+        window.SurvivorGame?.localGameState?.playerId]?.name || '';
+    showModal(`
+        <div class="form-group">
+            <label for="renameInput">Your name</label>
+            <input type="text" id="renameInput" class="form-input" maxlength="30"
+                   value="${escapeHtml(current)}" placeholder="What does the tribe call you?">
+        </div>
+        <p class="picker-hint">You can change this until the game starts.</p>
+        <button class="btn btn-primary btn-enhanced touch-target" id="renameSaveBtn">Save</button>
+    `, { title: 'Change your name' });
+
+    setTimeout(() => {
+        const input = document.getElementById('renameInput');
+        input?.focus();
+        input?.select();
+        document.getElementById('renameSaveBtn')?.addEventListener('click', async () => {
+            const newName = input?.value.trim();
+            if (!newName) { showToast('A name is required', 'warning'); return; }
+            if (newName === current) { hideModal(); return; }
+            try {
+                const result = await window.SurvivorNetwork.apiCall('/player/rename', {
+                    gameId: window.SurvivorGame.localGameState.gameId,
+                    playerId: window.SurvivorGame.localGameState.playerId,
+                    newName
+                });
+                if (result?.success) {
+                    hideModal();
+                    // Header chip + saved session follow the new name
+                    const info = document.getElementById('playerInfo');
+                    if (info) info.textContent = result.newName || newName;
+                    try {
+                        const saved = JSON.parse(localStorage.getItem('survivorState') || '{}');
+                        saved.playerName = result.newName || newName;
+                        localStorage.setItem('survivorState', JSON.stringify(saved));
+                    } catch (e) { /* cosmetic only */ }
+                }
+            } catch (error) {
+                // apiCall already toasts the server's reason
+            }
+        });
+    }, 60);
 }
 
 /**
@@ -596,6 +644,9 @@ function createPlayerCard(player, gameState) {
     const isEliminated = player.isEliminated;
     const cardCount = player.hand ? player.hand.length : 0;
     const hasNecklace = gameState && gameState.necklaceHolder === player.id;
+    // In the lobby you can still change what the tribe calls you
+    const canRename = gameState?.phase === 'lobby' &&
+                      player.id === window.SurvivorGame?.localGameState?.playerId;
 
     return `
         <div class="player-card ${isLeader ? 'leader' : ''} ${isEliminated ? 'eliminated' : ''}"
@@ -604,7 +655,11 @@ function createPlayerCard(player, gameState) {
                 ${escapeHtml(player.name.charAt(0).toUpperCase())}
             </div>
             <div class="player-info">
-                <div class="player-name">${escapeHtml(formatPlayerName(player))}</div>
+                <div class="player-name">
+                    ${escapeHtml(formatPlayerName(player))}
+                    ${canRename ? `<button class="rename-btn" data-action="renameSelf"
+                        aria-label="Change your name" title="Change your name">${icon('pencil')}</button>` : ''}
+                </div>
                 <div class="player-status">
                     ${renderLives(player)}
                     ${isLeader ? `<span class="player-tag gold">${icon('crown')} Leader</span>` : ''}
@@ -1912,8 +1967,9 @@ function renderPhaseGuidance(gameState) {
         main.insertBefore(guidanceEl, main.firstChild);
     }
 
-    // The guidance strip earns its place only once a game exists
-    if (!window.SurvivorGame?.localGameState?.gameId) {
+    // The guidance strip earns its place only once a game exists — and never
+    // on the Hall of Fame, which is a detour outside the game.
+    if (!window.SurvivorGame?.localGameState?.gameId || currentScreen === 'leaderboardScreen') {
         guidanceEl.style.display = 'none';
         return;
     }
@@ -2643,9 +2699,13 @@ function openCampMenu() {
 
 /** Hall of Fame — the winners recorded in winners.json. */
 async function showLeaderboard() {
+    hofEditMode = false;
+    const editBtn = document.getElementById('hofEditBtn');
+    if (editBtn) editBtn.textContent = 'Edit the record';
     const list = document.getElementById('leaderboardList');
     if (list) list.innerHTML = `<p class="picker-hint">Reading the tribe's history…</p>`;
     showScreen('leaderboardScreen');
+    document.getElementById('phaseGuidance')?.style.setProperty('display', 'none');
 
     let winners = [];
     try {
@@ -2694,8 +2754,141 @@ async function showLeaderboard() {
     }).join('')}</ol>`;
 }
 
+// ── Hall of Fame editing ────────────────────────────────────────────────────
+// The record is a list of individual wins (name + date). Anyone at the fire
+// can tend it: fix a name, correct a date, add a game played off-app.
+
+let hofEditMode = false;
+
+function toggleLeaderboardEdit() {
+    hofEditMode = !hofEditMode;
+    if (hofEditMode) renderLeaderboardEdit();
+    else showLeaderboard();
+}
+
+async function renderLeaderboardEdit() {
+    const list = document.getElementById('leaderboardList');
+    const editBtn = document.getElementById('hofEditBtn');
+    if (editBtn) editBtn.textContent = 'Done';
+    if (list) list.innerHTML = `<p class="picker-hint">Reading the tribe's history…</p>`;
+
+    let records = [];
+    try {
+        const response = await fetch('/api/winners/records', { cache: 'no-store' });
+        if (response.ok) records = await response.json();
+    } catch (error) {
+        console.warn('Could not load winner records:', error);
+    }
+    if (!list) return;
+    if (!Array.isArray(records)) records = [];
+
+    const sorted = [...records].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const rows = sorted.map(r => `
+        <li class="hof-row hof-edit-row" data-record-id="${escapeHtml(r.id || '')}">
+            <span class="hof-name">
+                ${escapeHtml(r.winner_name || 'Unknown')}
+                <em class="hof-date">${escapeHtml(r.date || 'no date')}</em>
+            </span>
+            <button class="hof-icon-btn" data-hof="edit" aria-label="Edit this win">${icon('pencil')}</button>
+            <button class="hof-icon-btn hof-icon-danger" data-hof="delete" aria-label="Delete this win">${icon('x')}</button>
+        </li>
+    `).join('');
+
+    list.innerHTML = `
+        <p class="picker-hint">Each row is one win. Tap ${icon('pencil')} to fix a name or date.</p>
+        <ol class="hof-list">${rows || ''}</ol>
+        ${rows ? '' : `<p class="picker-hint">No wins recorded yet.</p>`}
+        <button class="btn btn-secondary btn-enhanced touch-target" id="hofAddBtn">
+            ${icon('crown')} Add a win
+        </button>
+    `;
+
+    list.querySelectorAll('[data-hof="edit"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.closest('[data-record-id]').dataset.recordId;
+            const rec = records.find(r => r.id === id);
+            if (rec) showWinnerForm(rec);
+        });
+    });
+    list.querySelectorAll('[data-hof="delete"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.closest('[data-record-id]').dataset.recordId;
+            const rec = records.find(r => r.id === id);
+            showConfirm(
+                `Strike ${rec?.winner_name || 'this win'} (${rec?.date || 'no date'}) from the record?`,
+                async () => {
+                    await hofApi('/api/winners/delete', { id });
+                    renderLeaderboardEdit();
+                }
+            );
+        });
+    });
+    document.getElementById('hofAddBtn')?.addEventListener('click', () => showWinnerForm(null));
+}
+
+/** Add (record = null) or edit one win. */
+function showWinnerForm(record) {
+    const isNew = !record;
+    const today = new Date().toISOString().slice(0, 10);
+    showModal(`
+        <div class="form-group">
+            <label for="hofNameInput">Winner</label>
+            <input type="text" id="hofNameInput" class="form-input" maxlength="50"
+                   value="${escapeHtml(record?.winner_name || '')}" placeholder="Who claimed the title?">
+        </div>
+        <div class="form-group">
+            <label for="hofDateInput">Date won</label>
+            <input type="date" id="hofDateInput" class="form-input"
+                   value="${escapeHtml(record?.date || today)}">
+        </div>
+        <button class="btn btn-primary btn-enhanced touch-target" id="hofSaveBtn">
+            ${isNew ? 'Carve it in' : 'Save'}
+        </button>
+    `, { title: isNew ? 'Add a win' : 'Edit this win' });
+
+    setTimeout(() => {
+        document.getElementById('hofSaveBtn')?.addEventListener('click', async () => {
+            const name = document.getElementById('hofNameInput')?.value.trim();
+            const date = document.getElementById('hofDateInput')?.value.trim();
+            if (!name) { showToast('A winner needs a name', 'warning'); return; }
+            if (!date) { showToast('A win needs a date', 'warning'); return; }
+            const body = isNew
+                ? { winner_name: name, date }
+                : { id: record.id, winner_name: name, date };
+            const ok = await hofApi(isNew ? '/api/winners/add' : '/api/winners/update', body);
+            if (ok) {
+                hideModal();
+                renderLeaderboardEdit();
+            }
+        });
+        document.getElementById('hofNameInput')?.focus();
+    }, 60);
+}
+
+/** Small POST helper for the winners endpoints. Returns true on success. */
+async function hofApi(path, body) {
+    try {
+        const response = await fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.success === false) {
+            showToast(result.message || 'That did not take', 'error');
+            return false;
+        }
+        if (result.message) showToast(result.message, 'success');
+        return true;
+    } catch (error) {
+        showToast('Could not reach the island', 'error');
+        return false;
+    }
+}
+
 /** Back out of the Hall of Fame to wherever makes sense. */
 function leaveLeaderboard() {
+    hofEditMode = false;
     const gameState = window.SurvivorGame?.fullGameState;
     const gameId = window.SurvivorGame?.localGameState?.gameId;
     if (gameId && gameState?.phase) {
@@ -2964,6 +3157,7 @@ window.SurvivorUI = {
     openCampMenu,
     showLeaderboard,
     leaveLeaderboard,
+    toggleLeaderboardEdit,
     renderLives,
     renderLivesTracker,
     renderChallengePanel,

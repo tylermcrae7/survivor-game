@@ -64,6 +64,10 @@ def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + ((" — " + str(detail)[:200]) if detail else ""))
 
 
+# Every game this run creates — used to scrub its recorded wins afterwards,
+# so test victories never pollute the real Hall of Fame.
+CREATED_GAMES = set()
+
 def api(path, body=None, method=None):
     url = BASE + path
     data = json.dumps(body).encode() if body is not None else None
@@ -71,7 +75,10 @@ def api(path, body=None, method=None):
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status, json.loads(r.read().decode())
+            status, reply = r.status, json.loads(r.read().decode())
+            if path == "/api/game/create" and isinstance(reply, dict) and reply.get("gameId"):
+                CREATED_GAMES.add(reply["gameId"])
+            return status, reply
     except urllib.error.HTTPError as e:
         try:
             return e.code, json.loads(e.read().decode())
@@ -639,6 +646,39 @@ st, resp = api("/api/game/delete", {"gameId": wipe_gid})
 check("wipe_twice_is_a_clean_error", resp.get("success") is False, resp)
 st, resp = api("/api/game/delete", {"gameId": "ZZZZZZZZ"})
 check("wipe_unknown_game_rejected", resp.get("success") is False, resp)
+
+# ── Renaming: free in the lobby, locked once the game starts ─────────────────
+st, resp = api("/api/game/create", {})
+rn_gid = resp.get("gameId")
+st, resp = api("/api/player/join", {"gameId": rn_gid, "name": "Rene", "color": "red"})
+rn_pid = resp.get("playerId")
+api("/api/player/join", {"gameId": rn_gid, "name": "Ren", "color": "blue"})
+api("/api/player/join", {"gameId": rn_gid, "name": "Rey", "color": "green"})
+st, resp = api("/api/player/rename", {"gameId": rn_gid, "playerId": rn_pid, "newName": "Renata"})
+check("rename_in_lobby_works", resp.get("success") and resp.get("newName") == "Renata", resp)
+game = state(rn_gid)
+check("rename_visible_in_state", game.get("players", {}).get(rn_pid, {}).get("name") == "Renata",
+      game.get("players", {}).get(rn_pid, {}).get("name"))
+st, resp = api("/api/player/rename", {"gameId": rn_gid, "playerId": rn_pid, "newName": "Ren"})
+check("rename_duplicate_rejected", resp.get("success") is False, resp)
+api("/api/game/start_full", {"gameId": rn_gid})
+st, resp = api("/api/player/rename", {"gameId": rn_gid, "playerId": rn_pid, "newName": "TooLate"})
+check("rename_locked_after_start", resp.get("success") is False and "started" in resp.get("message", ""), resp)
+api("/api/game/delete", {"gameId": rn_gid})
+
+# ── Scrub this run's wins from the Hall of Fame ──────────────────────────────
+try:
+    _, _records = api("/api/winners/records", method="GET")
+    _scrubbed = 0
+    for _rec in (_records if isinstance(_records, list) else []):
+        if isinstance(_rec, dict) and _rec.get("game_id") in CREATED_GAMES and _rec.get("id"):
+            _st, _resp = api("/api/winners/delete", {"id": _rec["id"]})
+            if _resp.get("success"):
+                _scrubbed += 1
+    if _scrubbed:
+        print(f"(scrubbed {_scrubbed} test win(s) from the Hall of Fame)")
+except Exception as _e:
+    print(f"(warning: could not scrub test wins: {_e})")
 
 print()
 p = sum(1 for _, ok, _ in results if ok)

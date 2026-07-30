@@ -55,7 +55,8 @@ def _unlock_gate(base):
         sys.exit(2)
     print("(access gate unlocked for this test run)")
 
-BASE = "http://localhost:8080"
+# Override with SURVIVOR_TEST_BASE to run against a scratch server instead of :8080
+BASE = os.environ.get("SURVIVOR_TEST_BASE", "http://localhost:8080").rstrip("/")
 _unlock_gate(BASE)
 failures = []
 
@@ -73,6 +74,10 @@ def expect(label, ok, detail=""):
     return ok
 
 
+# Games this run creates — their recorded wins get scrubbed at the end so
+# scripted victories never pollute the real Hall of Fame.
+CREATED_GAMES = set()
+
 def api(path, body=None, method=None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data,
@@ -80,7 +85,10 @@ def api(path, body=None, method=None):
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
-            return r.status, json.loads(r.read().decode())
+            status, reply = r.status, json.loads(r.read().decode())
+            if path == "/api/game/create" and isinstance(reply, dict) and reply.get("gameId"):
+                CREATED_GAMES.add(reply["gameId"])
+            return status, reply
     except urllib.error.HTTPError as e:
         try:
             return e.code, json.loads(e.read().decode())
@@ -419,6 +427,20 @@ for attempt in range(8):
 
 expect("at least 2 Challenges were played", len(challenges_run) >= 2, challenges_run)
 expect("the Necklace blocked a vote at a Tribal Council", necklace_blocked)
+
+# Scrub this run's wins from the Hall of Fame
+try:
+    _, records = api("/api/winners/records", method="GET")
+    scrubbed = 0
+    for rec in (records if isinstance(records, list) else []):
+        if isinstance(rec, dict) and rec.get("game_id") in CREATED_GAMES and rec.get("id"):
+            _, resp = api("/api/winners/delete", {"id": rec["id"]})
+            if resp.get("success"):
+                scrubbed += 1
+    if scrubbed:
+        log(f"(scrubbed {scrubbed} test win(s) from the Hall of Fame)")
+except Exception as e:
+    log(f"(warning: could not scrub test wins: {e})")
 
 log("\n" + "=" * 78)
 if failures:

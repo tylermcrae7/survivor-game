@@ -335,6 +335,131 @@ def test_delete_game():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_rename_player():
+    """Names can change in the lobby, and only in the lobby."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing player rename ===")
+
+        game_id = gs.create_game()
+        pid = gs.add_player(game_id, "Alice", "red")
+        gs.add_player(game_id, "Bob", "blue")
+        gs.add_player(game_id, "Cara", "green")
+
+        # Test: happy path in the lobby
+        result = gs.rename_player(game_id, playerId=pid, newName="Alicia")
+        print(f"Lobby rename: {result}")
+        assert result["success"] is True
+        assert gs.games[game_id]["players"][pid]["name"] == "Alicia"
+
+        # Test: whitespace is trimmed
+        result = gs.rename_player(game_id, playerId=pid, newName="  Ada  ")
+        assert result["success"] is True
+        assert gs.games[game_id]["players"][pid]["name"] == "Ada"
+
+        # Test: duplicate of another player (case-insensitive)
+        result = gs.rename_player(game_id, playerId=pid, newName="bob")
+        print(f"Duplicate name: {result}")
+        assert result["success"] is False
+        assert "already exists" in result["message"]
+
+        # Test: renaming to your own current name is fine
+        result = gs.rename_player(game_id, playerId=pid, newName="Ada")
+        assert result["success"] is True
+
+        # Test: invalid characters and length rules still apply
+        result = gs.rename_player(game_id, playerId=pid, newName="<script>")
+        print(f"Bad characters: {result}")
+        assert result["success"] is False
+        result = gs.rename_player(game_id, playerId=pid, newName="A")
+        assert result["success"] is False
+        result = gs.rename_player(game_id, playerId=pid, newName="")
+        assert result["success"] is False
+
+        # Test: unknown player / unknown game
+        result = gs.rename_player(game_id, playerId="nope", newName="Ghost")
+        assert result["success"] is False
+        result = gs.rename_player("ZZZZ", playerId=pid, newName="Ghost")
+        assert result["success"] is False
+
+        # Test: once the game starts, names are locked
+        started = gs.start_full_game(game_id)
+        assert gs.games[game_id]["phase"] != "lobby", f"game failed to start: {started}"
+        result = gs.rename_player(game_id, playerId=pid, newName="TooLate")
+        print(f"After start: {result}")
+        assert result["success"] is False
+        assert "started" in result["message"]
+        assert gs.games[game_id]["players"][pid]["name"] == "Ada"
+
+        print("✅ player rename tests passed!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_winner_records_crud():
+    """The Hall of Fame is editable: add, fix, and strike win records."""
+    import json
+    import survivor_server as srv
+
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing winner record editing ===")
+        client = srv.app.test_client()
+
+        # Test: legacy records (no ids) get ids minted on first read
+        with open(srv.GameState._WINNERS_FILE, "w") as f:
+            json.dump([{"winner_name": "Trace", "date": "2025-01-01", "game_id": "manual_entry"}], f)
+        resp = client.get("/api/winners/records")
+        records = resp.get_json()
+        print(f"Migrated: {records}")
+        assert resp.status_code == 200
+        assert len(records) == 1 and records[0]["id"]
+        rec_id = records[0]["id"]
+
+        # Test: add a win
+        resp = client.post("/api/winners/add", json={"winner_name": "Tyler", "date": "2025-03-24"})
+        assert resp.get_json()["success"] is True
+        records = client.get("/api/winners/records").get_json()
+        assert len(records) == 2 and all(r.get("id") for r in records)
+
+        # Test: edit a record
+        resp = client.post("/api/winners/update",
+                           json={"id": rec_id, "winner_name": "Trace", "date": "2025-01-15"})
+        print(f"Update: {resp.get_json()}")
+        assert resp.get_json()["success"] is True
+        records = client.get("/api/winners/records").get_json()
+        assert any(r["id"] == rec_id and r["date"] == "2025-01-15" for r in records)
+
+        # Test: aggregated view reflects the edits
+        agg = client.get("/api/winners").get_json()
+        by_name = {w["winner_name"]: w for w in agg}
+        assert by_name["Trace"]["victories"] == 1 and "2025-01-15" in by_name["Trace"]["dates"]
+        assert by_name["Tyler"]["victories"] == 1
+
+        # Test: validation on update
+        resp = client.post("/api/winners/update", json={"id": rec_id, "winner_name": "", "date": "2025-01-15"})
+        assert resp.status_code == 400
+        resp = client.post("/api/winners/update", json={"id": rec_id, "winner_name": "X", "date": "not-a-date"})
+        assert resp.status_code == 400
+        resp = client.post("/api/winners/update", json={"id": "missing", "winner_name": "X", "date": "2025-01-01"})
+        assert resp.status_code == 404
+
+        # Test: delete a record
+        resp = client.post("/api/winners/delete", json={"id": rec_id})
+        print(f"Delete: {resp.get_json()}")
+        assert resp.get_json()["success"] is True
+        records = client.get("/api/winners/records").get_json()
+        assert len(records) == 1 and records[0]["winner_name"] == "Tyler"
+        resp = client.post("/api/winners/delete", json={"id": rec_id})
+        assert resp.status_code == 404
+
+        print("✅ winner record editing tests passed!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     print("🧪 Testing GameState Error Handling")
     print("=" * 50)
@@ -345,6 +470,8 @@ if __name__ == "__main__":
         test_cast_vote_errors()
         test_advance_tribal_phase_errors()
         test_delete_game()
+        test_rename_player()
+        test_winner_records_crud()
 
         print("🎉 All error handling tests passed!")
         print("✅ Specific, user-friendly error messages are working correctly")

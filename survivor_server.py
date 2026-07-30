@@ -1772,6 +1772,37 @@ class GameState:
             "newLeaderId": newLeaderId
         }
 
+    def rename_player(self, gid, playerId=None, newName=None, **kwargs):
+        """Rename a player. Only allowed in the lobby — once the game starts,
+        you are who the tribe knows you as."""
+        if gid not in self.games:
+            return {"success": False, "message": "Game not found"}
+
+        game = self.games[gid]
+        if game.get("phase") != "lobby":
+            return {"success": False, "message": "The game has started — names are set."}
+
+        if not playerId or playerId not in game["players"]:
+            return {"success": False, "message": "Invalid player ID"}
+
+        clean_name = str(newName or "").strip()
+        if not clean_name:
+            return {"success": False, "message": "Player name is required."}
+
+        is_valid, error = validate_player_name(clean_name)
+        if not is_valid:
+            return {"success": False, "message": error}
+
+        for pid, player in game["players"].items():
+            if pid != playerId and player.get("name", "").strip().lower() == clean_name.lower():
+                return {"success": False, "message": f"A player named '{clean_name}' already exists."}
+
+        old_name = game["players"][playerId].get("name", "?")
+        game["players"][playerId]["name"] = clean_name
+        self._save()
+        logger.info(f"Player {playerId} renamed '{old_name}' -> '{clean_name}' in game {gid}")
+        return {"success": True, "message": f"{old_name} is now {clean_name}", "newName": clean_name}
+
     def steal_card(self, gid, thiefId=None, targetId=None, **kwargs):
         """
         Steal card from another player.
@@ -2352,7 +2383,8 @@ class GameState:
             "winner_name": winner_name,
             "date": current_date,
             "game_id": gid,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "id": uuid.uuid4().hex[:12]
         }
         winners.append(winner_entry)
         
@@ -3053,7 +3085,8 @@ def add_winner():
     winners.append({
         "winner_name": winner_name,
         "date": date,
-        "game_id": "manual_entry"
+        "game_id": "manual_entry",
+        "id": uuid.uuid4().hex[:12]
     })
     
     temp_file = f"{GameState._WINNERS_FILE}.tmp"
@@ -3076,6 +3109,128 @@ def add_winner():
             except OSError:
                 pass
         return jsonify(success=False, message="Failed to save winner"), 500
+
+
+def _read_winner_records():
+    """Load the raw win records, giving any legacy record a stable id.
+
+    Older records (and ones written by record_winner) have no id; editing
+    needs one, so ids are minted on first read and persisted immediately.
+    """
+    records = []
+    if os.path.exists(GameState._WINNERS_FILE):
+        try:
+            with open(GameState._WINNERS_FILE, 'r') as f:
+                content = f.read().strip()
+                if content:
+                    records = json.loads(content)
+        except (json.JSONDecodeError, IOError, OSError) as e:
+            logger.error(f"Failed to load winners file: {e}")
+            return None
+    if not isinstance(records, list):
+        return None
+
+    changed = False
+    for rec in records:
+        if isinstance(rec, dict) and not rec.get("id"):
+            rec["id"] = uuid.uuid4().hex[:12]
+            changed = True
+    if changed:
+        _write_winner_records(records)
+    return records
+
+
+def _write_winner_records(records):
+    """Atomically replace the winners file."""
+    temp_file = f"{GameState._WINNERS_FILE}.tmp.{uuid.uuid4().hex[:8]}"
+    try:
+        with open(temp_file, 'w') as f:
+            json.dump(records, f, indent=2)
+        os.rename(temp_file, GameState._WINNERS_FILE)
+        return True
+    except (IOError, OSError) as e:
+        logger.error(f"Failed to write winners file: {e}")
+        try:
+            os.remove(temp_file)
+        except OSError:
+            pass
+        return False
+
+
+def _validate_winner_fields(data):
+    """Shared validation for editing win records. Returns (name, date, error)."""
+    name = str(data.get('winner_name', '')).strip()
+    date = str(data.get('date', '')).strip()
+    if not name:
+        return None, None, "Winner name is required"
+    if len(name) > 50:
+        return None, None, "Winner name too long"
+    if not date:
+        return None, None, "Date is required"
+    try:
+        time.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        return None, None, "Invalid date format (use YYYY-MM-DD)"
+    return name, date, None
+
+
+@app.route('/api/winners/records', methods=['GET'])
+@safe_api_call
+def get_winner_records():
+    """The raw, editable win records — one entry per victory."""
+    records = _read_winner_records()
+    if records is None:
+        return jsonify(success=False, message="Failed to load winners"), 500
+    return jsonify(records)
+
+
+@app.route('/api/winners/update', methods=['POST'])
+@safe_api_call
+def update_winner():
+    """Edit one win record (name and/or date) by id."""
+    data = request.get_json(silent=True)
+    if not data or not data.get('id'):
+        return jsonify(success=False, message="Record id is required"), 400
+    name, date, error = _validate_winner_fields(data)
+    if error:
+        return jsonify(success=False, message=error), 400
+
+    records = _read_winner_records()
+    if records is None:
+        return jsonify(success=False, message="Failed to load winners"), 500
+
+    for rec in records:
+        if isinstance(rec, dict) and rec.get("id") == data['id']:
+            rec["winner_name"] = name
+            rec["date"] = date
+            if not _write_winner_records(records):
+                return jsonify(success=False, message="Failed to save winners"), 500
+            logger.info(f"Winner record {data['id']} updated: {name} on {date}")
+            return jsonify(success=True, message=f"Updated — {name}, {date}")
+
+    return jsonify(success=False, message="Record not found"), 404
+
+
+@app.route('/api/winners/delete', methods=['POST'])
+@safe_api_call
+def delete_winner():
+    """Remove one win record by id."""
+    data = request.get_json(silent=True)
+    if not data or not data.get('id'):
+        return jsonify(success=False, message="Record id is required"), 400
+
+    records = _read_winner_records()
+    if records is None:
+        return jsonify(success=False, message="Failed to load winners"), 500
+
+    kept = [r for r in records if not (isinstance(r, dict) and r.get("id") == data['id'])]
+    if len(kept) == len(records):
+        return jsonify(success=False, message="Record not found"), 404
+    if not _write_winner_records(kept):
+        return jsonify(success=False, message="Failed to save winners"), 500
+    logger.info(f"Winner record {data['id']} deleted")
+    return jsonify(success=True, message="The record is struck from the island's history")
+
 
 @app.route('/api/game/create',methods=['POST'])
 @safe_api_call
@@ -3162,6 +3317,8 @@ def api_done():    return handle('complete_tribal',[])
 def api_reset():   return handle('reset_game',[])
 @app.route('/api/game/delete',methods=['POST'])
 def api_delete():  return handle('delete_game',[])
+@app.route('/api/player/rename',methods=['POST'])
+def api_rename():  return handle('rename_player',['playerId','newName'])
 @app.route('/api/game/finish',methods=['POST'])
 def api_finish():  return handle('record_winner',['winnerId'])
 @app.route('/api/tribal/reset',methods=['POST'])
