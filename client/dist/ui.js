@@ -113,7 +113,8 @@ const CardTooltipManager = {
 
         // Populate tooltip content
         this.tooltip.querySelector('.card-tooltip-name').textContent = cardInfo.name || cardType;
-        this.tooltip.querySelector('.card-tooltip-category').textContent = cardInfo.category || 'Card';
+        this.tooltip.querySelector('.card-tooltip-category').textContent =
+            (cardInfo.category || 'Card').replace(/_/g, ' ');
         this.tooltip.querySelector('.card-tooltip-description').textContent = cardInfo.description || '';
 
         // Format playable phases
@@ -214,6 +215,9 @@ const CardTooltipManager = {
  */
 function showScreen(screenId) {
     function applyScreenChange() {
+        // A tooltip anchored to the old screen must not haunt the new one
+        CardTooltipManager.hide();
+
         // Hide all screens
         document.querySelectorAll('.screen').forEach(screen => {
             screen.classList.remove('active');
@@ -1029,6 +1033,7 @@ let longPressTriggered = false;
 let activePointerId = null;
 
 function setupCardInteractions() {
+    CardTooltipManager.hide();
     document.querySelectorAll('.card-button').forEach(cardElement => {
         const cardType = cardElement.dataset.cardType;
 

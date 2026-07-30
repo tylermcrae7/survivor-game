@@ -1223,6 +1223,8 @@
     font-size: var(--font-size-xs);
     letter-spacing: var(--track-label);
     color: var(--ink-soft);
+    /* Pin to the card's bottom so rows of mixed name lengths stay aligned */
+    margin-top: auto;
   }
 
   .vote-target.selected {
@@ -1711,6 +1713,9 @@
   .card-tooltip {
     position: fixed;
     z-index: 10001;
+    /* Purely informational — it must never swallow the tap aimed at the card
+       beneath it (pointerenter shows it right before the tap lands). */
+    pointer-events: none;
     width: min(300px, 88vw);
     background: var(--bg-deep);
     border: 1px solid var(--line-strong);

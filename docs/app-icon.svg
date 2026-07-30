@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <!-- Night ground: the same deep green-black the app sits on -->
+    <radialGradient id="night" cx="50%" cy="34%" r="85%">
+      <stop offset="0%" stop-color="#1b2a24"/>
+      <stop offset="45%" stop-color="#101b16"/>
+      <stop offset="100%" stop-color="#080f0c"/>
+    </radialGradient>
+
+    <!-- Torchlight pooling behind the flame -->
+    <radialGradient id="torchlight" cx="50%" cy="36%" r="52%">
+      <stop offset="0%" stop-color="#f5a33b" stop-opacity="0.38"/>
+      <stop offset="50%" stop-color="#c96f2a" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#c96f2a" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Flame body: ember at the base rising to hot gold -->
+    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#a8471d"/>
+      <stop offset="42%" stop-color="#e0812c"/>
+      <stop offset="100%" stop-color="#f6b545"/>
+    </linearGradient>
+
+    <!-- The hot core -->
+    <linearGradient id="core" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#f2a238"/>
+      <stop offset="55%" stop-color="#f9d47f"/>
+      <stop offset="100%" stop-color="#fdf3d7"/>
+    </linearGradient>
+
+    <!-- Parchment staff, darkening toward the ground -->
+    <linearGradient id="staff" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eadfc4"/>
+      <stop offset="100%" stop-color="#b3a279"/>
+    </linearGradient>
+
+    <radialGradient id="vignette" cx="50%" cy="46%" r="72%">
+      <stop offset="60%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.44"/>
+    </radialGradient>
+
+    <!-- Roomy filter regions: the blur must never hit its own bounding box -->
+    <filter id="glow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="softglow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur stdDeviation="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Ground -->
+  <rect width="512" height="512" fill="url(#night)"/>
+  <rect width="512" height="512" fill="url(#torchlight)"/>
+
+  <!-- Halo: two soft pools of light around the flame -->
+  <ellipse cx="256" cy="192" rx="102" ry="122" fill="#e0812c" opacity="0.26" filter="url(#glow)"/>
+  <ellipse cx="256" cy="204" rx="60" ry="74" fill="#f6b545" opacity="0.32" filter="url(#glow)"/>
+
+  <!-- Staff: tapered parchment, tucked up under the flame -->
+  <path d="M240 292 L272 292 L264 420 Q256 430 248 420 Z" fill="url(#staff)"/>
+  <!-- Binding wrap where fire meets wood -->
+  <rect x="230" y="302" width="52" height="24" rx="11" fill="#8a7a55"/>
+  <rect x="230" y="302" width="52" height="11" rx="5.5" fill="#a5936a"/>
+
+  <!-- The flame — the app's own teardrop mark (i-torch), scaled up -->
+  <g transform="translate(64 70) scale(16)">
+    <path d="M12 2.6c.5 1.9 1.5 3 2.4 4.1.9 1.1 1.7 2.2 1.7 3.8a4.1 4.1 0 0 1-8.2 0c0-1.6.8-2.7 1.7-3.8.9-1.1 1.9-2.2 2.4-4.1Z"
+          fill="url(#flame)"/>
+  </g>
+  <!-- Hot core: the same teardrop, small and sitting low in the flame -->
+  <g transform="translate(160 150) scale(8.0)">
+    <path d="M12 2.6c.5 1.9 1.5 3 2.4 4.1.9 1.1 1.7 2.2 1.7 3.8a4.1 4.1 0 0 1-8.2 0c0-1.6.8-2.7 1.7-3.8.9-1.1 1.9-2.2 2.4-4.1Z"
+          fill="url(#core)" filter="url(#softglow)"/>
+  </g>
+
+  <!-- Night presses in at the corners -->
+  <rect width="512" height="512" fill="url(#vignette)"/>
+</svg>

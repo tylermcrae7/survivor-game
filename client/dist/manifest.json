@@ -3,7 +3,7 @@
   "short_name": "Survivor",
   "description": "Official Survivor board game digital implementation",
   "start_url": "/",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#141d1a",
   "background_color": "#0d1412",
