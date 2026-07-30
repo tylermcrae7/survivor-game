@@ -37,6 +37,23 @@ class TestTribalCouncilFlow(unittest.TestCase):
         
         # Start the game to get to playing phase
         self.gs.start_full_game(self.game_id)
+
+        # Opening hands are randomly dealt, which makes vote-economy assertions
+        # flaky (a random Goodwill Gamble adds a mandatory vote). Give everyone a
+        # known hand: 3 plain action cards + the 1 Vote Card setup deals.
+        self._deal_known_hands()
+
+    def _deal_known_hands(self):
+        """Replace random opening hands with a deterministic 3 actions + 1 Vote Card."""
+        game = self.gs.games[self.game_id]
+        for player in game["players"].values():
+            player["hand"] = [
+                {"type": "sorry_for_you"},
+                {"type": "the_spy_shack"},
+                {"type": "camp_raid"},
+                {"type": "vote"},
+            ]
+        self.gs.rules_engine.sync_vote_counters(game)
         
     def tearDown(self):
         """Clean up test environment"""
@@ -121,61 +138,96 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertFalse(result)
         self.assertEqual(game["currentVote"]["phase"], "announcement")
         
-    def test_tribal_advantage_extra_vote(self):
-        """Test playing extra vote tribal advantage card"""
+    def test_tribal_advantage_control_the_vote(self):
+        """
+        Control The Vote takes a physical Vote Card from a target.
+
+        Survival Guide: "Play this card during a Tribal Council before voting begins
+        to take any player's Vote Card. You MUST use that Vote Card in addition to
+        your Vote Card during the Tribal Council at which this card is played."
+        """
         game = self.gs.games[self.game_id]
         player_id = self.player_ids[0]
-        
+        target_id = self.player_ids[1]
+
         # Start tribal council and advance to advantage_play phase
         self.gs._trigger_tribal_council(game, "single")
         self.gs.advance_tribal_phase(self.game_id, "advantage_play")
-        
-        # Give player an extra vote card
-        extra_vote_card = {
-            "id": "extra_vote_1",
-            "type": "tribal_advantage", 
-            "name": "Extra Vote",
-            "effect": "extra_vote"
-        }
-        game["players"][player_id]["hand"].append(extra_vote_card)
-        
-        # Play extra vote advantage
-        result = self.gs.play_tribal_advantage(self.game_id, player_id, "extra_vote")
-        self.assertTrue(result)
-        
-        # Verify extra vote was granted
-        self.assertEqual(game["players"][player_id]["extraVotes"], 1)
-        
+
+        control_card = {"type": "control_the_vote"}
+        game["players"][player_id]["hand"].append(control_card)
+
+        # Setup deals exactly 1 Vote Card each
+        self.assertEqual(game["players"][player_id]["mandatoryVotes"], 1)
+        self.assertEqual(game["players"][target_id]["mandatoryVotes"], 1)
+
+        result = self.gs.play_tribal_advantage(self.game_id, player_id, "control_the_vote", target_id)
+        self.assertTrue(result["success"], result.get("message"))
+
+        # The thief must now cast 2 votes; the target has none to cast
+        self.assertEqual(game["players"][player_id]["mandatoryVotes"], 2)
+        self.assertEqual(game["players"][target_id]["mandatoryVotes"], 0)
+
         # Verify card was removed from hand
-        self.assertNotIn(extra_vote_card, game["players"][player_id]["hand"])
+        self.assertNotIn(control_card, game["players"][player_id]["hand"])
+
+    def test_tribal_advantage_goodwill_gamble(self):
+        """Goodwill Gamble moves to the recipient and counts as 1 mandatory vote."""
+        game = self.gs.games[self.game_id]
+        player_id = self.player_ids[0]
+        target_id = self.player_ids[1]
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+
+        game["players"][player_id]["hand"].append({"type": "goodwill_gamble"})
+        before = game["players"][target_id]["mandatoryVotes"]
+
+        result = self.gs.play_tribal_advantage(self.game_id, player_id, "goodwill_gamble", target_id)
+        self.assertTrue(result["success"], result.get("message"))
+
+        # Recipient gains 1 mandatory vote — the Goodwill Gamble must be used here
+        self.assertEqual(game["players"][target_id]["mandatoryVotes"], before + 1)
+        self.assertIn("goodwill_gamble",
+                      [c["type"] for c in game["players"][target_id]["hand"]])
+
+    def test_vote_cards_cannot_be_played_from_hand(self):
+        """Vote and Extra Vote cards are spent by voting, never played as cards."""
+        game = self.gs.games[self.game_id]
+        player_id = game["turnOrder"][game["currentTurnIndex"]]
+        game["players"][player_id]["hasStolen"] = True
+        game["players"][player_id]["hand"].append({"type": "extra_vote"})
+
+        idx = len(game["players"][player_id]["hand"]) - 1
+        result = self.gs.play_card(self.game_id, player_id, idx)
+        self.assertFalse(result["success"])
+        self.assertIn("spent when you vote", result["message"])
+
         
     def test_tribal_advantage_immunity_idol(self):
-        """Test playing immunity idol tribal advantage card"""
+        """Hidden Immunity Idol is played through play_immunity and negates votes."""
         game = self.gs.games[self.game_id]
         player_id = self.player_ids[0]
-        
-        # Start tribal council and advance to advantage_play phase
+
         self.gs._trigger_tribal_council(game, "single")
-        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
-        
-        # Give player an immunity idol card
-        immunity_card = {
-            "id": "immunity_idol_1",
-            "type": "tribal_advantage",
-            "name": "Immunity Idol", 
-            "effect": "immunity_idol"
-        }
+
+        immunity_card = {"type": "immunity_idol"}
         game["players"][player_id]["hand"].append(immunity_card)
-        
-        # Play immunity idol (maps to safety_without_power advantage type)
-        result = self.gs.play_tribal_advantage(self.game_id, player_id, "safety_without_power")
-        self.assertTrue(result)
-        
+
+        result = self.gs.play_immunity(self.game_id, playerId=player_id)
+        self.assertTrue(result["success"], result.get("message"))
+
         # Verify immunity was granted
-        self.assertTrue(game["players"][player_id]["temporaryImmunity"])
-        
+        self.assertTrue(game["players"][player_id]["immunityIdolProtection"])
+        self.assertTrue(game["players"][player_id]["immunityPlayed"])
+
         # Verify card was removed from hand
         self.assertNotIn(immunity_card, game["players"][player_id]["hand"])
+
+        # An idol can only be played once per tribal council
+        game["players"][player_id]["hand"].append({"type": "immunity_idol"})
+        again = self.gs.play_immunity(self.game_id, playerId=player_id)
+        self.assertFalse(again["success"])
         
     def test_tribal_advantage_idol_nullifier(self):
         """Test playing idol nullifier tribal advantage card"""
@@ -218,26 +270,27 @@ class TestTribalCouncilFlow(unittest.TestCase):
         # Start tribal council in discussion phase
         self.gs._trigger_tribal_council(game, "single")
         
-        # Try to play advantage during discussion (should fail)
-        result = self.gs.play_tribal_advantage(self.game_id, player_id, "extra_vote")
-        self.assertFalse(result)
-        
-        # Advance to immunity phase and try again (should fail)
+        game["players"][player_id]["hand"].append({"type": "control_the_vote"})
+
+        # announcement phase is before advantage_play/discussion (should fail)
+        result = self.gs.play_tribal_advantage(
+            self.game_id, player_id, "control_the_vote", self.player_ids[1])
+        self.assertFalse(result["success"])
+
+        # Advance to immunity phase and try again (should fail — voting has started)
         self.gs.advance_tribal_phase(self.game_id, "immunity")
-        result = self.gs.play_tribal_advantage(self.game_id, player_id, "extra_vote") 
-        self.assertFalse(result)
+        result = self.gs.play_tribal_advantage(
+            self.game_id, player_id, "control_the_vote", self.player_ids[1])
+        self.assertFalse(result["success"])
         
     def test_tribal_council_voting_mechanics(self):
         """Test voting system during tribal council"""
         game = self.gs.games[self.game_id]
         
-        # Start tribal council and reset to waiting phase to test start_voting
+        # Start tribal council, then open voting
         self.gs._trigger_tribal_council(game, "single")
-        self.gs.reset_tribal_council(self.game_id)
-        
-        # Start voting (this changes phase from waiting to voting)
         result = self.gs.start_voting(self.game_id, "elimination")
-        self.assertTrue(result)
+        self.assertTrue(result["success"], result.get("message"))
         
         # Verify voting state
         self.assertEqual(game["currentVote"]["phase"], "voting")
@@ -248,85 +301,132 @@ class TestTribalCouncilFlow(unittest.TestCase):
         for i in range(3):
             voter_id = self.player_ids[i]
             result = self.gs.cast_vote(self.game_id, voter_id, [{"targetId": target_id, "votes": 1}])
-            self.assertTrue(result)
-            
+            self.assertTrue(result["success"], result.get("message"))
+
         # Verify votes were recorded
         self.assertEqual(len(game["currentVote"]["votes"]), 3)
         for i in range(3):
             voter_id = self.player_ids[i]
             self.assertIn(target_id, game["currentVote"]["votes"][voter_id])
             
-    def test_tribal_council_complete_elimination(self):
-        """Test completing tribal council with player elimination"""
+    def _vote_out(self, target_id, elimination_type="single", votes_from=None):
+        """Run one full tribal council that votes `target_id` out."""
         game = self.gs.games[self.game_id]
-        
-        # Start tribal council and progress to voting
-        self.gs._trigger_tribal_council(game, "single")
-        self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.advance_tribal_phase(self.game_id, "voting")
+        self.gs._trigger_tribal_council(game, elimination_type)
         self.gs.start_voting(self.game_id, "elimination")
-        
-        # Cast elimination votes
-        target_id = self.player_ids[3]
-        for i in range(3):
-            voter_id = self.player_ids[i]
-            self.gs.cast_vote(self.game_id, voter_id, [{"targetId": target_id, "votes": 1}])
-            
-        # Advance to immunity phase (reveal_votes expects immunity phase)
+
+        # "Everyone must vote" — the player being voted out casts a vote too.
+        alive = [p for p in self.player_ids if not game["players"][p].get("isEliminated")]
+        voters = votes_from if votes_from is not None else alive
+        for voter_id in voters:
+            # The target can't vote for themselves, so they vote for the next player along
+            vote_for = target_id if voter_id != target_id else next(
+                p for p in alive if p != target_id)
+            # Every Vote Card / Goodwill Gamble in hand must be cast at this tribal
+            votes = max(1, game["players"][voter_id]["mandatoryVotes"])
+            result = self.gs.cast_vote(self.game_id, voter_id,
+                                       [{"targetId": vote_for, "votes": votes}])
+            self.assertTrue(result["success"], result.get("message"))
+
+        # Idols are played after the votes are in, before the tally
         self.gs.advance_tribal_phase(self.game_id, "immunity")
-        
-        # Reveal votes to calculate eliminations
-        self.gs.reveal_votes(self.game_id)
-        
-        # Complete tribal council
-        result = self.gs.complete_tribal(self.game_id)
-        self.assertTrue(result)
-        
-        # Verify elimination occurred
-        self.assertEqual(len([p for p in game["players"].values() if p["isActive"]]), 3)
-        self.assertFalse(game["players"][target_id]["isActive"])
-        
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+        return self.gs.complete_tribal(self.game_id)
+
+    def test_tribal_council_first_vote_out_flips_one_character_card(self):
+        """
+        Official rules: "As long as you have at least one Survivor Character Card,
+        you're still in the game." The first vote-out turns over ONE card.
+        """
+        game = self.gs.games[self.game_id]
+        target_id = self.player_ids[3]
+
+        result = self._vote_out(target_id)
+        self.assertTrue(result["success"], result.get("message"))
+
+        target = game["players"][target_id]
+        self.assertEqual(target["characterCards"], 1)
+        self.assertFalse(target["isEliminated"])
+        self.assertTrue(target["isActive"])
+        self.assertNotIn(target_id, game["jury"])
+
+        # Everyone still in the game gets a Vote Card back
+        for player in game["players"].values():
+            if not player["isEliminated"]:
+                self.assertEqual(player["voteCards"], 1)
+
         # Verify game returned to playing phase
         self.assertEqual(game["phase"], "playing")
         self.assertNotIn("currentVote", game)
+
+    def test_tribal_council_second_vote_out_eliminates_and_juries(self):
+        """Both Survivor Character Cards gone = eliminated, and you join the Jury."""
+        game = self.gs.games[self.game_id]
+        target_id = self.player_ids[3]
+
+        self._vote_out(target_id)
+        self.assertEqual(game["players"][target_id]["characterCards"], 1)
+
+        result = self._vote_out(target_id)
+        self.assertTrue(result["success"], result.get("message"))
+
+        target = game["players"][target_id]
+        self.assertEqual(target["characterCards"], 0)
+        self.assertTrue(target["isEliminated"])
+        self.assertFalse(target["isActive"])
+        self.assertIn(target_id, game["jury"])
+
+        self.assertEqual(len([p for p in game["players"].values() if not p["isEliminated"]]), 3)
         
     def test_tribal_council_double_elimination(self):
-        """Test double elimination tribal council"""
-        # Add more players for double elimination test
-        extra_colors = ["orange", "purple"]
-        for i in range(2):  # Add 2 more players (total 6)
-            player_id = self.gs.add_player(self.game_id, f"ExtraPlayer{i+1}", extra_colors[i])
-            self.player_ids.append(player_id)
-            
+        """Test double elimination tribal council with 6 players"""
+        # A separate 6-player game — players must be added before the game starts so
+        # they get a turn order seat and their Vote Card.
+        self.game_id = self.gs.create_game()
+        self.player_ids = [
+            self.gs.add_player(self.game_id, f"Player{i+1}", c)
+            for i, c in enumerate(["red", "blue", "green", "yellow", "orange", "purple"])
+        ]
+        self.gs.start_full_game(self.game_id)
+        self._deal_known_hands()
         game = self.gs.games[self.game_id]
-        
+
         # Start double elimination tribal council
         self.gs._trigger_tribal_council(game, "double")
-        self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.advance_tribal_phase(self.game_id, "voting")
         self.gs.start_voting(self.game_id, "elimination")
-        
-        # Cast votes to eliminate 2 players
+
+        # Cast votes to vote out 2 players: 2 votes each, tied for most
         target1_id = self.player_ids[4]
         target2_id = self.player_ids[5]
-        
-        # 3 votes for target1, 3 votes for target2
-        for i in range(3):
+
+        for i in range(2):
             self.gs.cast_vote(self.game_id, self.player_ids[i], [{"targetId": target1_id, "votes": 1}])
-        for i in range(3, 6):
+        for i in range(2, 4):
             self.gs.cast_vote(self.game_id, self.player_ids[i], [{"targetId": target2_id, "votes": 1}])
-            
+        # The two targets vote for each other, keeping them tied at 3 apiece
+        self.gs.cast_vote(self.game_id, target1_id, [{"targetId": target2_id, "votes": 1}])
+        self.gs.cast_vote(self.game_id, target2_id, [{"targetId": target1_id, "votes": 1}])
+        
         # Complete tribal council
         self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.reveal_votes(self.game_id)
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+
+        # Official rule: "If 2 players are tied with the most votes, both are voted out."
+        self.assertFalse(game["currentVote"]["tieBreakNeeded"], game["currentVote"]["resolution"])
+        self.assertCountEqual(game["currentVote"]["eliminated"], [target1_id, target2_id])
+
         result = self.gs.complete_tribal(self.game_id)
-        self.assertTrue(result)
-        
-        # Verify double elimination
-        active_players = [p for p in game["players"].values() if p["isActive"]]
-        self.assertEqual(len(active_players), 4)
-        self.assertFalse(game["players"][target1_id]["isActive"])
-        self.assertFalse(game["players"][target2_id]["isActive"])
+        self.assertTrue(result["success"], result.get("message"))
+
+        # Both were voted out, so both turned over ONE Survivor Character Card —
+        # neither is eliminated yet, so all 6 are still in the game.
+        self.assertEqual(game["players"][target1_id]["characterCards"], 1)
+        self.assertEqual(game["players"][target2_id]["characterCards"], 1)
+        self.assertFalse(game["players"][target1_id]["isEliminated"])
+        self.assertFalse(game["players"][target2_id]["isEliminated"])
+        self.assertEqual(len([p for p in game["players"].values() if not p["isEliminated"]]), 6)
         
     def test_tribal_council_reset(self):
         """Test resetting tribal council back to discussion phase"""
@@ -341,7 +441,8 @@ class TestTribalCouncilFlow(unittest.TestCase):
         result = self.gs.reset_tribal_council(self.game_id)
         self.assertTrue(result)
         
-        # Verify reset to waiting phase  
+        # Verify reset to waiting phase
+        self.assertEqual(game["phase"], "playing")
         self.assertEqual(game["currentVote"]["phase"], "waiting")
         self.assertEqual(game["currentVote"]["votes"], {})
         
@@ -367,56 +468,55 @@ class TestTribalCouncilFlow(unittest.TestCase):
     def test_tribal_council_with_jury_system(self):
         """Test that eliminated players become jury members"""
         game = self.gs.games[self.game_id]
-        
-        # Start tribal council
-        self.gs._trigger_tribal_council(game, "single")
-        self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.advance_tribal_phase(self.game_id, "voting")
-        self.gs.start_voting(self.game_id, "elimination")
-        
-        # Vote out a player
         target_id = self.player_ids[3]
-        for i in range(3):
-            self.gs.cast_vote(self.game_id, self.player_ids[i], [{"targetId": target_id, "votes": 1}])
-            
-        self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.reveal_votes(self.game_id)
-        self.gs.complete_tribal(self.game_id)
-        
-        # Verify eliminated player becomes jury member
+
+        # Takes two vote-outs to lose both Survivor Character Cards
+        self._vote_out(target_id)
+        self.assertEqual(game["jury"], [])
+
+        self._vote_out(target_id)
+
         eliminated_player = game["players"][target_id]
         self.assertFalse(eliminated_player["isActive"])
-        self.assertTrue(eliminated_player.get("jury_member", False))
+        self.assertTrue(eliminated_player["isEliminated"])
+        self.assertIn(target_id, game["jury"])
         
     def test_tribal_council_immunity_protection(self):
-        """Test that immune players cannot be eliminated"""
+        """
+        Votes for a player who plays an Immunity Idol do not count. With nobody
+        else holding votes, the Council Leader must choose from the priority ladder.
+        """
         game = self.gs.games[self.game_id]
-        
-        # Make a player immune
         immune_player_id = self.player_ids[2]
-        game["players"][immune_player_id]["immune"] = True
-        
-        # Start tribal council
+
         self.gs._trigger_tribal_council(game, "single")
-        self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.advance_tribal_phase(self.game_id, "voting")
         self.gs.start_voting(self.game_id, "elimination")
-        
-        # Try to vote out immune player
-        for i in range(3):
-            voter_id = self.player_ids[i] if i != 2 else self.player_ids[3]
-            self.gs.cast_vote(self.game_id, voter_id, [{"targetId": immune_player_id, "votes": 1}])
-            
+
+        # Everyone else votes for the soon-to-be-immune player
+        for voter_id in self.player_ids:
+            if voter_id != immune_player_id:
+                self.gs.cast_vote(self.game_id, voter_id,
+                                  [{"targetId": immune_player_id, "votes": 1}])
+
+        # Idol is played after the votes are in, before the tally
         self.gs.advance_tribal_phase(self.game_id, "immunity")
-        self.gs.reveal_votes(self.game_id)
-        result = self.gs.complete_tribal(self.game_id)
-        
-        # Immune player should still be active
-        self.assertTrue(game["players"][immune_player_id]["isActive"])
-        
-        # Someone else should have been eliminated instead (tie-breaker logic)
-        active_count = sum(1 for p in game["players"].values() if p["isActive"])
-        self.assertEqual(active_count, 3)  # One elimination occurred
+        game["players"][immune_player_id]["hand"].append({"type": "immunity_idol"})
+        played = self.gs.play_immunity(self.game_id, playerId=immune_player_id)
+        self.assertTrue(played["success"], played.get("message"))
+
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+
+        current_vote = game["currentVote"]
+        # All 3 votes negated, so no one has votes -> unclear, Leader must choose
+        self.assertEqual(current_vote["voteResults"], {})
+        self.assertIn(immune_player_id, current_vote["protectedPlayers"])
+        self.assertTrue(current_vote["tieBreakNeeded"])
+
+        # The idol player is only choosable as a last resort, after everyone else
+        self.assertNotIn(immune_player_id, current_vote["tiedPlayers"][:3])
+        self.assertEqual(sorted(current_vote["tiedPlayers"][:3]),
+                         sorted([p for p in self.player_ids if p != immune_player_id]))
         
     # COMPREHENSIVE FINAL TRIBAL COUNCIL TESTS
     

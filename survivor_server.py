@@ -217,11 +217,46 @@ class GameState:
         logger.info(f"Created new game: {gid}")
         return gid
     
+    def validate_new_player(self, gid, name, color=None):
+        """
+        Validate a prospective player before adding them.
+
+        Returns {"success": bool, "message": str}. Kept separate from add_player so
+        the HTTP layer can surface a specific reason without changing add_player's
+        return contract (it returns the new player id, or None).
+        """
+        g = self.games.get(gid)
+        if not g:
+            return {"success": False, "message": "Game not found or has ended."}
+
+        if not name or not str(name).strip():
+            return {"success": False, "message": "Player name is required."}
+
+        clean_name = str(name).strip()
+        is_valid, error = validate_player_name(clean_name)
+        if not is_valid:
+            return {"success": False, "message": error}
+
+        if len(g["players"]) >= 6:
+            return {"success": False, "message": "Game is full — maximum 6 players."}
+
+        if g.get("phase") != "lobby":
+            return {"success": False, "message": "Game has already started — no new players."}
+
+        for player in g["players"].values():
+            if player.get("name", "").strip().lower() == clean_name.lower():
+                return {"success": False, "message": f"A player named '{clean_name}' already exists."}
+            if color and player.get("color") == color:
+                return {"success": False, "message": f"That color is already taken by {player.get('name')}."}
+
+        return {"success": True, "message": f"{clean_name} can join."}
+
     def add_player(self, gid, name, color=None):
-        """Adds a new player to a game."""
+        """Adds a new player to a game. Returns the new player id, or None."""
         g = self.games.get(gid)
         if not g: return None
-        
+
+
         if color is None:
             colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#F9844A", "#90BE6D", "#F9C74F"]
             used_colors = {p.get("color") for p in g["players"].values()}
@@ -273,20 +308,26 @@ class GameState:
         if not g or g.get("phase") != "lobby" or len(g["players"]) < 3:
             return {"success": False, "message": "Game cannot be started."}
 
-        g["deck"] = self.rules_engine.create_deck(
-            len(g["players"]),
-            deck_mode=g.get("deckMode", "official"),
-            expansion=bool(g.get("expansion")),
-        )
+        deck_mode = g.get("deckMode", "official")
+        expansion = bool(g.get("expansion"))
+
+        # Setup order matters: deal from the shuffled Action Cards FIRST (step 3),
+        # then assemble the Tribal Council Cards into what's left (step 5). Dealing
+        # from an already-assembled deck can put a Tribal Council Card in a hand.
+        action_deck = self.rules_engine.create_action_deck(deck_mode=deck_mode, expansion=expansion)
 
         for player in g["players"].values():
             player["hand"] = []
             # 3 Action Cards from the deck...
             for _ in range(3):
-                if g["deck"]:
-                    player["hand"].append(g["deck"].pop(0))
+                if action_deck:
+                    player["hand"].append(action_deck.pop(0))
             # ...plus exactly 1 Vote Card, which never sat in the deck.
             player["hand"].append({"type": "vote"})
+
+        g["deck"] = self.rules_engine.assemble_deck(
+            action_deck, len(g["players"]), deck_mode=deck_mode, expansion=expansion
+        )
 
         self.rules_engine.sync_vote_counters(g)
         g["phase"] = "playing"
@@ -393,7 +434,13 @@ class GameState:
         current_vote = game.get("currentVote")
 
         if not current_vote or current_vote.get("phase") != "voting":
-            return {"success": False, "message": "Voting is not currently active"}
+            return {"success": False, "message": "Tribal council voting has not started"}
+
+        if votesData is None:
+            return {
+                "success": False,
+                "message": "Invalid vote data — send a list of votes (an empty list means you have no Vote Card to cast)",
+            }
 
         # Validate voter
         voter = game["players"].get(voterId)
@@ -414,9 +461,6 @@ class GameState:
         # Tribal Council; Extra Vote Cards MAY be used now or saved for later.
         mandatory_votes, optional_votes = self.rules_engine.get_vote_capacity(voter)
         total_votes_available = mandatory_votes + optional_votes
-
-        if votesData is None:
-            votesData = []
 
         # Validate vote data format
         if not isinstance(votesData, list):
@@ -455,6 +499,9 @@ class GameState:
 
             if not target_id or target_id not in game["players"]:
                 return {"success": False, "message": f"Invalid vote target: {target_id}"}
+
+            if target_id == voterId:
+                return {"success": False, "message": "Cannot vote for yourself"}
 
             target = game["players"][target_id]
             if target.get("isEliminated", False):
@@ -658,9 +705,12 @@ class GameState:
         if not current_vote:
             return {"success": False, "message": "No active tribal council found"}
             
-        if current_vote.get("phase") != "voting":
+        # Votes are revealed from the voting phase, or from the immunity phase —
+        # the official order is: everyone votes, THEN idols are played, THEN the
+        # Council Leader opens the box and tallies.
+        if current_vote.get("phase") not in ("voting", "immunity"):
             return {"success": False, "message": "Voting must be in progress to reveal votes"}
-            
+
         # Advance to reveal phase
         current_vote["phase"] = "reveal"
 
@@ -1146,19 +1196,25 @@ class GameState:
         
         # Return to playing phase
         game["phase"] = "playing"
-        
-        # Clear tribal council state
-        if "currentVote" in game:
-            del game["currentVote"]
-        
+
+        # Reset tribal council state back to the idle shape a new game starts with
+        # (rather than deleting it) so start_voting and the client can read it.
+        game["currentVote"] = {
+            "type": "single", "votes": {}, "phase": "waiting",
+            "councilLeaderId": self._get_council_leader_id(game),
+            "immunityPlayed": [], "advantageCardsPlayed": [],
+            "tieBreakNeeded": False, "tiedPlayers": [], "eliminated": [],
+            "voteResults": {}
+        }
+
         # Reset per-tribal flags using rules engine
         self.rules_engine._reset_post_tribal_flags(game)
-        
+
         # Reset player voting states
         for player in game["players"].values():
             player["hasVoted"] = False
             player["immunityPlayed"] = False
-        
+
         self._save()
         logger.info(f"Reset tribal council in game {gid}")
         
@@ -1526,8 +1582,8 @@ class GameState:
 
         final_tribal = game.get("finalTribal", {})
 
-        # Can signal ready during deliberation phase (before voting)
-        if final_tribal.get("phase") not in ["deliberation", "questions"]:
+        # Fingers go up during deliberation, once the statements are done
+        if final_tribal.get("phase") != "deliberation":
             return False
 
         # Validate player is a jury member
@@ -1544,11 +1600,14 @@ class GameState:
 
         logger.info(f"Jury member {juryMemberId} signaled ready in game {gid}")
 
-        # Check if all jury members are ready - auto-advance to voting
-        all_ready = len(final_tribal["juryReady"]) >= len(jury)
+        # Check if all jury members are ready - auto-advance to voting.
+        # juryReady is deliberately NOT cleared: it records who raised a finger, and
+        # clearing it here made a jury member's own signal vanish from the state they
+        # get back.
+        all_ready = jury and len(final_tribal["juryReady"]) >= len(jury)
         if all_ready:
             final_tribal["phase"] = "voting"
-            final_tribal["juryReady"] = []  # Reset for voting phase
+            final_tribal["votes"] = {}
 
         self._save()
         return True
@@ -1613,9 +1672,18 @@ class GameState:
 
         if not thief_id or not target_id:
             return {"success": False, "message": "Both thiefId and targetId are required"}
-        
-        if thief_id not in game["players"] or target_id not in game["players"]:
-            return {"success": False, "message": "Invalid player IDs"}
+
+        if game.get("phase") != "playing":
+            return {
+                "success": False,
+                "message": f"Game is not in playing phase (currently '{game.get('phase')}') — stealing is a turn action",
+            }
+
+        if thief_id not in game["players"]:
+            return {"success": False, "message": "Thief player not found in this game"}
+
+        if target_id not in game["players"]:
+            return {"success": False, "message": "Target player not found in this game"}
 
         # Validate it's the thief's turn
         turn_order = game.get("turnOrder", [])
@@ -1625,7 +1693,7 @@ class GameState:
 
         # Prevent stealing from yourself
         if thief_id == target_id:
-            return {"success": False, "message": "Cannot steal from yourself"}
+            return {"success": False, "message": "You cannot steal from yourself"}
 
         blocked = self._challenge_block_reason(game)
         if blocked:
@@ -2761,14 +2829,10 @@ def api_join():
     if not gid or gid not in game_state.games:
         return jsonify(success=False, message="Game not found or has ended."), 404
 
-    g = game_state.games[gid]
-    if len(g['players']) >= 6:
-        return jsonify(success=False, message="Game is full."), 400
-
     name = d.get('name', '').strip()
-    is_valid, error_msg = validate_player_name(name)
-    if not is_valid:
-        return jsonify(success=False, message=error_msg), 400
+    check = game_state.validate_new_player(gid, name, d.get('color'))
+    if not check["success"]:
+        return jsonify(success=False, message=check["message"]), 400
 
     pid=game_state.add_player(gid, name, d.get('color'))
     if not pid: return jsonify(success=False,message="Failed to add player."),400

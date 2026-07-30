@@ -29,6 +29,11 @@ from unittest.mock import Mock, patch, MagicMock
 import sys
 import random
 
+from rules_engine import SurvivorRulesEngine
+
+# Single shared engine — the tests exercise the REAL deck/card rules, not a copy.
+RULES = SurvivorRulesEngine()
+
 # Mock Flask dependencies for testing
 class MockFlask:
     def __init__(self):
@@ -186,157 +191,63 @@ class TestableGameState:
         return True
 
     def _get_card_database(self):
-        """Comprehensive card database with descriptions, rarity, and effects"""
+        """Card database, sourced from the real rules engine (survivor_cards.json)."""
         return {
-            "extra_vote": {
-                "name": "Extra Vote",
-                "description": "Gain an additional vote at the next Tribal Council.",
-                "category": "voting",
-                "playable_phases": ["tribal_discussion"],
-                "requires_confirmation": False
-            },
-            "immunity_idol": {
-                "name": "Hidden Immunity Idol",
-                "description": "Play before votes are cast to become immune from elimination.",
-                "category": "protection",
-                "playable_phases": ["tribal_immunity"],
-                "requires_confirmation": True
-            },
-            "camp_raid": {
-                "name": "Camp Raid",
-                "description": "Steal a random card from target player's hand.",
-                "category": "action",
-                "playable_phases": ["turn_play"],
-                "requires_target": True,
-                "requires_confirmation": False
-            },
-            "spy_shack": {
-                "name": "Spy Shack",
-                "description": "Look at target player's hand.",
-                "category": "action",
-                "playable_phases": ["turn_play"],
-                "requires_target": True,
-                "requires_confirmation": False
+            card_type: {
+                "name": card["name"],
+                "description": card["description"],
+                "category": card["category"],
+                "playable_phases": card["playable_phases"] or ["turn_play"],
+                "requires_target": card.get("requires_target", False),
+                "requires_confirmation": card.get("requires_confirmation", False),
             }
+            for card_type, card in RULES.get_all_card_definitions().items()
         }
 
-    def _create_deck(self, player_count=4):
-        """Create a complete deck with action cards and tribal council cards"""
-        deck = []
-        card_db = self._get_card_database()
-        
-        # Create action cards (simplified for testing)
-        card_counts = {
-            "extra_vote": 6,
-            "immunity_idol": 3,
-            "camp_raid": 4,
-            "spy_shack": 3
-        }
-        
-        for card_type, count in card_counts.items():
-            card_info = card_db[card_type]
-            for _ in range(count):
-                deck.append({
-                    "type": card_type,
-                    "category": card_info["category"],
-                    "description": card_info["description"],
-                    "playable_phases": card_info["playable_phases"],
-                    "requires_target": card_info.get("requires_target", False),
-                    "requires_confirmation": card_info.get("requires_confirmation", False)
-                })
-        
-        # Add filler cards to reach 67 total action cards
-        while len(deck) < 67:
-            deck.append({
-                "type": "steal_two",
-                "category": "action", 
-                "description": "Steal 2 cards this turn instead of 1",
-                "playable_phases": ["turn_steal"],
-                "requires_confirmation": False
-            })
-        
-        # Shuffle action cards
-        random.shuffle(deck)
-        
-        # Add tribal council cards
-        tribal_cards = self._create_tribal_council_cards(player_count)
-        if tribal_cards:
-            deck = self._insert_tribal_cards(deck, tribal_cards)
-        
-        return deck
+    def _create_deck(self, player_count=4, deck_mode="official", expansion=False):
+        """Create a complete deck via the real rules engine."""
+        return RULES.create_deck(player_count, deck_mode=deck_mode, expansion=expansion)
 
     def _create_tribal_council_cards(self, player_count):
-        """Create tribal council cards based on player count"""
-        tribal_cards = []
-        
-        # Official rules table
-        tribal_config = {
-            3: {"single": 4, "double": 0},
-            4: {"single": 2, "double": 2}, 
-            5: {"single": 1, "double": 3},
-            6: {"single": 0, "double": 4}
-        }
-        
-        config = tribal_config.get(player_count, {"single": 2, "double": 2})
-        
-        # Add single elimination cards
-        for _ in range(config["single"]):
-            tribal_cards.append({"type": "tribal_council", "elimination_type": "single"})
-            
-        # Add double elimination cards  
-        for _ in range(config["double"]):
-            tribal_cards.append({"type": "tribal_council", "elimination_type": "double"})
-        
-        return tribal_cards
+        """Tribal Council Cards for this player count, per the official rules table."""
+        return RULES._create_tribal_council_cards(player_count)
 
     def _insert_tribal_cards(self, deck, tribal_cards):
-        """Insert tribal council cards at proper intervals throughout the deck"""
-        if not tribal_cards:
-            return deck
-            
-        # Place 1 tribal card at bottom as per rules
-        final_deck = deck.copy()
-        if tribal_cards:
-            final_deck.append(tribal_cards.pop())
-        
-        # Insert remaining tribal cards evenly throughout the deck
-        if tribal_cards:
-            deck_size = len(final_deck)
-            interval = deck_size // (len(tribal_cards) + 1)
-            
-            for i, tribal_card in enumerate(tribal_cards):
-                insert_pos = (i + 1) * interval
-                if insert_pos >= len(final_deck):
-                    insert_pos = len(final_deck) - 1
-                final_deck.insert(insert_pos, tribal_card)
-        
-        return final_deck
+        """Assemble tribal cards into a deck: 1 on the bottom, rest spaced evenly."""
+        return RULES._insert_tribal_cards(deck, tribal_cards)
 
-    def start_full_game(self, gid):
-        """Start the full card-based game"""
+    def start_full_game(self, gid, deck_mode="official", expansion=False):
+        """
+        Start the full card-based game, following official setup order:
+        deal 3 Action Cards + 1 Vote Card each, THEN assemble the Tribal Council
+        Cards into what remains of the Draw Pile.
+        """
         g = self.games.get(gid)
         if not g or g["phase"] != "lobby":
             return False
-            
+
         player_count = len([p for p in g["players"].values() if p["isActive"]])
         if player_count < 3:
             return False
-            
-        # Create deck and deal initial hands
-        g["deck"] = self._create_deck(player_count)
+
+        action_deck = RULES.create_action_deck(deck_mode=deck_mode, expansion=expansion)
+
         g["turnOrder"] = list(g["players"].keys())
         random.shuffle(g["turnOrder"])
         g["currentTurnIndex"] = 0
         g["phase"] = "playing"
         g["turnPhase"] = "steal"
-        
-        # Deal 2 cards to each player
+
         for pid in g["players"]:
             g["players"][pid]["hand"] = []
-            for _ in range(2):
-                if g["deck"]:
-                    g["players"][pid]["hand"].append(g["deck"].pop(0))
-                    
+            for _ in range(3):
+                if action_deck:
+                    g["players"][pid]["hand"].append(action_deck.pop(0))
+            g["players"][pid]["hand"].append({"type": "vote"})
+
+        g["deck"] = RULES.assemble_deck(action_deck, player_count,
+                                        deck_mode=deck_mode, expansion=expansion)
+
         self._save()
         return True
 
@@ -595,7 +506,7 @@ class TestGameStateUnits(unittest.TestCase):
         self.assertGreater(len(card_db), 0)
         
         # Check required cards exist
-        required_cards = ["extra_vote", "immunity_idol", "camp_raid", "spy_shack"]
+        required_cards = ["extra_vote", "immunity_idol", "camp_raid", "the_spy_shack"]
         for card_type in required_cards:
             self.assertIn(card_type, card_db)
             
@@ -608,28 +519,33 @@ class TestGameStateUnits(unittest.TestCase):
     def test_create_deck_structure(self):
         """Test deck creation produces valid structure"""
         deck = self.gs._create_deck(4)
-        
+
         self.assertIsInstance(deck, list)
-        self.assertGreater(len(deck), 67)  # Should have action + tribal cards
-        
-        # Count card types
-        action_cards = [c for c in deck if c.get("type") != "tribal_council"]
-        tribal_cards = [c for c in deck if c.get("type") == "tribal_council"]
-        
-        self.assertEqual(len(action_cards), 67)
-        self.assertGreater(len(tribal_cards), 0)
+
+        def is_tribal(card):
+            return str(card.get("type", "")).startswith("tribal_council")
+
+        action_cards = [c for c in deck if not is_tribal(c)]
+        tribal_cards = [c for c in deck if is_tribal(c)]
+
+        # Official deck: 67 cards minus the 9 Tribal Council and 6 Vote Cards that
+        # setup removes = 52 Action Cards in the Draw Pile.
+        self.assertEqual(len(action_cards), 52)
+        self.assertEqual(len(tribal_cards), 4)  # 4 players = 2 single + 2 double
+        self.assertEqual(len(deck), 56)
 
     def test_create_deck_different_player_counts(self):
         """Test deck creation with different player counts"""
         for player_count in [3, 4, 5, 6]:
             deck = self.gs._create_deck(player_count)
-            
-            # Count tribal cards
-            tribal_cards = [c for c in deck if c.get("type") == "tribal_council"]
-            
-            # Verify tribal card counts match official rules
-            expected_tribal_counts = {3: 4, 4: 4, 5: 4, 6: 4}
-            self.assertEqual(len(tribal_cards), expected_tribal_counts[player_count])
+
+            tribal_cards = [c for c in deck
+                            if str(c.get("type", "")).startswith("tribal_council")]
+
+            # Official rules table: 3p=4S/0D, 4p=2S/2D, 5p=2S/3D, 6p=0S/5D
+            expected_tribal_counts = {3: 4, 4: 4, 5: 5, 6: 5}
+            self.assertEqual(len(tribal_cards), expected_tribal_counts[player_count],
+                             f"player_count={player_count}")
 
     def test_create_tribal_council_cards(self):
         """Test tribal council card creation"""
@@ -646,11 +562,12 @@ class TestGameStateUnits(unittest.TestCase):
 
     def test_create_tribal_council_cards_all_player_counts(self):
         """Test tribal council cards for all valid player counts"""
+        # The official rules table (Survivor: The Tribe Has Spoken, Setup step 4)
         expected_configs = {
             3: {"single": 4, "double": 0},
             4: {"single": 2, "double": 2},
-            5: {"single": 1, "double": 3},
-            6: {"single": 0, "double": 4}
+            5: {"single": 2, "double": 3},
+            6: {"single": 0, "double": 5}
         }
         
         for player_count, expected in expected_configs.items():
@@ -706,9 +623,17 @@ class TestGameStateUnits(unittest.TestCase):
         self.assertGreater(len(game["deck"]), 0)
         self.assertEqual(len(game["turnOrder"]), 3)
         
-        # Each player should have 2 cards
+        # Official setup deals 3 Action Cards + exactly 1 Vote Card to each player
         for player in game["players"].values():
-            self.assertEqual(len(player["hand"]), 2)
+            self.assertEqual(len(player["hand"]), 4)
+            vote_cards = [c for c in player["hand"] if c.get("type") == "vote"]
+            self.assertEqual(len(vote_cards), 1)
+
+        # No Vote Cards and no Tribal Council Cards may be dealt into hands
+        self.assertEqual([c for c in game["deck"] if c.get("type") == "vote"], [])
+        for player in game["players"].values():
+            for card in player["hand"]:
+                self.assertFalse(str(card.get("type", "")).startswith("tribal_council"))
 
     def test_start_full_game_invalid_conditions(self):
         """Test full game start with invalid conditions"""
@@ -857,8 +782,9 @@ class TestGameStateUnits(unittest.TestCase):
         
         # Should create appropriate tribal cards for 6 players
         game = self.gs.games[gid]
-        tribal_cards = [c for c in game["deck"] if c.get("type") == "tribal_council"]
-        self.assertEqual(len(tribal_cards), 5)  # 6 players = 5 tribal cards
+        tribal_cards = [c for c in game["deck"]
+                        if str(c.get("type", "")).startswith("tribal_council")]
+        self.assertEqual(len(tribal_cards), 5)  # 6 players = 0 single + 5 double
 
     def test_concurrent_operations(self):
         """Test that operations maintain consistency under concurrent-like conditions"""

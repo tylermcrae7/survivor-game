@@ -222,21 +222,30 @@ class SurvivorRulesEngine:
 	def create_deck(self, player_count: int = 4, deck_mode: str = "official",
 	                expansion: bool = False) -> List[Dict[str, Any]]:
 		"""
-		Create a complete game deck with action cards and tribal council cards.
+		Create a complete game deck: shuffled Action Cards with the Tribal Council
+		Cards assembled in (1 on the bottom, the rest spaced evenly).
+
+		NOTE for setup: the official order is *deal first, assemble second* (rules
+		steps 3 then 5) — otherwise a Tribal Council Card can be dealt straight into
+		a player's opening hand. Use ``create_action_deck`` + ``assemble_deck`` when
+		dealing; this convenience wrapper is for callers that just want a ready deck.
+		"""
+		action_deck = self.create_action_deck(deck_mode=deck_mode, expansion=expansion)
+		return self.assemble_deck(action_deck, player_count, deck_mode=deck_mode, expansion=expansion)
+
+	def create_action_deck(self, deck_mode: str = "official",
+	                       expansion: bool = False) -> List[Dict[str, Any]]:
+		"""
+		Build and shuffle the Action Card pile, with no Tribal Council Cards in it.
 
 		Official Setup (rules step 2): gather all 67 Action Cards and remove the
 		9 Tribal Council and 6 Vote Cards. Each player is given 1 Vote Card and
 		the extras are put away — so **no Vote Cards remain in the Draw Pile**.
-		Tribal Council Cards are shuffled back in at step 5.
 
 		Args:
-		player_count: Number of players in the game
 		deck_mode: "official" (67-card box) or "extended" (adds the 7 house cards)
 		expansion: True to add the 5 Orange Challenge Cards from
 		           Survivor: Let's Go To Rocks (combined mode)
-
-		Returns:
-		List of card dictionaries representing the shuffled deck
 		"""
 		deck = []
 		total_action_cards = 0
@@ -262,15 +271,29 @@ class SurvivorRulesEngine:
 
 		# Shuffle action cards
 		random.shuffle(deck)
-		
-		# Create and insert tribal council cards
+
+		logger.info(
+			f"Created {deck_mode} action pile ({'with' if expansion else 'no'} expansion): "
+			f"{total_action_cards} cards"
+		)
+		return deck
+
+	def assemble_deck(self, action_deck: List[Dict[str, Any]], player_count: int,
+	                  deck_mode: str = "official", expansion: bool = False) -> List[Dict[str, Any]]:
+		"""
+		Assemble the Draw Pile (rules step 5): shuffle the Tribal Council Cards for
+		this player count, place 1 face down at the bottom of the Action Card deck,
+		then insert the rest spaced evenly(ish) throughout.
+		"""
+		deck = list(action_deck)
 		tribal_cards = self._create_tribal_council_cards(player_count)
+		tribal_count = len(tribal_cards)  # _insert_tribal_cards consumes the list
 		if tribal_cards:
 			deck = self._insert_tribal_cards(deck, tribal_cards)
-			
+
 		logger.info(
-			f"Created {deck_mode} deck ({'with' if expansion else 'no'} expansion) with "
-			f"{len(deck)} total cards ({total_action_cards} action + {len(tribal_cards)} tribal)"
+			f"Assembled {deck_mode} deck ({'with' if expansion else 'no'} expansion) with "
+			f"{len(deck)} total cards ({len(action_deck)} action + {tribal_count} tribal)"
 		)
 		return deck
 
@@ -510,7 +533,13 @@ class SurvivorRulesEngine:
 			
 		if player.get("isEliminated", False):
 			return False, "Eliminated players cannot play cards"
-			
+
+		# Vote cards are never played from hand — they're placed in the Voting Box
+		# when you vote. Answer with that before the generic phase check, so the
+		# player gets told what to do instead of "wrong phase".
+		if card.get("category") == "vote":
+			return self._validate_vote_card_play(game, player_id, card, phase, params)
+
 		# Use existing card playability logic
 		playable, reason = self.is_card_playable(game, player_id, card)
 		if not playable:

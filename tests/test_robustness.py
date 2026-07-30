@@ -17,32 +17,12 @@ def test_game_state_persistence():
     """Test GameState file operations with error handling"""
     print("🧪 Testing GameState persistence...")
     
-    # Mock the Flask dependencies to test GameState class
-    sys.modules['flask'] = type(sys)('flask')
-    sys.modules['flask_socketio'] = type(sys)('flask_socketio')
-    
-    # Create mock objects
-    class MockFlask:
-        def __init__(self, *args, **kwargs):
-            self.config = {}
-    
-    class MockSocketIO:
-        def __init__(self, *args, **kwargs):
-            pass
-        def emit(self, *args, **kwargs):
-            pass
-    
-    # Inject mocks
-    sys.modules['flask'].Flask = MockFlask
-    sys.modules['flask'].request = type(sys)('request')
-    sys.modules['flask'].jsonify = lambda **kwargs: kwargs
-    sys.modules['flask'].render_template_string = lambda x: x
-    sys.modules['flask'].make_response = lambda x: x
-    sys.modules['flask_socketio'].SocketIO = MockSocketIO
-    sys.modules['flask_socketio'].emit = lambda *args, **kwargs: None
-    sys.modules['flask_socketio'].join_room = lambda *args: None
-    
-    # Now import and test GameState
+    # NOTE: this test used to stub out flask/flask_socketio with hand-rolled module
+    # objects. Every new import in survivor_server (e.g. send_from_directory) broke
+    # the stub, so the suite failed for reasons unrelated to robustness. The venv has
+    # the real dependencies installed — import them for real instead.
+
+    # Import and test GameState
     try:
         from survivor_server import GameState
         
@@ -105,7 +85,6 @@ def test_network_functions():
     
     try:
         # Import the network functions
-        sys.modules['flask'].Flask = lambda *args, **kwargs: type('obj', (), {'config': {}})()
         from survivor_server import get_local_ip, find_available_port
         
         # Test IP detection

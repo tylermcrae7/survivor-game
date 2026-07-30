@@ -32,20 +32,23 @@ class TestDeckComposition(unittest.TestCase):
         
         self.gs = GameState()
         
-        # Official rules table - per-player tribal council card counts
-        # Based on survivor_rules.md and official PDF specifications
+        # Official rules table (Survivor: The Tribe Has Spoken, Setup step 4)
+        #   Players | Single Elimination | Double Elimination
+        #      3    |         4          |         0
+        #      4    |         2          |         2
+        #      5    |         2          |         3
+        #      6    |         0          |         5
         self.expected_tribal_counts = {
-            3: {"single": 2, "double": 0},   # 2 single, 0 double
-            4: {"single": 2, "double": 1},   # 2 single, 1 double  
-            5: {"single": 3, "double": 1},   # 3 single, 1 double
-            6: {"single": 3, "double": 2}    # 3 single, 2 double
+            3: {"single": 4, "double": 0},
+            4: {"single": 2, "double": 2},
+            5: {"single": 2, "double": 3},
+            6: {"single": 0, "double": 5},
         }
-        
-        # Expected action card counts (from official card database)
-        # 69 total official cards: 6 Vote + 7 Extra Vote + 12 Tribal Advantages + 35 Actions + 9 Tribal Council
-        # Action cards = Total - Vote - Extra Vote - Tribal Council
-        # 35 Action cards + 12 Tribal Advantages = 47 non-vote cards distributed to players
-        self.expected_action_cards = 47  # Action + Tribal Advantage cards given to players
+
+        # The official box holds 67 Action Cards. Setup removes the 9 Tribal Council
+        # Cards and the 6 Vote Cards (1 dealt per player, extras put away), leaving
+        # 52 cards in the Draw Pile before the Tribal Council Cards are shuffled back in.
+        self.expected_action_cards = 52
         
     def tearDown(self):
         """Clean up test environment"""
@@ -73,9 +76,11 @@ class TestDeckComposition(unittest.TestCase):
         # Create deck using rules engine
         deck = self.gs.rules_engine.create_deck(player_count)
         
-        # Count card types
+        # The deck stores compact cards ({"type": ...}); resolve for metadata checks.
+        resolved = self.gs.rules_engine.resolve_cards(deck)
+
         card_counts = Counter(card["type"] for card in deck)
-        category_counts = Counter(card["category"] for card in deck)
+        category_counts = Counter(card["category"] for card in resolved)
         
         # Get expected tribal counts for this player count
         expected = self.expected_tribal_counts[player_count]
@@ -98,25 +103,29 @@ class TestDeckComposition(unittest.TestCase):
             f"Player count {player_count}: Expected {expected_total_tribal} total tribal cards, got {total_tribal}")
         
         # Verify tribal council cards have correct category
-        tribal_council_cards = [card for card in deck if card["category"] == "tribal_council"]
+        tribal_council_cards = [card for card in resolved if card["category"] == "tribal_council"]
         self.assertEqual(len(tribal_council_cards), expected_total_tribal,
             f"Player count {player_count}: Tribal council category count mismatch")
         
         # Verify minimum deck size (action cards + tribal cards)
         # Should have all action cards plus the calculated tribal cards
-        expected_min_deck_size = self.expected_action_cards + expected_total_tribal
-        
-        self.assertGreaterEqual(len(deck), expected_min_deck_size,
-            f"Player count {player_count}: Deck too small. Expected at least {expected_min_deck_size}, got {len(deck)}")
+        expected_deck_size = self.expected_action_cards + expected_total_tribal
+
+        self.assertEqual(len(deck), expected_deck_size,
+            f"Player count {player_count}: Expected {expected_deck_size} cards, got {len(deck)}")
+
+        # No Vote Cards may remain in the Draw Pile after setup
+        self.assertEqual(card_counts.get("vote", 0), 0,
+            f"Player count {player_count}: Vote Cards must be removed from the deck")
         
         # Verify deck contains valid categories only
-        valid_categories = {"vote", "tribal_advantage", "action", "tribal_council"}
+        valid_categories = {"vote", "tribal_advantage", "action", "tribal_council", "challenge"}
         for category in category_counts:
             self.assertIn(category, valid_categories,
                 f"Player count {player_count}: Invalid card category '{category}' found in deck")
         
         # Verify no empty cards or malformed entries
-        for i, card in enumerate(deck):
+        for i, card in enumerate(resolved):
             self.assertIn("type", card, f"Card {i} missing 'type' field")
             self.assertIn("category", card, f"Card {i} missing 'category' field")
             self.assertIn("name", card, f"Card {i} missing 'name' field")
@@ -133,10 +142,10 @@ class TestDeckComposition(unittest.TestCase):
                 deck = self.gs.rules_engine.create_deck(player_count)
                 
                 # Find positions of tribal council cards
-                tribal_positions = []
-                for i, card in enumerate(deck):
-                    if card["category"] == "tribal_council":
-                        tribal_positions.append(i)
+                tribal_positions = [
+                    i for i, card in enumerate(deck)
+                    if str(card.get("type", "")).startswith("tribal_council")
+                ]
                 
                 # Should have expected number of tribal cards
                 expected = self.expected_tribal_counts[player_count]
@@ -200,8 +209,9 @@ class TestDeckComposition(unittest.TestCase):
             with self.subTest(player_count=player_count):
                 deck = self.gs.rules_engine.create_deck(player_count)
                 
-                # Find all tribal council cards
-                tribal_cards = [card for card in deck if card["category"] == "tribal_council"]
+                # Find all tribal council cards (these carry full metadata in the deck)
+                tribal_cards = [card for card in deck
+                                if str(card.get("type", "")).startswith("tribal_council")]
                 
                 for card in tribal_cards:
                     # Should have elimination type
@@ -224,10 +234,10 @@ class TestDeckComposition(unittest.TestCase):
         """Comprehensive test of the player count to tribal card mapping"""
         # Test the exact mapping from rules
         test_matrix = [
-            (3, 2, 0, 2),  # 3 players: 2 single, 0 double, 2 total
-            (4, 2, 1, 3),  # 4 players: 2 single, 1 double, 3 total  
-            (5, 3, 1, 4),  # 5 players: 3 single, 1 double, 4 total
-            (6, 3, 2, 5),  # 6 players: 3 single, 2 double, 5 total
+            (3, 4, 0, 4),  # 3 players: 4 single, 0 double, 4 total
+            (4, 2, 2, 4),  # 4 players: 2 single, 2 double, 4 total
+            (5, 2, 3, 5),  # 5 players: 2 single, 3 double, 5 total
+            (6, 0, 5, 5),  # 6 players: 0 single, 5 double, 5 total
         ]
         
         for player_count, exp_single, exp_double, exp_total in test_matrix:
