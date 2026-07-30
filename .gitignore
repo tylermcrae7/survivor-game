@@ -20,8 +20,13 @@ Thumbs.db
 
 # Game state files (regenerated at runtime)
 games.json
+games?*.json
 winners.json
 *.backup.*
+
+# macOS duplicate-download junk ("games 2.json", "run_all_tests 2.py", ...)
+* [0-9].json
+* [0-9].py
 
 # Logs
 *.log
