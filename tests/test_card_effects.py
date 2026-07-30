@@ -190,14 +190,25 @@ class TestTurnActionCards(CardEffectTestBase):
         self.assertEqual(self.hand(victim), [])
         self.assertEqual(self.hand_types(raider).count("immunity_idol"), 2)
 
-    def test_the_spy_shack_reveals_target_hand(self):
+    def test_the_spy_shack_looks_and_takes_one(self):
+        """Survival Guide: "Look at any player's cards and take one." """
         spy, victim = self.player_ids[0], self.player_ids[1]
-        victim_hand = list(self.hand(victim))
+        # Distinct victim hand so the taken card can't be confused with the played one
+        self.hand(victim)[:] = [{"type": "immunity_idol"}, {"type": "knowledge_is_power"}]
+        taken_type = self.hand(victim)[0]["type"]
+        victim_before = len(self.hand(victim))
 
-        result = self.play(spy, "the_spy_shack", targetId=victim)
+        result = self.play(spy, "the_spy_shack", targetId=victim, takeIndex=0)
         self.assertTrue(result["success"], result.get("message"))
-        self.assertEqual(result["card_effect"]["spied_hand"], victim_hand)
         self.assertNotIn("the_spy_shack", self.hand_types(spy))
+        self.assertIn(taken_type, self.hand_types(spy))
+        self.assertEqual(len(self.hand(victim)), victim_before - 1)
+
+        # Without naming the card to take, the play is rejected pre-consumption
+        self.give(spy, "the_spy_shack")
+        result = self.play(spy, "the_spy_shack", targetId=victim)
+        self.assertFalse(result["success"])
+        self.assertIn("the_spy_shack", self.hand_types(spy))
 
     def test_knowledge_is_power_takes_a_named_card(self):
         """Survival Guide: "Ask any player for a card by name. If they have it, they must give you 1." """
@@ -277,24 +288,43 @@ class TestTurnActionCards(CardEffectTestBase):
         self.assertEqual(len(self.hand(heir)), len(heir_before))
         self.assertEqual(self.game["players"][heir]["inheritanceTarget"], doomed)
 
-    def test_reward_challenge_do_or_die(self):
+    def test_reward_challenge_do_or_die_starts_a_real_duel(self):
+        """The opponent throws for themselves — the server never rolls for them."""
         player = self.player_ids[0]
         self.give(player, "reward_challenge_do_or_die")
         result = self.play(player, "reward_challenge_do_or_die",
                            targetId=self.player_ids[1], choice="rock")
         self.assertTrue(result["success"], result.get("message"))
+        self.assertTrue(result["interaction_started"])
 
-    def test_reward_challenge_power_pair(self):
+        interaction = self.game["interaction"]
+        self.assertEqual(interaction["type"], "do_or_die")
+        self.assertEqual(interaction["awaiting"], [self.player_ids[1]])
+
+    def test_reward_challenge_power_pair_needs_two_picked_players(self):
         player = self.player_ids[0]
         self.give(player, "reward_challenge_power_pair")
-        result = self.play(player, "reward_challenge_power_pair")
-        self.assertTrue(result["success"], result.get("message"))
 
-    def test_reward_challenge_its_a_numbers_game(self):
+        # Official: "Pick 2 other players" — playing blind is rejected, card kept
+        result = self.play(player, "reward_challenge_power_pair")
+        self.assertFalse(result["success"])
+        self.assertIn("reward_challenge_power_pair", self.hand_types(player))
+
+        result = self.play(player, "reward_challenge_power_pair",
+                           targetIds=[self.player_ids[1], self.player_ids[2]])
+        self.assertTrue(result["success"], result.get("message"))
+        interaction = self.game["interaction"]
+        self.assertEqual(interaction["type"], "power_pair")
+        self.assertEqual(len(interaction["participants"]), 3)
+
+    def test_reward_challenge_its_a_numbers_game_includes_everyone(self):
         player = self.player_ids[0]
         self.give(player, "reward_challenge_its_a_numbers_game")
         result = self.play(player, "reward_challenge_its_a_numbers_game")
         self.assertTrue(result["success"], result.get("message"))
+        interaction = self.game["interaction"]
+        self.assertEqual(interaction["type"], "numbers_game")
+        self.assertCountEqual(interaction["participants"], self.player_ids)
 
 
 class TestCardValidation(CardEffectTestBase):

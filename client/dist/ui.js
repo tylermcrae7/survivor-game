@@ -1113,6 +1113,33 @@ function beginCardPlay(cardIndex, cardType) {
     const cardInfo = window.SurvivorGame?.getCardInfo(cardType);
 
     switch (cardType) {
+        case 'the_spy_shack':
+            // Official: "Look at any player's cards and take one." — pick whose
+            // camp to enter, see their hand, choose your prize.
+            showPlayerPicker({
+                title: 'The Spy Shack',
+                hint: 'Whose cards do you want to see?',
+                onPick: (targetId) => showSpyHandPicker({
+                    targetId,
+                    onPick: (takeIndex) => playCard(cardIndex, { targetId, takeIndex })
+                })
+            });
+            return;
+
+        case 'reward_challenge_power_pair':
+            // Official: "Pick 2 other players" — then all three of you throw fingers
+            showPlayerPicker({
+                title: 'Power Pair',
+                hint: 'Pick the first of your two players.',
+                onPick: (firstId) => showPlayerPicker({
+                    title: 'Power Pair',
+                    hint: 'Now the second — all three of you will show 1-3 fingers.',
+                    excludeIds: [firstId],
+                    onPick: (secondId) => playCard(cardIndex, { targetIds: [firstId, secondId] })
+                })
+            });
+            return;
+
         case 'knowledge_is_power':
             // Target first, then name the card you demand from them
             showPlayerPicker({
@@ -1305,6 +1332,9 @@ function showModal(content, options = {}) {
 
     // Use native dialog API if available, fall back to style toggle
     if (typeof modalOverlay.showModal === 'function') {
+        // A stale inline display:none (from a fallback-path hide) would keep the
+        // dialog invisible even while open — always clear it before showing.
+        modalOverlay.style.removeProperty('display');
         if (!modalOverlay.open) modalOverlay.showModal();
     } else {
         modalOverlay.style.display = 'flex';
@@ -1323,9 +1353,12 @@ function showModal(content, options = {}) {
 
 function hideModal() {
     if (modalOverlay) {
-        // Use native dialog API if available
-        if (typeof modalOverlay.close === 'function' && modalOverlay.open) {
-            modalOverlay.close();
+        // Use native dialog API if available. Never set inline display:none on a
+        // real <dialog> — hiding an ALREADY-closed dialog used to fall through to
+        // the style branch, and the stale inline style then kept every future
+        // dialog invisible while "open".
+        if (typeof modalOverlay.close === 'function') {
+            if (modalOverlay.open) modalOverlay.close();
         } else {
             modalOverlay.style.display = 'none';
         }
@@ -1468,6 +1501,47 @@ function showCardNamePicker({ title = 'Name a card', hint = '', onPick }) {
             btn.addEventListener('click', () => {
                 hideModal();
                 onPick && onPick(btn.dataset.cardType);
+            });
+        });
+    }, 0);
+}
+
+/** The Spy Shack: the look — the target's actual hand, take one. */
+function showSpyHandPicker({ targetId, onPick }) {
+    const gameState = window.SurvivorGame?.fullGameState;
+    const target = gameState?.players?.[targetId];
+    if (!target) return;
+
+    const hand = target.hand || [];
+    if (!hand.length) {
+        showToast(`${target.name} has no cards to spy on`, 'warning');
+        return;
+    }
+
+    const content = `
+        <div class="cardname-selection">
+            <p class="picker-hint">${escapeHtml(target.name)}'s hand, laid bare — take one.</p>
+            <div class="cardname-grid">
+                ${hand.map((c, i) => {
+                    const info = window.SurvivorGame?.getCardInfo(c.type);
+                    return `
+                        <button class="cardname-option touch-target" data-take-index="${i}">
+                            <span class="cardname-cat">${escapeHtml(CATEGORY_LABELS[info?.category] || info?.category || '')}</span>
+                            <span class="cardname-name">${escapeHtml(info?.name || c.type)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+
+    showModal(content, { title: 'The Spy Shack' });
+
+    setTimeout(() => {
+        document.querySelectorAll('[data-take-index]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hideModal();
+                onPick && onPick(parseInt(btn.dataset.takeIndex));
             });
         });
     }, 0);
@@ -1795,6 +1869,11 @@ function updateFromDiff(diff) {
     // Reactive theft window opening/closing arrives as a pending_theft diff
     if (diff.pending_theft !== undefined) {
         renderReactiveTheft(window.SurvivorGame.fullGameState);
+    }
+
+    // Reward Challenge interaction state changes
+    if (diff.interaction !== undefined) {
+        renderInteraction(window.SurvivorGame.fullGameState);
     }
 
     // Additional diff-based updates could be added here
@@ -2143,6 +2222,9 @@ function updateCurrentScreen(gameState) {
     // Reactive theft window (Sorry For You) — must render regardless of screen
     renderReactiveTheft(gameState);
 
+    // Reward Challenge interactions (Do Or Die / Power Pair / Numbers Game)
+    renderInteraction(gameState);
+
     // Update UI based on current screen
     switch (currentScreen) {
         case 'lobbyScreen':
@@ -2272,6 +2354,217 @@ function showRaidDialog(gameState, pending, thiefName) {
             } catch (e) { showToast(e.message || 'Could not resolve the raid', 'error'); }
         });
     }, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REWARD CHALLENGE INTERACTIONS — Do Or Die / Power Pair / Numbers Game
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These mini-games are bluffing contests, so every pick comes from a real
+// player. The server pauses the turn in game.interaction until everyone has
+// acted; this renderer prompts whoever is due and shows everyone else who
+// they're waiting on, then reveals the picks.
+
+let interactionKey = null;
+
+function renderInteraction(gameState) {
+    const it = gameState?.interaction;
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const active = !!(it && it.phase);
+    const awaitingMe = active && (it.awaiting || []).includes(me);
+    const key = active
+        ? `${it.type}:${it.phase}:${it.round}:${awaitingMe}:${(it.awaiting || []).length}`
+        : null;
+
+    if (key === interactionKey) return;
+
+    // Clear whatever the previous interaction state showed
+    if (interactionKey !== null) {
+        removeInteractionBanner();
+        if (document.querySelector('.interaction-ui')) hideModal();
+    }
+    interactionKey = key;
+    if (!active) return;
+
+    if (it.phase === 'picking' && awaitingMe) {
+        showInteractionPickModal(gameState, it);
+    } else if (it.phase === 'give' && awaitingMe) {
+        showInteractionGiveModal(gameState, it);
+    } else if (it.phase === 'choose_victim' && it.winnerId === me) {
+        showInteractionVictimPicker(gameState, it);
+    } else if (it.phase === 'complete') {
+        showInteractionReveal(gameState, it);
+    } else {
+        showInteractionBanner(gameState, it);
+    }
+}
+
+/** My secret pick: a throw (Do Or Die) or fingers (Power Pair / Numbers Game). */
+function showInteractionPickModal(gameState, it) {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const act = (action, value) => window.SurvivorNetwork?.GameAPI
+        .interactionAct(gameId, me, action, value)
+        .catch(e => showToast(e.message || 'That did not land', 'error'));
+
+    if (it.type === 'do_or_die') {
+        const opponent = (it.participants || []).find(p => p !== me);
+        const opponentName = gameState.players?.[opponent]?.name || 'your opponent';
+        const content = `
+            <div class="interaction-ui rps-selection">
+                <p class="picker-hint">${escapeHtml(opponentName)} has already thrown.
+                Make yours — winner steals 2 cards, a tie swaps 1 of your choice.</p>
+                <div class="rps-row">
+                    <button class="rps-option touch-target" data-pick="rock"><span class="rps-mark">●</span><span class="rps-label">Rock</span></button>
+                    <button class="rps-option touch-target" data-pick="paper"><span class="rps-mark">▭</span><span class="rps-label">Paper</span></button>
+                    <button class="rps-option touch-target" data-pick="scissors"><span class="rps-mark">✕</span><span class="rps-label">Scissors</span></button>
+                </div>
+            </div>
+        `;
+        showModal(content, { title: 'Do Or Die', showClose: false });
+    } else {
+        const top = it.type === 'power_pair' ? 3 : 5;
+        const hint = it.type === 'power_pair'
+            ? 'On the count of three — show 1, 2 or 3 fingers. Match exactly one other player to raid the third together.'
+            : 'Show 1-5 fingers. The lowest number nobody else picked wins.';
+        const fingers = Array.from({ length: top }, (_, i) => i + 1);
+        const content = `
+            <div class="interaction-ui finger-selection">
+                <p class="picker-hint">${hint}${it.round > 1 ? ` (Round ${it.round})` : ''}</p>
+                <div class="finger-row fingers-${top}">
+                    ${fingers.map(n => `
+                        <button class="finger-option touch-target" data-pick="${n}">
+                            <span class="finger-num">${n}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        showModal(content, { title: it.name || 'Reward Challenge', showClose: false });
+    }
+
+    setTimeout(() => {
+        document.querySelectorAll('[data-pick]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hideModal();
+                Haptics.trigger('select');
+                act('pick', btn.dataset.pick);
+            });
+        });
+    }, 0);
+}
+
+/** Tie swap / all-match discard: choose a card from MY hand to give up. */
+function showInteractionGiveModal(gameState, it) {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const hand = gameState.players?.[me]?.hand || [];
+    const swap = it.giveReason === 'swap';
+
+    const content = `
+        <div class="interaction-ui cardname-selection">
+            <p class="picker-hint">${swap
+                ? 'A tie! Choose the card you hand to your opponent.'
+                : 'All three matched — choose the card you discard.'}</p>
+            <div class="cardname-grid">
+                ${hand.map((c, i) => {
+                    const info = window.SurvivorGame?.getCardInfo(c.type);
+                    return `
+                        <button class="cardname-option touch-target" data-give-index="${i}">
+                            <span class="cardname-cat">${escapeHtml(CATEGORY_LABELS[info?.category] || info?.category || '')}</span>
+                            <span class="cardname-name">${escapeHtml(info?.name || c.type)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+    showModal(content, { title: swap ? 'The Swap' : 'The Discard', showClose: false });
+
+    setTimeout(() => {
+        document.querySelectorAll('[data-give-index]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hideModal();
+                window.SurvivorNetwork?.GameAPI
+                    .interactionAct(gameId, me, 'give', parseInt(btn.dataset.giveIndex))
+                    .catch(e => showToast(e.message || 'That did not land', 'error'));
+            });
+        });
+    }, 0);
+}
+
+/** Numbers Game winner's spoils: pick who loses 2 random cards. */
+function showInteractionVictimPicker(gameState, it) {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    showPlayerPicker({
+        title: "It's A Numbers Game",
+        hint: 'Your number stood alone — steal 2 random cards from any player.',
+        onPick: (victimId) => window.SurvivorNetwork?.GameAPI
+            .interactionAct(gameId, me, 'steal_from', victimId)
+            .catch(e => showToast(e.message || 'That did not land', 'error'))
+    });
+    // Mark the modal so renderInteraction can manage it
+    setTimeout(() => document.querySelector('.target-selection')?.classList.add('interaction-ui'), 0);
+}
+
+/** The reveal: everyone's picks plus what happened, then back to the turn. */
+function showInteractionReveal(gameState, it) {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const picks = (it.lastRound && it.lastRound.picks) || it.picks || {};
+    const throwMark = { rock: '●', paper: '▭', scissors: '✕' };
+
+    const rows = Object.entries(picks).map(([pid, pick]) => {
+        const player = gameState.players?.[pid];
+        const shown = it.type === 'do_or_die'
+            ? `${throwMark[pick] || ''} ${pick}` : `${pick}`;
+        return `
+            <li class="reveal-row">
+                <span class="target-dot" style="background:${escapeHtml(player?.color || '#666')}"></span>
+                <span class="reveal-name">${escapeHtml(player?.name || pid)}</span>
+                <span class="reveal-pick">${escapeHtml(String(shown))}</span>
+            </li>
+        `;
+    }).join('');
+
+    const content = `
+        <div class="interaction-ui reveal-ui">
+            <ul class="reveal-list">${rows}</ul>
+            <p class="reveal-outcome">${escapeHtml(it.prompt || '')}</p>
+            <button class="btn btn-primary touch-target" data-interaction-dismiss>Continue</button>
+        </div>
+    `;
+    showModal(content, { title: `${it.name} — The Reveal`, showClose: false });
+
+    setTimeout(() => {
+        document.querySelector('[data-interaction-dismiss]')?.addEventListener('click', () => {
+            hideModal();
+            window.SurvivorNetwork?.GameAPI.interactionAct(gameId, me, 'dismiss')
+                .catch(() => {});   // already dismissed elsewhere is fine
+        });
+    }, 0);
+}
+
+/** Everyone not currently due: who the table is waiting on. */
+function showInteractionBanner(gameState, it) {
+    removeInteractionBanner();
+    const names = (it.awaiting || [])
+        .map(p => gameState.players?.[p]?.name || p).join(', ');
+    const banner = document.createElement('div');
+    banner.id = 'interactionBanner';
+    banner.className = 'reactive-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML = `
+        <span class="reactive-banner-flame">${icon('cards')}</span>
+        <span><strong>${escapeHtml(it.name || 'Reward Challenge')}</strong> — waiting on
+        ${escapeHtml(names || 'the tribe')}…</span>
+    `;
+    document.body.appendChild(banner);
+}
+
+function removeInteractionBanner() {
+    document.getElementById('interactionBanner')?.remove();
 }
 
 /** Thief's non-blocking wait state while the defender decides. */
@@ -2544,6 +2837,7 @@ window.SurvivorUI = {
     renderPlayerHand,
     renderVoteTargets,
     renderReactiveTheft,
+    renderInteraction,
     beginCardPlay,
     renderLives,
     renderLivesTracker,

@@ -20,7 +20,9 @@
       "category": "vote",
       "name": "Vote",
       "description": "Every player gets 1 Vote Card at the start of the game. When voting at Tribal Council you MUST place this card in the Voting Box.",
-      "playable_phases": ["tribal_voting"],
+      "playable_phases": [
+        "tribal_voting"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -32,7 +34,9 @@
       "category": "vote",
       "name": "Extra Vote",
       "description": "When voting at Tribal Council you MAY place this card in the Voting Box as an additional vote (or save it for later).",
-      "playable_phases": ["tribal_voting"],
+      "playable_phases": [
+        "tribal_voting"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -44,7 +48,9 @@
       "category": "tribal_advantage",
       "name": "Control The Vote",
       "description": "Play before voting begins to take any player's Vote Card. You MUST use it in addition to your own Vote Card at this Tribal Council.",
-      "playable_phases": ["tribal_discussion"],
+      "playable_phases": [
+        "tribal_discussion"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -56,7 +62,9 @@
       "category": "tribal_advantage",
       "name": "Goodwill Gamble",
       "description": "Give this card to another player before voting begins. It counts as 1 vote and MUST be used at this Tribal Council.",
-      "playable_phases": ["tribal_discussion"],
+      "playable_phases": [
+        "tribal_discussion"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -68,7 +76,9 @@
       "category": "tribal_advantage",
       "name": "I'm The Leader Now",
       "description": "Become the Tribal Council Leader immediately",
-      "playable_phases": ["tribal_discussion"],
+      "playable_phases": [
+        "tribal_discussion"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -80,7 +90,9 @@
       "category": "tribal_advantage",
       "name": "Hidden Immunity Idol",
       "description": "Negate all votes against you at Tribal Council",
-      "playable_phases": ["tribal_immunity"],
+      "playable_phases": [
+        "tribal_immunity"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -93,7 +105,9 @@
       "category": "tribal_advantage",
       "name": "Idol Nullifier",
       "description": "Nullify someone's immunity idol at Tribal Council",
-      "playable_phases": ["tribal_immunity"],
+      "playable_phases": [
+        "tribal_immunity"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -106,7 +120,9 @@
       "category": "tribal_advantage",
       "name": "Steal A Vote",
       "description": "Steal another player's vote at Tribal Council - they cannot vote and you vote twice",
-      "playable_phases": ["tribal_discussion"],
+      "playable_phases": [
+        "tribal_discussion"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -119,7 +135,9 @@
       "category": "tribal_advantage",
       "name": "Block A Vote",
       "description": "Prevent another player from voting at this Tribal Council",
-      "playable_phases": ["tribal_discussion"],
+      "playable_phases": [
+        "tribal_discussion"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -132,7 +150,9 @@
       "category": "tribal_advantage",
       "name": "Grant Immunity",
       "description": "Grant temporary immunity to another player - votes against them do not count",
-      "playable_phases": ["tribal_discussion"],
+      "playable_phases": [
+        "tribal_discussion"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -144,7 +164,9 @@
       "category": "action",
       "name": "Sorry For You",
       "description": "REACTIVE: Play when someone tries to take cards from you - they get nothing and must discard 1 card",
-      "playable_phases": ["reactive_theft"],
+      "playable_phases": [
+        "reactive_theft"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -155,8 +177,10 @@
       "type": "the_spy_shack",
       "category": "action",
       "name": "The Spy Shack",
-      "description": "Look at target player's hand",
-      "playable_phases": ["turn_play"],
+      "description": "Look at any player's cards and take one.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -168,7 +192,9 @@
       "category": "action",
       "name": "Knowledge Is Power",
       "description": "Choose a card type - if target has it, they must give it to you",
-      "playable_phases": ["turn_play"],
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -177,10 +203,12 @@
     },
     "camp_raid": {
       "type": "camp_raid",
-      "category": "action", 
+      "category": "action",
       "name": "Camp Raid",
       "description": "Steal 2 random cards from target player",
-      "playable_phases": ["turn_play"],
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -192,7 +220,9 @@
       "category": "action",
       "name": "Inheritance",
       "description": "Choose a target player - when they are eliminated, you inherit all their cards",
-      "playable_phases": ["turn_play"],
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -204,7 +234,9 @@
       "category": "action",
       "name": "Let's Form An Alliance",
       "description": "You and a teammate each steal a card from a victim",
-      "playable_phases": ["turn_play"],
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": true,
       "requires_confirmation": false,
@@ -215,8 +247,10 @@
       "type": "reward_challenge_do_or_die",
       "category": "action",
       "name": "Reward Challenge: Do Or Die",
-      "description": "Challenge someone to Rock/Paper/Scissors - winner steals 2 cards",
-      "playable_phases": ["turn_play"],
+      "description": "Pick any player for a single game of Rock Paper Scissors. Winner steals 2 random cards from the loser; on a tie you each swap 1 card of your choice.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -227,10 +261,12 @@
       "type": "reward_challenge_power_pair",
       "category": "action",
       "name": "Reward Challenge: Power Pair",
-      "description": "Three players show fingers, pairs give you their cards",
-      "playable_phases": ["turn_play"],
+      "description": "Pick 2 other players. All 3 of you secretly show 1-3 fingers: if exactly 2 match they each steal 1 card from the 3rd, if all match everyone discards 1, if all differ play again.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
-      "requires_multiple_targets": false,
+      "requires_multiple_targets": true,
       "requires_confirmation": false,
       "reactive_only": false,
       "count": 3
@@ -239,8 +275,10 @@
       "type": "reward_challenge_its_a_numbers_game",
       "category": "action",
       "name": "Reward Challenge: It's A Numbers Game",
-      "description": "Each player picks a number 1-3, closest to your number gives you a card",
-      "playable_phases": ["turn_play"],
+      "description": "Everyone still in the game secretly shows 1-5 fingers. The lowest UNIQUE number steals 2 random cards from any player. Repeat until there is a single winner.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -253,7 +291,9 @@
       "category": "challenge",
       "name": "Challenge: Highest Bidder",
       "description": "Start a Challenge. Bid how many rocks you can pull from the bag without pulling the Purple Rock. Winner wears the Immunity Idol Necklace.",
-      "playable_phases": ["turn_play"],
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -265,8 +305,10 @@
       "type": "challenge_1_now_or_2_later",
       "category": "challenge",
       "name": "Challenge: 1 Now or 2 Later",
-      "description": "Start a Challenge. Pull 1 rock or pass — but pass and you must pull 2 next time. Pull the Purple Rock and you're knocked out.",
-      "playable_phases": ["turn_play"],
+      "description": "Start a Challenge. Pull 1 rock or pass \u2014 but pass and you must pull 2 next time. Pull the Purple Rock and you're knocked out.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -278,8 +320,10 @@
       "type": "challenge_lowest_score_loses",
       "category": "challenge",
       "name": "Challenge: Lowest Score Loses",
-      "description": "Start a Challenge. Secretly pull any number of rocks — grey +1, purple -2. Lowest score each round is knocked out.",
-      "playable_phases": ["turn_play"],
+      "description": "Start a Challenge. Secretly pull any number of rocks \u2014 grey +1, purple -2. Lowest score each round is knocked out.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -292,7 +336,9 @@
       "category": "challenge",
       "name": "Challenge: Pull or Steal",
       "description": "Start a Challenge. Pull a hidden rock or steal one from a lower-numbered player. Whoever holds the Purple Rock at the reveal wins.",
-      "playable_phases": ["turn_play"],
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -305,8 +351,10 @@
       "type": "challenge_hide_n_seek",
       "category": "challenge",
       "name": "Challenge: Hide 'n' Seek",
-      "description": "NOT AVAILABLE DIGITALLY: this Challenge is physical sleight-of-hand — players palm and bluff-pass rocks while an Observer watches. Discarded with no effect.",
-      "playable_phases": ["turn_play"],
+      "description": "NOT AVAILABLE DIGITALLY: this Challenge is physical sleight-of-hand \u2014 players palm and bluff-pass rocks while an Observer watches. Discarded with no effect.",
+      "playable_phases": [
+        "turn_play"
+      ],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": true,
@@ -326,7 +374,7 @@
       "count": 4
     },
     "tribal_council_double": {
-      "type": "tribal_council_double", 
+      "type": "tribal_council_double",
       "category": "tribal_council",
       "name": "Tribal Council - Double Elimination",
       "description": "Tribal Council - Double Elimination",
@@ -370,9 +418,16 @@
     "official_deck_cards": 67,
     "extended_deck_cards": 74,
     "required_fields": [
-      "type", "category", "name", "description", "playable_phases",
-      "requires_target", "requires_multiple_targets", "requires_confirmation",
-      "reactive_only", "count"
+      "type",
+      "category",
+      "name",
+      "description",
+      "playable_phases",
+      "requires_target",
+      "requires_multiple_targets",
+      "requires_confirmation",
+      "reactive_only",
+      "count"
     ]
   }
 }

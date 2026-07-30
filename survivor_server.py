@@ -8,6 +8,7 @@ from pathlib import Path
 from functools import wraps
 from rules_engine import SurvivorRulesEngine, TribalPhase
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS
+from interactions import interaction_engine
 
 try:
     from flask import Flask, request, jsonify, send_from_directory
@@ -240,6 +241,7 @@ class GameState:
             'expansion': bool(expansion),
             'necklaceHolder': None,
             'challenge': None,
+            'interaction': None,
             'currentVote': {
                 "type": "single", "votes": {}, "phase": "waiting",
                 "councilLeaderId": None, "immunityPlayed": [],
@@ -388,12 +390,13 @@ class GameState:
         enriched_game = copy.deepcopy(game)
         # Keep derived vote-card counters honest for the client
         self.rules_engine.sync_vote_counters(enriched_game)
-        # Strip hidden challenge information (secret rock pulls) before it leaves
-        # the server — these keys are only revealed at the reveal step.
-        challenge = enriched_game.get("challenge")
-        if isinstance(challenge, dict):
-            for key in [k for k in challenge if k.startswith("_")]:
-                del challenge[key]
+        # Strip hidden information (secret rock pulls, secret throws/fingers)
+        # before it leaves the server — these keys reveal only at the reveal step.
+        for hidden_holder in ("challenge", "interaction"):
+            holder = enriched_game.get(hidden_holder)
+            if isinstance(holder, dict):
+                for key in [k for k in holder if k.startswith("_")]:
+                    del holder[key]
         return enriched_game
     
     def _get_council_leader_id(self, game):
@@ -1904,24 +1907,74 @@ class GameState:
                 # The challenge couldn't run — the card is still discarded, but say why.
                 challenge_message = start_result.get("message")
 
+        # Handle Reward Challenge interactions (Do Or Die / Power Pair / Numbers Game)
+        interaction_message = None
+        if effect_result.get("start_interaction"):
+            start_result = interaction_engine.start(
+                game, player_id,
+                effect_result["start_interaction"],
+                effect_result.get("interaction_params") or {},
+            )
+            interaction_message = start_result.get("message")
+
         self.rules_engine.sync_vote_counters(game)
         self._save()
         response = {
             "success": True,
-            "message": challenge_message or effect_result.get("message", f"Played {card.get('name', 'card')}"),
+            "message": interaction_message or challenge_message
+                       or effect_result.get("message", f"Played {card.get('name', 'card')}"),
             "card_effect": effect_result,
             "tribal_triggered": card.get("category") == "tribal_council"
         }
         if effect_result.get("start_challenge"):
             response["challenge_started"] = challenge_started
+        if effect_result.get("start_interaction"):
+            response["interaction_started"] = bool(game.get("interaction"))
         return response
+
+    # ═══════════════════════════ Reward Challenge Interactions ═══════════════════════════
+    def interaction_action(self, gid, playerId=None, action=None, value=None, **kwargs):
+        """
+        Take an action in the active Reward Challenge interaction.
+
+        Args:
+            gid: Game ID
+            playerId: player acting
+            action: 'pick' (secret throw/fingers) | 'give' (own-hand card index for
+                    a tie swap or all-match discard) | 'steal_from' (Numbers Game
+                    winner's victim) | 'dismiss'
+            value: the pick / index / target depending on the action
+        """
+        if gid not in self.games:
+            return {"success": False, "message": "Game not found"}
+
+        game = self.games[gid]
+
+        if not playerId:
+            return {"success": False, "message": "playerId is required"}
+        if not action:
+            return {"success": False, "message": "action is required"}
+
+        result = interaction_engine.act(game, playerId, action, value)
+
+        if result.get("success"):
+            self.rules_engine.sync_vote_counters(game)
+            self._save()
+
+        return result
 
     # ═══════════════════════════ Rocks Expansion Challenges ═══════════════════════════
     def _challenge_block_reason(self, game):
-        """Return an error message if an unfinished Challenge blocks other actions."""
+        """
+        Return an error message if an unfinished Challenge or Reward Challenge
+        interaction blocks other turn actions.
+        """
         challenge = game.get("challenge")
         if challenge and challenge.get("phase") not in (None, "complete"):
             return f"Resolve the active Challenge ({challenge.get('name')}) before continuing your turn"
+        interaction = game.get("interaction")
+        if interaction and interaction.get("phase") not in (None, "complete"):
+            return f"Resolve the {interaction.get('name', 'Reward Challenge')} before continuing your turn"
         return None
 
     def _award_challenge_win(self, game, winner_id):
@@ -2150,8 +2203,9 @@ class GameState:
 
         current_index = game.get("currentTurnIndex", 0)
 
-        # A finished Challenge is cleared from the table at the end of the turn
+        # Finished Challenges / Reward Challenges are cleared at the end of the turn
         game["challenge"] = None
+        game["interaction"] = None
 
         # Reset hasStolen for all players at end of turn
         for player in game["players"].values():
@@ -2292,6 +2346,7 @@ class GameState:
         game["currentTurnIndex"] = 0
         game["necklaceHolder"] = None
         game["challenge"] = None
+        game["interaction"] = None
         game.pop("winner", None)
         game.pop("pendingTurnPlayerId", None)
 
@@ -2966,6 +3021,10 @@ def api_enhanced_tie_break(): return handle('enhanced_tie_break',['leaderId','ch
 # Let's Go To Rocks expansion — Challenge actions
 @app.route('/api/challenge/action',methods=['POST'])
 def api_challenge_action(): return handle('challenge_action',['playerId','action'])
+
+# Reward Challenge interactions (Do Or Die / Power Pair / Numbers Game)
+@app.route('/api/interaction/act',methods=['POST'])
+def api_interaction_act(): return handle('interaction_action',['playerId','action'])
 
 # Final Tribal Council API endpoints
 @app.route('/api/final/advance',methods=['POST'])

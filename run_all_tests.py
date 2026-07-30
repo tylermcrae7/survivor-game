@@ -124,6 +124,10 @@ def main():
         {
             'file': 'tests/test_rocks_expansion.py',
             'description': "Let's Go To Rocks Expansion Tests — necklace + 4 challenges (31 tests)"
+        },
+        {
+            'file': 'tests/test_reward_interactions.py',
+            'description': 'Reward Challenge Interactions — Do Or Die / Power Pair / Numbers Game / Spy Shack (25 tests)'
         }
     ]
     

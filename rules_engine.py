@@ -832,7 +832,49 @@ class SurvivorRulesEngine:
 					return False, "Alliance requires both ally and victim player IDs"
 				if ally_id not in game["players"] or victim_id not in game["players"]:
 					return False, "Alliance requires valid ally and victim players"
-					
+
+		# ── Card-specific parameter validation, BEFORE the card leaves the hand ──
+		# (Missing parameters used to surface only in the effect, after the card
+		#  had already been consumed with no result.)
+
+		if card_type == "the_spy_shack":
+			# Official: "Look at any player's cards and take one." — the take is
+			# part of the play, so the chosen card must be named up front.
+			target = game["players"].get(params.get("targetId") or "")
+			take_index = params.get("takeIndex")
+			if target is not None:
+				target_hand = target.get("hand") or []
+				if not target_hand:
+					return False, f"{target.get('name', 'That player')} has no cards to look at"
+				if not isinstance(take_index, int) or not 0 <= take_index < len(target_hand):
+					return False, "The Spy Shack requires choosing which card to take (takeIndex)"
+
+		elif card_type == "reward_challenge_do_or_die":
+			if params.get("choice") not in ("rock", "paper", "scissors"):
+				return False, "Do Or Die requires your secret throw: rock, paper or scissors"
+			if game.get("interaction"):
+				return False, "Another Reward Challenge is already in progress"
+
+		elif card_type == "reward_challenge_power_pair":
+			target_ids = params.get("targetIds")
+			if not isinstance(target_ids, list) or len(target_ids) != 2:
+				return False, "Power Pair requires picking 2 other players"
+			if len(set(target_ids)) != 2 or player_id in target_ids:
+				return False, "Power Pair needs two different players, and neither can be you"
+			for tid in target_ids:
+				target = game["players"].get(tid)
+				if not target or target.get("isEliminated", False):
+					return False, "Power Pair targets must still be in the game"
+			if game.get("interaction"):
+				return False, "Another Reward Challenge is already in progress"
+
+		elif card_type == "reward_challenge_its_a_numbers_game":
+			alive = [pid for pid, p in game["players"].items() if not p.get("isEliminated", False)]
+			if len(alive) < 2:
+				return False, "A Numbers Game needs at least 2 players still in the game"
+			if game.get("interaction"):
+				return False, "Another Reward Challenge is already in progress"
+
 		return True, "Action card play is valid"
 		
 	def _validate_vote_card_play(self, game: Dict[str, Any], player_id: str, card: Dict[str, Any], phase: str, params: Dict[str, Any]) -> Tuple[bool, str]:
@@ -1264,20 +1306,37 @@ class SurvivorRulesEngine:
 			return {"message": f"Sorry for you, {thief['name']}! Your theft failed but you have no cards to discard"}
 			
 	def _effect_the_spy_shack(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute The Spy Shack card effect."""
+		"""
+		Execute The Spy Shack card effect.
+
+		Survival Guide: "Look at any player's cards and take one." The look happens
+		in the client (which sees the live hand); the take is performed here with
+		the index the spy chose. Validation guarantees takeIndex is in range.
+		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
 			return {"message": "The Spy Shack requires a valid target player"}
-			
+
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
-		if not target.get("hand"):
+
+		target_hand = target.get("hand") or []
+		if not target_hand:
 			return {"message": f"{target['name']} has no cards to spy on"}
-			
-		# In a real implementation, this would show the hand to the player
-		# For now, we'll just indicate successful spying
-		return {"message": f"{player['name']} looked at {target['name']}'s hand", "spied_hand": target["hand"]}
+
+		take_index = params.get("takeIndex")
+		if not isinstance(take_index, int) or not 0 <= take_index < len(target_hand):
+			# Defensive — validate_play rejects this before the card is consumed
+			return {"message": "The Spy Shack requires choosing which card to take", "spied_hand": target_hand}
+
+		taken = target_hand.pop(take_index)
+		player.setdefault("hand", []).append(taken)
+		self.sync_vote_counters(game)
+
+		return {
+			"message": f"{player['name']} spied on {target['name']}'s hand and took {self.resolve_card(taken).get('name', 'a card')}",
+			"spied_hand": target_hand,
+		}
 		
 	def _effect_knowledge_is_power(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""Execute Knowledge Is Power card effect."""
@@ -1372,136 +1431,44 @@ class SurvivorRulesEngine:
 			return {"message": f"{victim['name']} had no cards for the alliance to steal"}
 			
 	def _effect_reward_challenge_do_or_die(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Reward Challenge: Do Or Die card effect."""
-		target_id = params.get("targetId")
-		player_choice = params.get("choice")  # rock, paper, scissors
-		
-		if not target_id or target_id not in game["players"]:
-			return {"message": "Do Or Die challenge requires a valid opponent"}
-		if not player_choice or player_choice not in ["rock", "paper", "scissors"]:
-			return {"message": "Do Or Die challenge requires a valid choice (rock, paper, scissors)"}
-			
+		"""
+		Start a real Do Or Die: the initiator's secret throw is already in params
+		(validated), and the opponent makes their own throw via the interaction —
+		the server no longer rolls dice on their behalf. Tie = each swaps 1 card
+		of their choice, per the Survival Guide.
+		"""
 		player = game["players"][player_id]
-		target = game["players"][target_id]
-		
-		# Simulate opponent's choice
-		opponent_choice = random.choice(["rock", "paper", "scissors"])
-		
-		# Determine winner
-		if player_choice == opponent_choice:
-			return {"message": f"Rock Paper Scissors tie! {player['name']} chose {player_choice}, {target['name']} chose {opponent_choice}. No cards stolen."}
-			
-		win_conditions = {
-		"rock": "scissors",
-		"paper": "rock",
-		"scissors": "paper"
+		return {
+			"message": f"{player['name']} throws down a Do Or Die challenge!",
+			"start_interaction": "do_or_die",
+			"interaction_params": {"targetId": params.get("targetId"), "choice": params.get("choice")},
 		}
-		
-		if win_conditions[player_choice] == opponent_choice:
-			# Player wins - steal 2 cards
-			stolen_cards = []
-			for _ in range(min(2, len(target.get("hand", [])))):
-				if target["hand"]:
-					stolen_card = target["hand"].pop(random.randint(0, len(target["hand"]) - 1))
-					player["hand"].append(stolen_card)
-					stolen_cards.append(stolen_card.get("name", "a card"))
-					
-			if stolen_cards:
-				return {"message": f"{player['name']} won Rock Paper Scissors and stole {', '.join(stolen_cards)} from {target['name']}!"}
-			else:
-				return {"message": f"{player['name']} won but {target['name']} had no cards to steal"}
-		else:
-			# Player loses - opponent steals 2 cards
-			stolen_cards = []
-			for _ in range(min(2, len(player.get("hand", [])))):
-				if player["hand"]:
-					stolen_card = player["hand"].pop(random.randint(0, len(player["hand"]) - 1))
-					target["hand"].append(stolen_card)
-					stolen_cards.append(stolen_card.get("name", "a card"))
-					
-			if stolen_cards:
-				return {"message": f"{target['name']} won Rock Paper Scissors and stole {', '.join(stolen_cards)} from {player['name']}!"}
-			else:
-				return {"message": f"{target['name']} won but {player['name']} had no cards to steal"}
-				
+
 	def _effect_reward_challenge_power_pair(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Reward Challenge: Power Pair card effect."""
-		# This requires 3 players total including the player
-		active_players = [pid for pid, p in game["players"].items() if not p.get("isEliminated")]
-		if len(active_players) < 3:
-			return {"message": "Power Pair requires at least 3 active players"}
-			
+		"""
+		Start a real Power Pair: the initiator picked 2 other players (validated);
+		all three show 1-3 fingers via the interaction. Exactly-2-match steals from
+		the third; all-match everyone discards 1; all-differ replays.
+		"""
 		player = game["players"][player_id]
-		
-		# Simulate finger choices for all players
-		choices = {}
-		for pid in active_players[:3]:  # Take first 3 players
-			choices[pid] = random.randint(1, 5)
-			
-		player_choice = choices[player_id]
-		
-		# Find pairs
-		choice_counts = {}
-		for pid, choice in choices.items():
-			choice_counts[choice] = choice_counts.get(choice, []) + [pid]
-			
-		# Players with pairs give cards to the challenge player
-		cards_received = []
-		for choice, players_with_choice in choice_counts.items():
-			if len(players_with_choice) == 2 and player_id not in players_with_choice:
-				# Other players have a pair - they give cards
-				for pair_player_id in players_with_choice:
-					pair_player = game["players"][pair_player_id]
-					if pair_player.get("hand"):
-						stolen_card = pair_player["hand"].pop(random.randint(0, len(pair_player["hand"]) - 1))
-						player["hand"].append(stolen_card)
-						cards_received.append(f"{stolen_card.get('name', 'a card')} from {pair_player['name']}")
-						
-		if cards_received:
-			return {"message": f"Power Pair success! {player['name']} received {', '.join(cards_received)}"}
-		else:
-			return {"message": f"Power Pair failed - no pairs formed or no cards to take"}
-			
+		return {
+			"message": f"{player['name']} calls a Power Pair!",
+			"start_interaction": "power_pair",
+			"interaction_params": {"targetIds": list(params.get("targetIds") or [])},
+		}
+
 	def _effect_reward_challenge_its_a_numbers_game(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Reward Challenge: It's A Numbers Game card effect."""
-		active_players = [pid for pid, p in game["players"].items() if not p.get("isEliminated")]
-		if len(active_players) < 2:
-			return {"message": "Numbers Game requires at least 2 active players"}
-			
+		"""
+		Start a real Numbers Game: every player still in the game (including the
+		initiator) shows 1-5 fingers via the interaction; lowest unique number
+		steals 2 random cards from any player of their choosing.
+		"""
 		player = game["players"][player_id]
-		player_number = random.randint(1, 3)
-		
-		# Simulate numbers for other players
-		other_numbers = {}
-		for pid in active_players:
-			if pid != player_id:
-				other_numbers[pid] = random.randint(1, 3)
-				
-		# Find closest number to player's number
-		closest_players = []
-		min_distance = float('inf')
-		
-		for pid, number in other_numbers.items():
-			distance = abs(player_number - number)
-			if distance < min_distance:
-				min_distance = distance
-				closest_players = [pid]
-			elif distance == min_distance:
-				closest_players.append(pid)
-				
-		# Steal cards from closest players
-		cards_stolen = []
-		for closest_id in closest_players:
-			closest_player = game["players"][closest_id]
-			if closest_player.get("hand"):
-				stolen_card = closest_player["hand"].pop(random.randint(0, len(closest_player["hand"]) - 1))
-				player["hand"].append(stolen_card)
-				cards_stolen.append(f"{stolen_card.get('name', 'a card')} from {closest_player['name']}")
-				
-		if cards_stolen:
-			return {"message": f"Numbers Game success! {player['name']} chose {player_number} and stole {', '.join(cards_stolen)}"}
-		else:
-			return {"message": f"Numbers Game failed - closest players had no cards to steal"}
+		return {
+			"message": f"{player['name']} starts a Numbers Game!",
+			"start_interaction": "numbers_game",
+			"interaction_params": {},
+		}
 			
 	def _effect_start_challenge(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""

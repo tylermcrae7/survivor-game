@@ -379,85 +379,54 @@ class TestCriticalBugFixes(unittest.TestCase):
                 self.assertEqual(len(tribal_cards), expected_total,
                                f"{player_count}-player game should have {expected_total} tribal cards")
 
-    # Test 6: Numbers Game Range Test
+    # Test 6: Numbers Game — official rules
 
-    def test_numbers_game_reward_generates_correct_range(self):
-        """Test that 'It's a Numbers Game' reward generates values in range [1..3]"""
+    def test_numbers_game_uses_the_official_one_to_five_range(self):
+        """
+        Official: "all players (including you) will show 1-5 fingers." The old
+        implementation rolled 1-3 on the server; now every pick is a real player
+        input validated to the 1-5 range.
+        """
         game = self.gs.games[self.game_id]
         player_id = self.player_ids[0]
-        
-        # Set up game state for testing
         game["phase"] = "playing"
-        # draw_card enforces Steal -> Play -> Draw
         game["players"][player_id]["hasStolen"] = True
-        game["players"][player_id]["hasStolen"] = True
-        
+
         numbers_game_card = self.rules_engine.get_card_definition("reward_challenge_its_a_numbers_game")
         self.assertIsNotNone(numbers_game_card, "Numbers game card should exist")
-        
-        # Test multiple executions to verify range
-        generated_values = set()
-        
-        for _ in range(50):  # Run multiple times to test randomness
-            # Reset player state for each test
-            for pid in self.player_ids:
-                if "numbersGameChoice" in game["players"][pid]:
-                    del game["players"][pid]["numbersGameChoice"]
-            
-            # Execute the card effect
-            result = self.rules_engine.execute_card_effect(game, player_id, numbers_game_card, {})
-            self.assertTrue(result["success"], "Numbers game card should execute successfully")
-            
-            # Extract the generated number from the game state or result
-            # Check if any player has a numbersGameChoice (the card should generate this)
-            for pid in self.player_ids:
-                if "numbersGameChoice" in game["players"][pid]:
-                    choice = game["players"][pid]["numbersGameChoice"]
-                    generated_values.add(choice)
-        
-        # If the card doesn't set numbersGameChoice, we need to look at the implementation
-        # For now, let's test that the range is valid by checking the effect directly
-        if not generated_values:
-            # The card might generate a value differently, so test the range directly
-            # by examining the random generation in the effect
-            for _ in range(20):
-                test_value = random.randint(1, 3)  # This should be the correct range
-                generated_values.add(test_value)
-        
-        # Verify all generated values are in the correct range [1..3]
-        for value in generated_values:
-            self.assertGreaterEqual(value, 1, "Generated value should be >= 1")
-            self.assertLessEqual(value, 3, "Generated value should be <= 3")
-            self.assertIsInstance(value, int, "Generated value should be an integer")
-        
-        # Verify we can generate all values in the range
-        if len(generated_values) >= 10:  # Only check if we have enough samples
-            # We should be able to generate values across the full range
-            self.assertTrue(any(v >= 1 for v in generated_values), "Should generate values >= 1")
-            self.assertTrue(any(v <= 3 for v in generated_values), "Should generate values <= 3")
 
-    def test_numbers_game_range_boundary_values(self):
-        """Test that Numbers Game specifically generates only 1, 2, and 3"""
-        # Test that our expected range [1, 2, 3] is correct
-        valid_values = {1, 2, 3}
-        
-        # Generate many random values using the same method that should be used
-        generated_values = set()
-        for _ in range(100):
-            value = random.randint(1, 3)
-            generated_values.add(value)
-        
-        # Verify all generated values are valid
-        for value in generated_values:
-            self.assertIn(value, valid_values, 
-                         f"Generated value {value} should be in valid set {valid_values}")
-        
-        # Verify we can generate all valid values (with high probability)
-        if len(generated_values) >= 20:
-            self.assertEqual(generated_values, valid_values,
-                            "Should be able to generate all values 1, 2, 3")
+        # Playing the card starts a real interaction rather than rolling dice
+        result = self.rules_engine.execute_card_effect(game, player_id, numbers_game_card, {})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["start_interaction"], "numbers_game")
 
-    # Additional Edge Case Tests
+        from interactions import interaction_engine
+        interaction_engine.start(game, player_id, "numbers_game", {})
+
+        # 1-5 accepted, everything else rejected
+        for bad in (0, 6, -1, "banana", None):
+            reply = interaction_engine.act(game, player_id, "pick", bad)
+            self.assertFalse(reply["success"], f"{bad!r} should be rejected")
+        reply = interaction_engine.act(game, player_id, "pick", 5)
+        self.assertTrue(reply["success"], reply.get("message"))
+        game["interaction"] = None
+
+    def test_numbers_game_lowest_unique_wins(self):
+        """Official: "The player who shows the lowest UNIQUE number" wins."""
+        game = self.gs.games[self.game_id]
+        from interactions import interaction_engine
+        interaction_engine.start(game, self.player_ids[0], "numbers_game", {})
+
+        picks = {self.player_ids[0]: 1, self.player_ids[1]: 1,
+                 self.player_ids[2]: 4, self.player_ids[3]: 2}
+        for pid, n in picks.items():
+            interaction_engine.act(game, pid, "pick", n)
+
+        interaction = game["interaction"]
+        # 1 is duplicated, so 2 is the lowest unique — not 1
+        self.assertEqual(interaction["winnerId"], self.player_ids[3])
+        self.assertEqual(interaction["phase"], "choose_victim")
+        game["interaction"] = None
 
     def test_tribal_council_initialization_all_required_fields(self):
         """Test that tribal council initialization includes all required fields"""

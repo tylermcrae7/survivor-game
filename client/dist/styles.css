@@ -2140,3 +2140,100 @@
     .rps-option:hover { transform: none; }
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REWARD CHALLENGE INTERACTIONS — finger throws + the reveal
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .finger-row {
+    display: grid;
+    gap: var(--spacing-sm);
+  }
+  .finger-row.fingers-3 { grid-template-columns: repeat(3, 1fr); }
+  .finger-row.fingers-5 { grid-template-columns: repeat(5, 1fr); }
+
+  .finger-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 4.5rem;
+    border: 1px solid oklch(1 0 0 / 0.1);
+    border-radius: var(--radius-lg);
+    background: oklch(1 0 0 / 0.04);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  }
+
+  .finger-option:hover,
+  .finger-option:focus-visible {
+    border-color: var(--torch);
+    background: oklch(0.65 0.18 55 / 0.12);
+    transform: translateY(-2px);
+  }
+
+  .finger-option:active { transform: scale(0.96); }
+
+  .finger-num {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.9rem;
+    color: var(--parchment);
+    line-height: 1;
+  }
+
+  .reveal-list {
+    list-style: none;
+    margin: 0 0 var(--spacing-md);
+    padding: 0;
+    display: grid;
+    gap: var(--spacing-sm);
+  }
+
+  .reveal-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid oklch(1 0 0 / 0.08);
+    border-radius: var(--radius-md);
+    background: oklch(1 0 0 / 0.03);
+    animation: fadeIn 0.35s ease backwards;
+  }
+
+  .reveal-row:nth-child(2) { animation-delay: 0.15s; }
+  .reveal-row:nth-child(3) { animation-delay: 0.3s; }
+  .reveal-row:nth-child(4) { animation-delay: 0.45s; }
+  .reveal-row:nth-child(5) { animation-delay: 0.6s; }
+  .reveal-row:nth-child(6) { animation-delay: 0.75s; }
+
+  .reveal-name {
+    flex: 1;
+    font-family: var(--font-label);
+    letter-spacing: 0.06em;
+    color: var(--parchment);
+  }
+
+  .reveal-pick {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--torch);
+  }
+
+  .reveal-outcome {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: var(--font-size-lg);
+    color: var(--parchment);
+    line-height: 1.45;
+    text-align: center;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .reveal-ui > .btn { width: 100%; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-row { animation: none; }
+    .finger-option:hover { transform: none; }
+  }
+}

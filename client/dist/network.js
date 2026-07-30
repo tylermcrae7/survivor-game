@@ -660,6 +660,11 @@ const GameAPI = {
         return apiCall('/reactive/play_card', { gameId, playerId, cardIdx });
     },
 
+    // Reward Challenge interactions (Do Or Die / Power Pair / Numbers Game)
+    async interactionAct(gameId, playerId, action, value = null) {
+        return apiCall('/interaction/act', { gameId, playerId, action, value });
+    },
+
     async completeTheft(gameId) {
         return apiCall('/reactive/complete_theft', { gameId });
     },
