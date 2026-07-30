@@ -2,11 +2,12 @@
 # Survivor Voting App – Flask & Socket.IO
 # (Pythonista-friendly; persistence, extra-vote cards, leader swap, reset)
 
-import uuid, time, os, json, socket, re, sys, threading
+import uuid, time, os, json, socket, re, sys, threading, random
 import logging
 from pathlib import Path
 from functools import wraps
 from rules_engine import SurvivorRulesEngine, TribalPhase
+from challenges import challenge_engine, CHALLENGE_DEFINITIONS
 
 try:
     from flask import Flask, request, jsonify, send_from_directory
@@ -178,13 +179,27 @@ class GameState:
                 self.garbage_collect()
         threading.Thread(target=gc_worker, daemon=True).start()
 
-    def create_game(self):
-        """Creates a new game with a unique ID."""
+    def create_game(self, deckMode=None, expansion=None, **kwargs):
+        """
+        Creates a new game with a unique ID.
+
+        Args:
+            deckMode: "official" (the 67-card box, default) or "extended"
+                      (adds the 7 house cards: Idol Nullifier, Steal A Vote,
+                      Block A Vote, Grant Immunity)
+            expansion: True to add the 5 Orange Challenge Cards from
+                       Survivor: Let's Go To Rocks (combined mode)
+        """
         gid = str(uuid.uuid4())[:8]
+        deck_mode = "extended" if str(deckMode or "official").lower() == "extended" else "official"
         self.games[gid] = {
             'id': gid, 'players': {}, 'turnOrder': [], 'currentTurnIndex': 0,
             'phase': 'lobby', 'deck': [], 'createdAt': time.time(),
             'lastActivity': time.time(),
+            'deckMode': deck_mode,
+            'expansion': bool(expansion),
+            'necklaceHolder': None,
+            'challenge': None,
             'currentVote': {
                 "type": "single", "votes": {}, "phase": "waiting",
                 "councilLeaderId": None, "immunityPlayed": [],
@@ -246,28 +261,54 @@ class GameState:
         self._save()
         return True
     
-    def start_full_game(self, gid):
-        """Starts a full game, creating the deck and dealing cards."""
+    def start_full_game(self, gid, **kwargs):
+        """
+        Starts a full game, creating the deck and dealing cards.
+
+        Official Setup (rules steps 2-3): the 6 Vote Cards are removed from the
+        deck, each player is given exactly 1 Vote Card (extras put away), then
+        3 Action Cards are dealt face down to each player.
+        """
         g = self.games.get(gid)
         if not g or g.get("phase") != "lobby" or len(g["players"]) < 3:
             return {"success": False, "message": "Game cannot be started."}
-        
-        g["deck"] = self.rules_engine.create_deck(len(g["players"]))
+
+        g["deck"] = self.rules_engine.create_deck(
+            len(g["players"]),
+            deck_mode=g.get("deckMode", "official"),
+            expansion=bool(g.get("expansion")),
+        )
+
         for player in g["players"].values():
-            for _ in range(5):
-                if g["deck"]: player["hand"].append(g["deck"].pop(0))
-        
+            player["hand"] = []
+            # 3 Action Cards from the deck...
+            for _ in range(3):
+                if g["deck"]:
+                    player["hand"].append(g["deck"].pop(0))
+            # ...plus exactly 1 Vote Card, which never sat in the deck.
+            player["hand"].append({"type": "vote"})
+
+        self.rules_engine.sync_vote_counters(g)
         g["phase"] = "playing"
+        g["necklaceHolder"] = None
+        g["challenge"] = None
         self._save()
         return {"success": True, "message": "Game started!"}
-    
+
     def get_game_state(self, gid):
-        """Returns the complete state of a game."""
+        """Returns the complete state of a game (hidden challenge info stripped)."""
         game = self.games.get(gid)
         if not game: return None
         import copy
         enriched_game = copy.deepcopy(game)
-        # Add any derived state for the client here
+        # Keep derived vote-card counters honest for the client
+        self.rules_engine.sync_vote_counters(enriched_game)
+        # Strip hidden challenge information (secret rock pulls) before it leaves
+        # the server — these keys are only revealed at the reveal step.
+        challenge = enriched_game.get("challenge")
+        if isinstance(challenge, dict):
+            for key in [k for k in challenge if k.startswith("_")]:
+                del challenge[key]
         return enriched_game
     
     def _get_council_leader_id(self, game):
@@ -347,70 +388,99 @@ class GameState:
             
         if not voterId:
             return {"success": False, "message": "Voter ID required"}
-            
-        if not votesData:
-            return {"success": False, "message": "Vote data required"}
-            
+
         game = self.games[gid]
         current_vote = game.get("currentVote")
-        
+
         if not current_vote or current_vote.get("phase") != "voting":
             return {"success": False, "message": "Voting is not currently active"}
-            
+
         # Validate voter
         voter = game["players"].get(voterId)
         if not voter:
             return {"success": False, "message": "Invalid voter"}
-            
+
         if voter.get("isEliminated", False):
             return {"success": False, "message": "Eliminated players cannot vote"}
-            
+
         if voter.get("voteBanned", False):
             return {"success": False, "message": "Player is banned from voting this round"}
-            
+
         if voter.get("hasVoted", False):
             return {"success": False, "message": "Player has already voted"}
-            
-        # Calculate total votes this player can cast
-        base_votes = 1
-        extra_votes = voter.get("extraVotes", 0)
-        total_votes_available = base_votes + extra_votes
-        
+
+        # ── Vote card economy (F2) ──
+        # Vote Cards and Goodwill Gambles MUST be placed in the Voting Box at this
+        # Tribal Council; Extra Vote Cards MAY be used now or saved for later.
+        mandatory_votes, optional_votes = self.rules_engine.get_vote_capacity(voter)
+        total_votes_available = mandatory_votes + optional_votes
+
+        if votesData is None:
+            votesData = []
+
         # Validate vote data format
         if not isinstance(votesData, list):
             return {"success": False, "message": "Vote data must be a list"}
-            
+
         total_votes_cast = sum(vote.get("votes", 0) for vote in votesData)
+
+        if total_votes_available == 0:
+            if total_votes_cast > 0:
+                return {"success": False, "message": "You have no Vote Card — you can't cast a vote at this Tribal Council"}
+            # Passing the Voting Box along with no Vote Card is legal.
+            current_vote["votes"][voterId] = {}
+            voter["hasVoted"] = True
+            self._save()
+            logger.info(f"Player {voterId} had no vote cards and passed in game {gid}")
+            return {"success": True, "message": "You have no Vote Card — the Voting Box passes you by"}
+
         if total_votes_cast > total_votes_available:
             return {"success": False, "message": f"Cannot cast {total_votes_cast} votes - only {total_votes_available} available"}
-            
+
+        if total_votes_cast < mandatory_votes:
+            return {
+                "success": False,
+                "message": (
+                    f"You must cast all {mandatory_votes} of your Vote/Goodwill Gamble cards "
+                    f"at this Tribal Council (tried to cast {total_votes_cast})"
+                ),
+            }
+
         # Validate all targets are valid and not immune
+        necklace_holder = game.get("necklaceHolder")
         vote_targets = {}
         for vote in votesData:
             target_id = vote.get("targetId")
             vote_count = vote.get("votes", 0)
-            
+
             if not target_id or target_id not in game["players"]:
                 return {"success": False, "message": f"Invalid vote target: {target_id}"}
-                
+
             target = game["players"][target_id]
             if target.get("isEliminated", False):
                 return {"success": False, "message": f"Cannot vote for eliminated player: {target.get('name', target_id)}"}
-                
+
+            if necklace_holder and target_id == necklace_holder:
+                return {
+                    "success": False,
+                    "message": f"{target.get('name', target_id)} is wearing the Immunity Idol Necklace and can't be voted for",
+                }
+
             # Accumulate votes for same target
             vote_targets[target_id] = vote_targets.get(target_id, 0) + vote_count
-            
+
         # Record the votes
         current_vote["votes"][voterId] = vote_targets
         voter["hasVoted"] = True
-        
-        # Use up extra votes
-        if extra_votes > 0:
-            voter["extraVotes"] = max(0, voter["extraVotes"] - (total_votes_cast - base_votes))
-            
+
+        # Physically spend the cards used to vote
+        spent = self.rules_engine.spend_vote_cards(voter, total_votes_cast)
+        current_vote.setdefault("cardsSpent", []).extend(c.get("type") for c in spent)
+        self.rules_engine.sync_vote_counters(game)
+
         self._save()
-        logger.info(f"Player {voterId} cast {total_votes_cast} votes in game {gid}")
-        
+        logger.info(f"Player {voterId} cast {total_votes_cast} votes in game {gid} (spent {len(spent)} cards)")
+
         return {"success": True, "message": f"Vote cast successfully - {total_votes_cast} votes recorded"}
 
     def play_immunity(self, gid, playerId=None, targetId=None, **kwargs):
@@ -593,24 +663,28 @@ class GameState:
             
         # Advance to reveal phase
         current_vote["phase"] = "reveal"
-        
+
         # Tally all votes
         vote_counts = {}
         for voter_id, vote_targets in current_vote["votes"].items():
             for target_id, vote_count in vote_targets.items():
                 vote_counts[target_id] = vote_counts.get(target_id, 0) + vote_count
-                
+
+        raw_vote_counts = dict(vote_counts)
+
         # Apply immunity idol protection
         protected_players = set()
+        idol_players = set()
         for player_id, player in game["players"].items():
             if player.get("immunityIdolProtection", False):
                 # Check if idol was nullified
                 if not player.get("idolNullified", False):
                     protected_players.add(player_id)
+                    idol_players.add(player_id)
                     if player_id in vote_counts:
                         logger.info(f"Player {player_id} protected by immunity idol - {vote_counts[player_id]} votes negated")
                         del vote_counts[player_id]
-                        
+
         # Apply temporary immunity (from cards like grant_immunity)
         for player_id, player in game["players"].items():
             if player.get("temporaryImmunity", False):
@@ -618,81 +692,97 @@ class GameState:
                 if player_id in vote_counts:
                     logger.info(f"Player {player_id} protected by temporary immunity - {vote_counts[player_id]} votes negated")
                     del vote_counts[player_id]
-                    
-        # Determine elimination type
+
+        # The Immunity Idol Necklace makes its wearer un-votable; treat them like an
+        # idol player so the Council Leader can only pick them as a last resort.
+        necklace_holder = game.get("necklaceHolder")
+        if necklace_holder and necklace_holder in game["players"]:
+            protected_players.add(necklace_holder)
+            idol_players.add(necklace_holder)
+            vote_counts.pop(necklace_holder, None)
+
+        # Determine eliminations using the official tie / double-elimination cascade
         elimination_type = current_vote.get("type", "single")
-        eliminations_needed = 1 if elimination_type == "single" else 2
-        
-        # Sort players by vote count (highest first)
-        sorted_votes = sorted(vote_counts.items(), key=lambda x: x[1], reverse=True)
-        
-        # Find players to eliminate
-        if not sorted_votes:
-            # No valid votes - need tie-breaker among all eligible players
-            eligible_players = [pid for pid, p in game["players"].items() 
-                             if not p.get("isEliminated", False) and pid not in protected_players]
-            current_vote["tieBreakNeeded"] = True
-            current_vote["tiedPlayers"] = eligible_players
-            current_vote["eliminated"] = []
-        else:
-            # Check for ties at elimination threshold
-            if len(sorted_votes) > eliminations_needed:
-                elimination_threshold = sorted_votes[eliminations_needed - 1][1]
-                tied_at_threshold = [pid for pid, votes in sorted_votes if votes == elimination_threshold]
-                
-                if len(tied_at_threshold) > 1:
-                    # Tie detected - need council leader to break
-                    current_vote["tieBreakNeeded"] = True
-                    current_vote["tiedPlayers"] = tied_at_threshold
-                    current_vote["eliminated"] = []
-                else:
-                    # No tie - clear eliminations
-                    current_vote["tieBreakNeeded"] = False
-                    current_vote["eliminated"] = [pid for pid, _ in sorted_votes[:eliminations_needed]]
-            else:
-                # Not enough players with votes - eliminate all with votes
-                current_vote["tieBreakNeeded"] = False
-                current_vote["eliminated"] = [pid for pid, _ in sorted_votes[:eliminations_needed]]
-                
+        outcome = self.rules_engine.resolve_tribal_eliminations(
+            game,
+            vote_counts,
+            protected_players=protected_players,
+            idol_players=idol_players,
+            elimination_type=elimination_type,
+        )
+
+        current_vote["eliminated"] = outcome["eliminated"]
+        current_vote["tieBreakNeeded"] = outcome["tieBreakNeeded"]
+        current_vote["tiedPlayers"] = outcome["tiedPlayers"]
+        current_vote["eliminationsNeeded"] = outcome["eliminationsNeeded"]
+        current_vote["finalTribalAfter"] = outcome["finalTribalAfter"]
+        current_vote["resolution"] = outcome["reason"]
+
         # Store vote results for display
         current_vote["voteResults"] = vote_counts
+        current_vote["rawVoteResults"] = raw_vote_counts
         current_vote["protectedPlayers"] = list(protected_players)
-        
-        self._save()
-        logger.info(f"Vote reveal completed in game {gid} - {len(current_vote['eliminated'])} eliminated, tie-break needed: {current_vote['tieBreakNeeded']}")
-        
-        if current_vote["tieBreakNeeded"]:
-            return {"success": True, "message": f"Votes revealed - tie-break needed between {len(current_vote['tiedPlayers'])} players"}
-        else:
-            return {"success": True, "message": f"Votes revealed - {len(current_vote['eliminated'])} players eliminated"}
 
-    def tie_break(self, gid, leaderId=None, chosenId=None, **kwargs):
+        self._save()
+        logger.info(
+            f"Vote reveal completed in game {gid} - {len(current_vote['eliminated'])} voted out, "
+            f"tie-break needed: {current_vote['tieBreakNeeded']} ({outcome['reason']})"
+        )
+
+        if current_vote["tieBreakNeeded"]:
+            picks_left = outcome["eliminationsNeeded"] - len(outcome["eliminated"])
+            return {
+                "success": True,
+                "message": (
+                    f"Votes revealed - Council Leader must choose {picks_left} of "
+                    f"{len(current_vote['tiedPlayers'])} players. {outcome['reason']}"
+                ),
+                "resolution": outcome["reason"],
+            }
+        else:
+            return {
+                "success": True,
+                "message": f"Votes revealed - {len(current_vote['eliminated'])} players voted out. {outcome['reason']}",
+                "resolution": outcome["reason"],
+            }
+
+    def tie_break(self, gid, leaderId=None, chosenId=None, chosenIds=None, **kwargs):
         """
         Handle tie-break scenarios during tribal council.
-        
+
+        The Council Leader may need to pick 1 or 2 players depending on the
+        elimination type and how the votes landed (see the official cascade in
+        SurvivorRulesEngine.resolve_tribal_eliminations). Picks may be submitted
+        one at a time or as a list.
+
         Args:
             gid: Game ID
             leaderId: ID of tribal council leader making the decision
-            chosenId: ID of player chosen for elimination
+            chosenId: ID of a single player chosen to be voted out
+            chosenIds: list of player IDs chosen to be voted out
         """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-            
+
         if not leaderId:
             return {"success": False, "message": "Leader ID required for tie-break"}
-            
-        if not chosenId:
+
+        picks = [p for p in (list(chosenIds) if chosenIds else []) if p]
+        if chosenId and chosenId not in picks:
+            picks.insert(0, chosenId)
+
+        if not picks:
             return {"success": False, "message": "Chosen player ID required for tie-break"}
-            
+
         game = self.games[gid]
         current_vote = game.get("currentVote")
-        
+
         if not current_vote:
             return {"success": False, "message": "No active tribal council found"}
-            
+
         if not current_vote.get("tieBreakNeeded", False):
             return {"success": False, "message": "No tie-break is needed"}
-            
+
         # Validate tribal council leader
         council_leader_id = current_vote.get("councilLeaderId")
         if not council_leader_id:
@@ -702,51 +792,53 @@ class GameState:
                     council_leader_id = pid
                     current_vote["councilLeaderId"] = pid
                     break
-                    
+
         if leaderId != council_leader_id:
             return {"success": False, "message": "Only the tribal council leader can break ties"}
-            
-        # Validate chosen player is in tied players list
-        tied_players = current_vote.get("tiedPlayers", [])
-        if chosenId not in tied_players:
-            return {"success": False, "message": f"Chosen player must be one of the tied players: {tied_players}"}
-            
-        # Validate chosen player exists and is not eliminated
-        chosen_player = game["players"].get(chosenId)
-        if not chosen_player:
-            return {"success": False, "message": "Invalid chosen player"}
-            
-        if chosen_player.get("isEliminated", False):
-            return {"success": False, "message": "Cannot eliminate already eliminated player"}
-            
-        # Resolve tie-break
-        elimination_type = current_vote.get("type", "single")
-        eliminations_needed = 1 if elimination_type == "single" else 2
-        
-        # For single elimination, just choose the one player
-        if elimination_type == "single":
-            current_vote["eliminated"] = [chosenId]
-        else:
-            # For double elimination, need to handle differently
-            # If there are enough tied players, eliminate up to the limit
-            if len(tied_players) >= eliminations_needed:
-                # Leader chooses first, then need additional logic for second elimination
-                current_vote["eliminated"] = [chosenId]
-                # For simplicity, if double elimination needed and tie, eliminate all tied players up to limit
-                remaining_spots = eliminations_needed - 1
-                remaining_tied = [pid for pid in tied_players if pid != chosenId]
-                current_vote["eliminated"].extend(remaining_tied[:remaining_spots])
-            else:
-                current_vote["eliminated"] = [chosenId]
-                
-        # Clear tie-break state
-        current_vote["tieBreakNeeded"] = False
+
+        tied_players = list(current_vote.get("tiedPlayers", []))
+        eliminated = list(current_vote.get("eliminated", []))
+        eliminations_needed = current_vote.get(
+            "eliminationsNeeded",
+            2 if current_vote.get("type") == "double" else 1,
+        )
+
+        for chosen_id in picks:
+            if len(eliminated) >= eliminations_needed:
+                break
+
+            if chosen_id not in tied_players:
+                return {"success": False, "message": f"Chosen player must be one of the tied players: {tied_players}"}
+
+            chosen_player = game["players"].get(chosen_id)
+            if not chosen_player:
+                return {"success": False, "message": "Invalid chosen player"}
+
+            if chosen_player.get("isEliminated", False):
+                return {"success": False, "message": "Cannot eliminate already eliminated player"}
+
+            eliminated.append(chosen_id)
+            tied_players.remove(chosen_id)
+
+        current_vote["eliminated"] = eliminated
+        current_vote["tiedPlayers"] = tied_players
         current_vote["tieBreakResolvedBy"] = leaderId
-        
+
+        picks_left = eliminations_needed - len(eliminated)
+        if picks_left > 0 and tied_players:
+            current_vote["tieBreakNeeded"] = True
+            self._save()
+            return {
+                "success": True,
+                "message": f"Tie-break in progress - Council Leader must choose {picks_left} more player(s)",
+                "picksRemaining": picks_left,
+            }
+
+        current_vote["tieBreakNeeded"] = False
         self._save()
-        logger.info(f"Tie-break resolved by {leaderId} in game {gid} - eliminated: {current_vote['eliminated']}")
-        
-        return {"success": True, "message": f"Tie-break resolved - {len(current_vote['eliminated'])} players eliminated"}
+        logger.info(f"Tie-break resolved by {leaderId} in game {gid} - voted out: {eliminated}")
+
+        return {"success": True, "message": f"Tie-break resolved - {len(eliminated)} players voted out"}
 
     def complete_tribal(self, gid, **kwargs):
         """
@@ -767,46 +859,101 @@ class GameState:
         if current_vote.get("tieBreakNeeded", False):
             return {"success": False, "message": "Cannot complete tribal council - tie-break needed"}
             
-        eliminated_players = current_vote.get("eliminated", [])
-        
-        if not eliminated_players:
+        voted_out_players = current_vote.get("eliminated", [])
+
+        if not voted_out_players:
             return {"success": False, "message": "No players marked for elimination"}
-            
-        # Process eliminations
+
+        # ── Process vote-outs against Survivor Character Cards (F1) ──
+        # Official rules: "As long as you have at least one Survivor Character Card,
+        # you're still in the game." A vote-out turns over ONE card; you are only
+        # eliminated (and join the Jury) when both have been turned over.
         inheritance_messages = []
         jury_members = []
-        
-        for player_id in eliminated_players:
+        eliminated_players = []
+        survived_players = []
+
+        for player_id in voted_out_players:
             player = game["players"].get(player_id)
             if not player:
                 continue
-                
-            # Mark player as eliminated
+
+            remaining = max(0, player.get("characterCards", 2) - 1)
+            player["characterCards"] = remaining
+            player_name = player.get("name", player_id)
+
+            if remaining > 0:
+                # Still in the game — one torch left burning.
+                survived_players.append(player_name)
+                logger.info(
+                    f"Player {player_id} turned over a Survivor Character Card "
+                    f"({remaining} left) in game {gid}"
+                )
+                continue
+
+            # Both Survivor Character Cards are gone — truly eliminated.
             player["isEliminated"] = True
             player["isActive"] = False
-            
+            eliminated_players.append(player_id)
+
             # Add to jury (eliminated players become jury members for final tribal)
             if "jury" not in game:
                 game["jury"] = []
-            game["jury"].append(player_id)
-            jury_members.append(player.get("name", player_id))
-            
-            # Process inheritance effects
+            if player_id not in game["jury"]:
+                game["jury"].append(player_id)
+            jury_members.append(player_name)
+
+            # Process inheritance effects — only fires on TRUE elimination
             inheritance_results = self.rules_engine.process_elimination_inheritance(game, player_id)
             inheritance_messages.extend(inheritance_results)
-            
+
             logger.info(f"Player {player_id} eliminated and added to jury in game {gid}")
-            
+
+        # ── Return 1 Vote Card to every player still in the game ──
+        # "After voting has ended, return 1 Vote Card to every player who still has
+        #  at least one Survivor Character Card left in the game."
+        vote_cards_returned = []
+        for player_id, player in game["players"].items():
+            if player.get("isEliminated", False):
+                continue
+            player.setdefault("hand", []).append({"type": "vote"})
+            vote_cards_returned.append(player_id)
+
         # Reset per-tribal flags using rules engine
         self.rules_engine._reset_post_tribal_flags(game)
-        
-        # Check if final tribal should trigger (2 players remaining)
+
+        # The Immunity Idol Necklace returns to the middle of the table when the
+        # Tribal Council ends (Let's Go To Rocks combined mode).
+        necklace_released = game.get("necklaceHolder")
+        game["necklaceHolder"] = None
+
+        self.rules_engine.sync_vote_counters(game)
+
+        # Check if final tribal should trigger (2 players remaining, regardless of
+        # how many Survivor Character Cards they have left)
         active_players = [pid for pid, p in game["players"].items() if not p.get("isEliminated", False)]
-        
-        if len(active_players) == 2:
+
+        if len(active_players) == 1:
+            # Degenerate case the tie cascade tries to avoid; the last player standing wins.
+            winner_id = active_players[0]
+            game["phase"] = "finished"
+            game["winner"] = {
+                "playerId": winner_id,
+                "playerName": game["players"][winner_id].get("name", winner_id),
+            }
+            if "currentVote" in game:
+                del game["currentVote"]
+            message = (
+                f"Tribal council completed - {game['players'][winner_id].get('name', winner_id)} "
+                "is the last player left in the game and wins!"
+            )
+        elif len(active_players) == 2:
             # Trigger final tribal council
             self._start_final_tribal_council(game, active_players)
-            message = f"Tribal council completed - {len(eliminated_players)} eliminated. Final Tribal Council begins!"
+            message = (
+                f"Tribal council completed - {len(voted_out_players)} voted out. "
+                "Final Tribal Council begins!"
+            )
         else:
             # Return to normal game play
             game["phase"] = "playing"
@@ -820,45 +967,73 @@ class GameState:
 
             # Advance turn to next player if needed
             if "turnOrder" in game and game["turnOrder"]:
-                # Find next active player
-                current_index = game.get("currentTurnIndex", 0)
                 turn_order = game["turnOrder"]
 
-                # Find next active player
-                attempts = 0
-                while attempts < len(turn_order):
-                    current_index = (current_index + 1) % len(turn_order)
-                    next_player_id = turn_order[current_index]
-                    if not game["players"][next_player_id].get("isEliminated", False):
-                        break
-                    attempts += 1
+                # "I'm The Leader Now" gives its player the next turn once tribal ends
+                pending = game.pop("pendingTurnPlayerId", None)
+                if pending and pending in turn_order and not game["players"][pending].get("isEliminated", False):
+                    game["currentTurnIndex"] = turn_order.index(pending)
+                else:
+                    # Find next active player
+                    current_index = game.get("currentTurnIndex", 0)
+                    attempts = 0
+                    while attempts < len(turn_order):
+                        current_index = (current_index + 1) % len(turn_order)
+                        next_player_id = turn_order[current_index]
+                        if not game["players"][next_player_id].get("isEliminated", False):
+                            break
+                        attempts += 1
 
-                game["currentTurnIndex"] = current_index
+                    game["currentTurnIndex"] = current_index
 
-            message = f"Tribal council completed - {len(eliminated_players)} eliminated. Game continues with {len(active_players)} players."
-            
+            # Fresh turn — the new current player still owes a Steal before drawing
+            for player in game["players"].values():
+                player["hasStolen"] = False
+
+            message = (
+                f"Tribal council completed - {len(voted_out_players)} voted out "
+                f"({len(eliminated_players)} eliminated). Game continues with "
+                f"{len(active_players)} players."
+            )
+
+        game.pop("pendingTurnPlayerId", None)
+
         # Record elimination in game history
         if "gameHistory" not in game:
             game["gameHistory"] = []
-            
+
         elimination_record = {
             "type": "tribal_council_elimination",
+            "voted_out": voted_out_players,
             "eliminated": eliminated_players,
+            "survived_with_one_card": survived_players,
             "elimination_type": current_vote.get("type", "single"),
             "vote_results": current_vote.get("voteResults", {}),
             "jury_members": jury_members,
+            "vote_cards_returned": len(vote_cards_returned),
             "timestamp": time.time()
         }
-        
+        if necklace_released:
+            elimination_record["necklace_released_from"] = necklace_released
+
         if inheritance_messages:
             elimination_record["inheritance"] = inheritance_messages
-            
+
         game["gameHistory"].append(elimination_record)
-        
+
         self._save()
-        logger.info(f"Tribal council completed in game {gid} - {len(eliminated_players)} eliminated, {len(active_players)} remaining")
-        
-        result = {"success": True, "message": message}
+        logger.info(
+            f"Tribal council completed in game {gid} - {len(voted_out_players)} voted out, "
+            f"{len(eliminated_players)} eliminated, {len(active_players)} remaining"
+        )
+
+        result = {
+            "success": True,
+            "message": message,
+            "votedOut": voted_out_players,
+            "eliminated": eliminated_players,
+            "survivedWithOneCard": survived_players,
+        }
         if inheritance_messages:
             result["inheritance_messages"] = inheritance_messages
 
@@ -913,37 +1088,50 @@ class GameState:
                 return
             attempts += 1
 
-    def _trigger_tribal_council(self, game, elimination_type):
+    def _trigger_tribal_council(self, game, elimination_type="single", drawer_id=None):
         """
         Trigger a tribal council when a tribal council card is drawn.
-        
+
         Args:
             game: Game state dictionary
             elimination_type: Type of elimination ("single" or "double")
+            drawer_id: Player who drew the card — they become the Council Leader
         """
         # Transition game from "playing" to "tribal_council" phase
         game["phase"] = "tribal_council"
-        
+
+        if drawer_id and drawer_id in game.get("players", {}):
+            for pid, player in game["players"].items():
+                player["isCouncilLeader"] = (pid == drawer_id)
+            leader_id = drawer_id
+        else:
+            leader_id = self._get_council_leader_id(game)
+
         # Initialize the currentVote structure for tribal council
         game["currentVote"] = {
             "type": elimination_type,
             "phase": "announcement",  # Start with announcement phase
             "votes": {},
-            "councilLeaderId": game.get("councilLeaderId"),
+            "councilLeaderId": leader_id,
             "immunityPlayed": [],
             "advantageCardsPlayed": [],
             "tieBreakNeeded": False,
             "tiedPlayers": [],
             "eliminated": [],
+            "eliminationsNeeded": 2 if elimination_type == "double" else 1,
             "voteResults": {}
         }
-        
+
         # Clear previous tribal council state flags
         for player in game["players"].values():
             player["hasVoted"] = False
             player["immunityPlayed"] = False
-            
-        logger.info(f"Triggered tribal council with {elimination_type} elimination")
+
+        logger.info(f"Triggered tribal council with {elimination_type} elimination (leader={leader_id})")
+
+    def _initialize_tribal_council(self, game, elimination_type="single", drawer_id=None):
+        """Alias for _trigger_tribal_council (older call sites use this name)."""
+        return self._trigger_tribal_council(game, elimination_type, drawer_id)
 
     def reset_tribal_council(self, gid, **kwargs):
         """Reset current tribal council."""
@@ -1045,11 +1233,14 @@ class GameState:
 
         return result
 
-    def enhanced_tie_break(self, gid, **kwargs):
-        """Handle enhanced tie break."""
+    def enhanced_tie_break(self, gid, leaderId=None, chosenIds=None, chosenId=None, **kwargs):
+        """
+        Handle a multi-pick tie break (double elimination where the Council Leader
+        chooses 2 players). Thin wrapper over tie_break, which accepts a list.
+        """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        return {"success": True, "message": "Feature not yet implemented"}
+        return self.tie_break(gid, leaderId=leaderId, chosenId=chosenId, chosenIds=chosenIds)
 
     def _start_final_tribal_council(self, game, finalists):
         """
@@ -1079,10 +1270,11 @@ class GameState:
             "leader": leader_id,
             "votes": {},
             "juryReady": [],
+            # The official three Final Tribal Council questions (F10)
             "questions": [
-                "What was your biggest strategic move?",
-                "Why do you deserve to win?",
-                "How did you adapt your strategy throughout the game?"
+                "What was your strategy coming into the game?",
+                "What was your best move in the game?",
+                "How did you outplay your opponent?"
             ],
             "voteCounts": {},
             "tieBreakNeeded": False
@@ -1404,15 +1596,21 @@ class GameState:
             "newLeaderId": newLeaderId
         }
 
-    def steal_card(self, gid, **kwargs):
-        """Steal card from another player."""
+    def steal_card(self, gid, thiefId=None, targetId=None, **kwargs):
+        """
+        Steal card from another player.
+
+        Accepts ``steal_card(gid, thiefId=..., targetId=...)`` or the positional
+        form ``steal_card(gid, thief_id, target_id)``.
+        """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        
+
         game = self.games[gid]
-        thief_id = kwargs.get('thiefId')
-        target_id = kwargs.get('targetId')
-        
+        thief_id = thiefId or kwargs.get('thiefId') or kwargs.get('playerId')
+        target_id = targetId or kwargs.get('targetId')
+
+
         if not thief_id or not target_id:
             return {"success": False, "message": "Both thiefId and targetId are required"}
         
@@ -1428,6 +1626,10 @@ class GameState:
         # Prevent stealing from yourself
         if thief_id == target_id:
             return {"success": False, "message": "Cannot steal from yourself"}
+
+        blocked = self._challenge_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
 
         thief = game["players"][thief_id]
         target = game["players"][target_id]
@@ -1482,30 +1684,61 @@ class GameState:
         else:
             return {"success": False, "message": theft_result.get("message", "Theft failed")}
 
-    def play_card(self, gid, **kwargs):
-        """Play a card."""
+    def get_complete_card(self, card_type):
+        """Resolve a card type name into a full card dict (None if unknown)."""
+        return self.rules_engine.get_complete_card(card_type)
+
+    def play_card(self, gid, playerId=None, cardIdx=None, params=None, **kwargs):
+        """
+        Play a card.
+
+        Accepts either the keyword form used by the HTTP layer
+        (``playerId``/``cardIdx`` plus card params as top-level kwargs) or the
+        positional form ``play_card(gid, player_id, card_idx, {"targetId": ...})``.
+        ``cardIdx`` may be a hand index or a card type name.
+        """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        
+
         game = self.games[gid]
-        player_id = kwargs.get('playerId')
-        card_idx = kwargs.get('cardIdx')
-        
+        player_id = playerId or kwargs.get('playerId')
+        card_idx = cardIdx if cardIdx is not None else kwargs.get('cardIdx')
+        if isinstance(params, dict):
+            kwargs = {**params, **kwargs}
+
         if not player_id or card_idx is None:
             return {"success": False, "message": "Both playerId and cardIdx are required"}
-        
+
         if player_id not in game["players"]:
             return {"success": False, "message": "Invalid player ID"}
-        
+
+        # Allow addressing a card by type name as well as by hand index
+        if isinstance(card_idx, str) and not card_idx.lstrip('-').isdigit():
+            hand = game["players"][player_id].get("hand", [])
+            match = next((i for i, c in enumerate(hand) if c.get("type") == card_idx), None)
+            if match is None:
+                return {"success": False, "message": f"Player does not have a {card_idx} card"}
+            card_idx = match
+        else:
+            try:
+                card_idx = int(card_idx)
+            except (TypeError, ValueError):
+                return {"success": False, "message": "Invalid card index"}
+
+
         player = game["players"][player_id]
-        
+
         if player.get("isEliminated", False):
             return {"success": False, "message": "Eliminated players cannot play cards"}
-        
+
+        blocked = self._challenge_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
+
         hand = player.get("hand", [])
         if card_idx < 0 or card_idx >= len(hand):
             return {"success": False, "message": "Invalid card index"}
-        
+
         compact_card = hand[card_idx]
         card = self.rules_engine.resolve_card(compact_card)
         
@@ -1530,34 +1763,138 @@ class GameState:
         
         # Handle tribal council card triggers
         if card.get("category") == "tribal_council":
-            game["phase"] = "tribal_council"
-            game["currentVote"] = {
-                "type": card.get("elimination_type", "single"),
-                "votes": {},
-                "phase": "announcement",
-                "councilLeaderId": self._get_council_leader_id(game),
-                "immunityPlayed": [],
-                "tieBreakNeeded": False,
-                "tiedPlayers": [],
-                "eliminated": []
-            }
-            
+            self._trigger_tribal_council(
+                game,
+                card.get("elimination_type", "single"),
+                drawer_id=player_id,
+            )
+
+        # Handle Let's Go To Rocks Challenge Card triggers
+        challenge_message = None
+        challenge_started = False
+        if effect_result.get("start_challenge"):
+            start_result = challenge_engine.start(game, player_id, effect_result["start_challenge"])
+            challenge_message = start_result.get("message")
+            challenge_started = bool(start_result.get("success")) and not start_result.get("unavailable")
+            if not start_result.get("success"):
+                # The challenge couldn't run — the card is still discarded, but say why.
+                challenge_message = start_result.get("message")
+
+        self.rules_engine.sync_vote_counters(game)
         self._save()
-        return {
-            "success": True, 
-            "message": effect_result.get("message", f"Played {card.get('name', 'card')}"),
+        response = {
+            "success": True,
+            "message": challenge_message or effect_result.get("message", f"Played {card.get('name', 'card')}"),
             "card_effect": effect_result,
             "tribal_triggered": card.get("category") == "tribal_council"
         }
+        if effect_result.get("start_challenge"):
+            response["challenge_started"] = challenge_started
+        return response
 
-    def draw_card(self, gid, **kwargs):
-        """Draw a card."""
+    # ═══════════════════════════ Rocks Expansion Challenges ═══════════════════════════
+    def _challenge_block_reason(self, game):
+        """Return an error message if an unfinished Challenge blocks other actions."""
+        challenge = game.get("challenge")
+        if challenge and challenge.get("phase") not in (None, "complete"):
+            return f"Resolve the active Challenge ({challenge.get('name')}) before continuing your turn"
+        return None
+
+    def _award_challenge_win(self, game, winner_id):
+        """
+        Apply the reward for winning a Challenge.
+
+        "When you win a Challenge from Survivor: Let's Go To Rocks, put on the
+        Immunity Idol Necklace. While wearing it, players can't vote for you in the
+        next Tribal Council. ... If someone is already wearing the Immunity Idol
+        Necklace when you win a Challenge, you instead get to take 3 random cards
+        from anywhere in the Draw Pile. You CAN'T take Tribal Council cards."
+        """
+        winner = game["players"].get(winner_id)
+        if not winner:
+            return "Challenge winner is no longer in the game"
+
+        name = winner.get("name", winner_id)
+
+        if not game.get("necklaceHolder"):
+            game["necklaceHolder"] = winner_id
+            return f"{name} wears the Immunity Idol Necklace — nobody can vote for them at the next Tribal Council!"
+
+        # Someone already wears the Necklace → take 3 random non-tribal cards
+        deck = game.get("deck", [])
+        eligible = [
+            i for i, card in enumerate(deck)
+            if not str(card.get("type", "")).startswith("tribal_council")
+        ]
+        picked = sorted(random.sample(eligible, min(3, len(eligible))), reverse=True)
+        taken = []
+        for idx in picked:
+            taken.append(deck.pop(idx))
+        winner.setdefault("hand", []).extend(taken)
+        self.rules_engine.sync_vote_counters(game)
+
+        holder_name = game["players"].get(game["necklaceHolder"], {}).get("name", "another player")
+        return (
+            f"{name} won the Challenge, but {holder_name} already wears the Immunity Idol Necklace — "
+            f"{name} takes {len(taken)} random cards from the Draw Pile instead."
+        )
+
+    def challenge_action(self, gid, playerId=None, action=None, value=None, **kwargs):
+        """
+        Take an action in the active Rocks Challenge.
+
+        Args:
+            gid: Game ID
+            playerId: player acting
+            action: 'bid' | 'pass' | 'pull' | 'steal' | 'dismiss'
+            value: bid amount, rock count, or steal target depending on the action
+        """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        
+
         game = self.games[gid]
-        player_id = kwargs.get('playerId')
-        
+
+        if not playerId:
+            return {"success": False, "message": "playerId is required"}
+        if not action:
+            return {"success": False, "message": "action is required"}
+
+        challenge = game.get("challenge")
+        if not challenge:
+            return {"success": False, "message": "No Challenge is in progress"}
+
+        if action == "dismiss":
+            if challenge.get("phase") != "complete":
+                return {"success": False, "message": "The Challenge is still in progress"}
+            game["challenge"] = None
+            self._save()
+            return {"success": True, "message": "Challenge cleared"}
+
+        result = challenge_engine.action(game, playerId, action, value)
+
+        if result.get("success") and result.get("challengeWon"):
+            reward_message = self._award_challenge_win(game, result["challengeWon"])
+            result["message"] = f"{result.get('message', '')} {reward_message}".strip()
+            result["reward"] = reward_message
+            challenge_engine._log(game["challenge"], reward_message)
+
+        if result.get("success"):
+            self._save()
+
+        return result
+
+    def draw_card(self, gid, playerId=None, **kwargs):
+        """
+        Draw a card.
+
+        Accepts ``draw_card(gid, playerId=...)`` or ``draw_card(gid, player_id)``.
+        """
+        if gid not in self.games:
+            return {"success": False, "message": "Game not found"}
+
+        game = self.games[gid]
+        player_id = playerId or kwargs.get('playerId')
+
         if not player_id:
             return {"success": False, "message": "playerId is required"}
         
@@ -1575,10 +1912,28 @@ class GameState:
         if turn_order and turn_order[current_index] != player_id:
             return {"success": False, "message": "It's not your turn to draw"}
 
+        blocked = self._challenge_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
+
+        # ── Enforce the official turn order: Steal → Play (optional) → Draw (F5) ──
+        turn_phase = self.rules_engine.get_current_turn_phase(game, player_id)
+        if turn_phase == "turn_steal":
+            return {
+                "success": False,
+                "message": "You must steal a card first — your turn is Steal, then Play (optional), then Draw.",
+            }
+
+        if game.get("pending_theft", {}).get("reactive_window_open"):
+            return {
+                "success": False,
+                "message": "Your steal is still being resolved — wait for the reactive card window to close.",
+            }
+
         deck = game.get("deck", [])
         if not deck:
             return {"success": True, "message": "Deck is empty - no cards to draw"}
-        
+
         # Get number of cards to draw (including draw bonuses)
         draw_count = self.rules_engine.get_card_draw_count(player)
         
@@ -1595,18 +1950,13 @@ class GameState:
             # Check for tribal council card
             if resolved_card.get("category") == "tribal_council":
                 tribal_triggered = True
-                # Tribal cards trigger immediately when drawn
-                game["phase"] = "tribal_council"
-                game["currentVote"] = {
-                    "type": resolved_card.get("elimination_type", "single"),
-                    "votes": {},
-                    "phase": "announcement",
-                    "councilLeaderId": self._get_council_leader_id(game),
-                    "immunityPlayed": [],
-                    "tieBreakNeeded": False,
-                    "tiedPlayers": [],
-                    "eliminated": []
-                }
+                # Tribal cards trigger immediately when drawn, and per the rules the
+                # player who drew the card becomes the Tribal Council Leader.
+                self._trigger_tribal_council(
+                    game,
+                    resolved_card.get("elimination_type", "single"),
+                    drawer_id=player_id,
+                )
                 drawn_cards.append(resolved_card)
                 # Tribal cards are not added to hand - they trigger immediately
                 break
@@ -1645,13 +1995,20 @@ class GameState:
         
         if game.get("phase") != "playing":
             return {"success": False, "message": "Can only advance turns during playing phase"}
-        
+
+        blocked = self._challenge_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
+
         turn_order = game.get("turnOrder", [])
         if not turn_order:
             return {"success": False, "message": "No turn order established"}
-        
+
         current_index = game.get("currentTurnIndex", 0)
-        
+
+        # A finished Challenge is cleared from the table at the end of the turn
+        game["challenge"] = None
+
         # Reset hasStolen for all players at end of turn
         for player in game["players"].values():
             player["hasStolen"] = False
@@ -1785,11 +2142,15 @@ class GameState:
         
         # Reset game phase
         game["phase"] = "lobby"
-        
+
         # Clear game-specific state
         game["deck"] = []
         game["currentTurnIndex"] = 0
-        
+        game["necklaceHolder"] = None
+        game["challenge"] = None
+        game.pop("winner", None)
+        game.pop("pendingTurnPlayerId", None)
+
         # Reset all player states
         for player in game["players"].values():
             player["hand"] = []
@@ -1799,6 +2160,9 @@ class GameState:
             player["extraVotes"] = 0
             player["characterCards"] = 2
             player["immunityPlayed"] = False
+            player.pop("inheritanceTarget", None)
+            player.pop("campRaidedBy", None)
+            player.pop("mustUseExtraVotes", None)
             
             # Clear all temporary flags and effects
             player.pop("immunityIdolProtection", None)
@@ -2356,13 +2720,31 @@ def add_winner():
 @app.route('/api/game/create',methods=['POST'])
 @safe_api_call
 def api_create():
-    """Create new game with error handling"""
+    """
+    Create new game with error handling.
+
+    Optional JSON body:
+        deckMode:  "official" (default, the 67-card box) | "extended" (+7 house cards)
+        expansion: true to add the 5 Orange Challenge Cards from Let's Go To Rocks
+    """
     try:
-        game_id = game_state.create_game()
+        d = request.get_json(silent=True) or {}
+        game_id = game_state.create_game(
+            deckMode=d.get('deckMode'),
+            expansion=d.get('expansion'),
+        )
         if not game_id:
             return jsonify(success=False, message="Failed to create game"), 500
-        logger.info(f"Created new game: {game_id}")
-        return jsonify(gameId=game_id, success=True)
+        game = game_state.games[game_id]
+        logger.info(
+            f"Created new game: {game_id} (deckMode={game['deckMode']}, expansion={game['expansion']})"
+        )
+        return jsonify(
+            gameId=game_id,
+            success=True,
+            deckMode=game['deckMode'],
+            expansion=game['expansion'],
+        )
     except Exception as e:
         logger.error(f"Failed to create game: {e}")
         return jsonify(success=False, message="Game creation failed"), 500
@@ -2433,7 +2815,11 @@ def api_advance_tribal(): return handle('advance_tribal_phase',['phase'])
 @app.route('/api/tribal/advantage',methods=['POST'])  
 def api_tribal_advantage(): return handle('play_tribal_advantage',['playerId','advantageType','targetId'])
 @app.route('/api/tribal/tie_enhanced',methods=['POST'])
-def api_enhanced_tie_break(): return handle('enhanced_tie_break',['leaderId','eliminationType','tiedPlayers','chosenIds'])
+def api_enhanced_tie_break(): return handle('enhanced_tie_break',['leaderId','chosenIds'])
+
+# Let's Go To Rocks expansion — Challenge actions
+@app.route('/api/challenge/action',methods=['POST'])
+def api_challenge_action(): return handle('challenge_action',['playerId','action'])
 
 # Final Tribal Council API endpoints
 @app.route('/api/final/advance',methods=['POST'])
@@ -2549,9 +2935,16 @@ def on_connect():
     logger.debug(f"Client connected: {request.sid}")
 
 @socketio.on('heartbeat')
-def on_heartbeat():
-    """Handle heartbeat to keep WebSocket connection alive through Cloudflare"""
-    return {'status': 'ok', 'timestamp': time.time()}
+def on_heartbeat(data=None):
+    """
+    Handle heartbeat to keep WebSocket connection alive through Cloudflare.
+
+    The client emits ('heartbeat', {t: <perf.now()>}, ack). Returning a value from
+    the handler sends it back as the ack, which is what the client's RTT
+    measurement waits on — so the signature must accept the payload (F6).
+    """
+    echo = data.get('t') if isinstance(data, dict) else None
+    return {'status': 'ok', 'timestamp': time.time(), 't': echo}
 
 @socketio.on_error_default
 def default_error_handler(e):

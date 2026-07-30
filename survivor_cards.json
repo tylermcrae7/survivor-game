@@ -1,16 +1,25 @@
 {
   "metadata": {
-    "version": "1.1",
-    "source": "Official Survivor Board Game PDF",
-    "total_cards": 74,
-    "last_updated": "2026-02-07"
+    "version": "2.0",
+    "source": "Survivor: The Tribe Has Spoken official rules + Survival Guide (67 cards), plus 7 house cards and the Let's Go To Rocks expansion",
+    "total_cards": 79,
+    "official_action_cards": 67,
+    "house_action_cards": 7,
+    "expansion_challenge_cards": 5,
+    "notes": [
+      "The official box contains exactly 67 Action Cards. Deck mode 'official' builds from those 67 only.",
+      "Idol Nullifier, Steal A Vote, Block A Vote and Grant Immunity (7 cards total) appear nowhere in the official Survival Guide. They are house cards, included only in deck mode 'extended'.",
+      "The 5 challenge_* cards are the Orange Challenge Cards from Survivor: Let's Go To Rocks (2025) and are added only when a game is created with expansion=true.",
+      "Setup removes the 6 Vote Cards and 9 Tribal Council Cards from the deck: each player is dealt 1 Vote Card and the extras are put away, so no Vote Cards remain in the Draw Pile."
+    ],
+    "last_updated": "2026-07-29"
   },
   "cards": {
     "vote": {
       "type": "vote",
       "category": "vote",
       "name": "Vote",
-      "description": "Your basic vote at Tribal Council",
+      "description": "Every player gets 1 Vote Card at the start of the game. When voting at Tribal Council you MUST place this card in the Voting Box.",
       "playable_phases": ["tribal_voting"],
       "requires_target": false,
       "requires_multiple_targets": false,
@@ -19,11 +28,11 @@
       "count": 6
     },
     "extra_vote": {
-      "type": "extra_vote", 
+      "type": "extra_vote",
       "category": "vote",
       "name": "Extra Vote",
-      "description": "Gain an additional vote at the next Tribal Council",
-      "playable_phases": ["tribal_discussion"],
+      "description": "When voting at Tribal Council you MAY place this card in the Voting Box as an additional vote (or save it for later).",
+      "playable_phases": ["tribal_voting"],
       "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
@@ -32,9 +41,9 @@
     },
     "control_the_vote": {
       "type": "control_the_vote",
-      "category": "tribal_advantage", 
+      "category": "tribal_advantage",
       "name": "Control The Vote",
-      "description": "Choose who the next Tribal Council Leader will be",
+      "description": "Play before voting begins to take any player's Vote Card. You MUST use it in addition to your own Vote Card at this Tribal Council.",
       "playable_phases": ["tribal_discussion"],
       "requires_target": true,
       "requires_multiple_targets": false,
@@ -45,10 +54,10 @@
     "goodwill_gamble": {
       "type": "goodwill_gamble",
       "category": "tribal_advantage",
-      "name": "Goodwill Gamble", 
-      "description": "Give away cards to gain influence at Tribal Council",
+      "name": "Goodwill Gamble",
+      "description": "Give this card to another player before voting begins. It counts as 1 vote and MUST be used at this Tribal Council.",
       "playable_phases": ["tribal_discussion"],
-      "requires_target": false,
+      "requires_target": true,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
       "reactive_only": false,
@@ -79,6 +88,7 @@
       "count": 4
     },
     "idol_nullifier": {
+      "official": false,
       "type": "idol_nullifier",
       "category": "tribal_advantage",
       "name": "Idol Nullifier",
@@ -91,6 +101,7 @@
       "count": 2
     },
     "steal_vote": {
+      "official": false,
       "type": "steal_vote",
       "category": "tribal_advantage",
       "name": "Steal A Vote",
@@ -103,6 +114,7 @@
       "count": 2
     },
     "block_vote": {
+      "official": false,
       "type": "block_vote",
       "category": "tribal_advantage",
       "name": "Block A Vote",
@@ -115,6 +127,7 @@
       "count": 2
     },
     "grant_immunity": {
+      "official": false,
       "type": "grant_immunity",
       "category": "tribal_advantage",
       "name": "Grant Immunity",
@@ -234,6 +247,72 @@
       "reactive_only": false,
       "count": 3
     },
+    "challenge_highest_bidder": {
+      "expansion": "lets_go_to_rocks",
+      "type": "challenge_highest_bidder",
+      "category": "challenge",
+      "name": "Challenge: Highest Bidder",
+      "description": "Start a Challenge. Bid how many rocks you can pull from the bag without pulling the Purple Rock. Winner wears the Immunity Idol Necklace.",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 1
+    },
+    "challenge_1_now_or_2_later": {
+      "expansion": "lets_go_to_rocks",
+      "type": "challenge_1_now_or_2_later",
+      "category": "challenge",
+      "name": "Challenge: 1 Now or 2 Later",
+      "description": "Start a Challenge. Pull 1 rock or pass — but pass and you must pull 2 next time. Pull the Purple Rock and you're knocked out.",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 1
+    },
+    "challenge_lowest_score_loses": {
+      "expansion": "lets_go_to_rocks",
+      "type": "challenge_lowest_score_loses",
+      "category": "challenge",
+      "name": "Challenge: Lowest Score Loses",
+      "description": "Start a Challenge. Secretly pull any number of rocks — grey +1, purple -2. Lowest score each round is knocked out.",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 1
+    },
+    "challenge_pull_or_steal": {
+      "expansion": "lets_go_to_rocks",
+      "type": "challenge_pull_or_steal",
+      "category": "challenge",
+      "name": "Challenge: Pull or Steal",
+      "description": "Start a Challenge. Pull a hidden rock or steal one from a lower-numbered player. Whoever holds the Purple Rock at the reveal wins.",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 1
+    },
+    "challenge_hide_n_seek": {
+      "expansion": "lets_go_to_rocks",
+      "digital": false,
+      "type": "challenge_hide_n_seek",
+      "category": "challenge",
+      "name": "Challenge: Hide 'n' Seek",
+      "description": "NOT AVAILABLE DIGITALLY: this Challenge is physical sleight-of-hand — players palm and bluff-pass rocks while an Observer watches. Discarded with no effect.",
+      "playable_phases": ["turn_play"],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": true,
+      "reactive_only": false,
+      "count": 1
+    },
     "tribal_council_single": {
       "type": "tribal_council_single",
       "category": "tribal_council",
@@ -262,7 +341,7 @@
   "categories": {
     "vote": {
       "name": "Vote Cards",
-      "description": "Basic voting cards for Tribal Council",
+      "description": "Vote and Extra Vote cards, spent by placing them in the Voting Box",
       "total_cards": 13
     },
     "tribal_advantage": {
@@ -275,6 +354,11 @@
       "description": "Cards playable during player turns",
       "total_cards": 35
     },
+    "challenge": {
+      "name": "Challenge Cards",
+      "description": "Orange Challenge Cards from Survivor: Let's Go To Rocks (expansion only)",
+      "total_cards": 5
+    },
     "tribal_council": {
       "name": "Tribal Council Cards",
       "description": "Cards that trigger Tribal Council",
@@ -282,10 +366,12 @@
     }
   },
   "validation": {
-    "total_expected_cards": 74,
+    "total_expected_cards": 79,
+    "official_deck_cards": 67,
+    "extended_deck_cards": 74,
     "required_fields": [
       "type", "category", "name", "description", "playable_phases",
-      "requires_target", "requires_multiple_targets", "requires_confirmation", 
+      "requires_target", "requires_multiple_targets", "requires_confirmation",
       "reactive_only", "count"
     ]
   }

@@ -47,8 +47,36 @@ VALID_TURN_PHASES = [
 ]
 
 VALID_CATEGORIES = [
-    "vote", "tribal_advantage", "action", "tribal_council"
+    "vote", "tribal_advantage", "action", "tribal_council", "challenge"
 ]
+
+# ───────────────────────── Deck composition (F7) ─────────────────────────
+# The official box contains 67 Action Cards. These 7 are house/homebrew extras
+# that ship in survivor_cards.json but are NOT in the official Survival Guide.
+# They are included only in "extended" deck mode.
+NON_OFFICIAL_CARD_TYPES = {
+    "idol_nullifier",   # x2
+    "steal_vote",       # x2
+    "block_vote",       # x2
+    "grant_immunity",   # x1
+}
+
+# Card types that count as a vote when placed in the Voting Box (F2).
+# Per the Survival Guide: Vote Cards MUST be used at the tribal where you hold
+# them; Goodwill Gamble counts as 1 vote and MUST be used at the tribal where it
+# was played; Extra Vote MAY be used (or saved for later).
+MANDATORY_VOTE_CARD_TYPES = ("vote", "goodwill_gamble")
+OPTIONAL_VOTE_CARD_TYPES = ("extra_vote",)
+VOTE_CARD_TYPES = MANDATORY_VOTE_CARD_TYPES + OPTIONAL_VOTE_CARD_TYPES
+
+# Let's Go To Rocks expansion — the 5 Orange Challenge Cards (Phase 4).
+CHALLENGE_CARD_TYPES = (
+    "challenge_lowest_score_loses",
+    "challenge_1_now_or_2_later",
+    "challenge_highest_bidder",
+    "challenge_pull_or_steal",
+    "challenge_hide_n_seek",
+)
 
 # Card validation constants
 REQUIRED_CARD_FIELDS = [
@@ -191,30 +219,47 @@ class SurvivorRulesEngine:
 		"""Resolve a list of compact cards into full cards with metadata."""
 		return [self.resolve_card(card) for card in compact_cards]
 		
-	def create_deck(self, player_count: int = 4) -> List[Dict[str, Any]]:
+	def create_deck(self, player_count: int = 4, deck_mode: str = "official",
+	                expansion: bool = False) -> List[Dict[str, Any]]:
 		"""
 		Create a complete game deck with action cards and tribal council cards.
-		
+
+		Official Setup (rules step 2): gather all 67 Action Cards and remove the
+		9 Tribal Council and 6 Vote Cards. Each player is given 1 Vote Card and
+		the extras are put away — so **no Vote Cards remain in the Draw Pile**.
+		Tribal Council Cards are shuffled back in at step 5.
+
 		Args:
 		player_count: Number of players in the game
-		
+		deck_mode: "official" (67-card box) or "extended" (adds the 7 house cards)
+		expansion: True to add the 5 Orange Challenge Cards from
+		           Survivor: Let's Go To Rocks (combined mode)
+
 		Returns:
 		List of card dictionaries representing the shuffled deck
 		"""
 		deck = []
 		total_action_cards = 0
-		
-		# Add action cards from definitions (excluding tribal_council cards)
+		official_only = (deck_mode or "official") != "extended"
+
+		# Add action cards from definitions (excluding tribal_council + vote cards)
 		for card_type, card_data in self.card_definitions.get('cards', {}).items():
-			if card_data.get('category') == 'tribal_council':
+			category = card_data.get('category')
+			if category == 'tribal_council':
 				continue  # Skip tribal council cards - added separately
-				
+			if category == 'vote' and card_type == 'vote':
+				continue  # Vote Cards are dealt at setup, never left in the deck
+			if official_only and card_type in NON_OFFICIAL_CARD_TYPES:
+				continue  # House cards only appear in "extended" mode
+			if category == 'challenge' and not expansion:
+				continue  # Orange Challenge Cards only in combined expansion mode
+
 			# Add the specified count of each card type (compact format)
 			for _ in range(card_data.get('count', 0)):
 				card = {"type": card_data["type"]}
 				deck.append(card)
 				total_action_cards += 1
-				
+
 		# Shuffle action cards
 		random.shuffle(deck)
 		
@@ -223,8 +268,75 @@ class SurvivorRulesEngine:
 		if tribal_cards:
 			deck = self._insert_tribal_cards(deck, tribal_cards)
 			
-		logger.info(f"Created deck with {len(deck)} total cards ({total_action_cards} action + {len(tribal_cards)} tribal)")
+		logger.info(
+			f"Created {deck_mode} deck ({'with' if expansion else 'no'} expansion) with "
+			f"{len(deck)} total cards ({total_action_cards} action + {len(tribal_cards)} tribal)"
+		)
 		return deck
+
+	# ═══════════════════════════════════════════════════════════════════════════════════
+	# VOTE CARD ECONOMY (F2)
+	# ═══════════════════════════════════════════════════════════════════════════════════
+
+	@staticmethod
+	def count_cards_of_type(player: Dict[str, Any], card_types) -> int:
+		"""Count how many cards of the given type(s) are in a player's hand."""
+		if isinstance(card_types, str):
+			card_types = (card_types,)
+		return sum(1 for c in player.get("hand", []) or [] if c.get("type") in card_types)
+
+	def get_vote_capacity(self, player: Dict[str, Any]) -> Tuple[int, int]:
+		"""
+		Return (mandatory, optional) vote counts a player can cast from their hand.
+
+		mandatory — Vote Cards and Goodwill Gamble cards, which MUST be placed in
+		            the Voting Box at this Tribal Council.
+		optional  — Extra Vote cards, which MAY be used now or saved for later.
+		"""
+		mandatory = self.count_cards_of_type(player, MANDATORY_VOTE_CARD_TYPES)
+		optional = self.count_cards_of_type(player, OPTIONAL_VOTE_CARD_TYPES)
+		return mandatory, optional
+
+	def sync_vote_counters(self, game: Dict[str, Any]) -> None:
+		"""
+		Recompute every player's vote-card counters from their actual hand.
+
+		Keeps the legacy ``extraVotes`` counter and the derived helper fields in
+		lockstep with the physical cards so the client and engine never disagree.
+		"""
+		for player in game.get("players", {}).values():
+			mandatory, optional = self.get_vote_capacity(player)
+			player["voteCards"] = self.count_cards_of_type(player, "vote")
+			player["goodwillVotes"] = self.count_cards_of_type(player, "goodwill_gamble")
+			player["extraVotes"] = optional
+			player["mandatoryVotes"] = mandatory
+			player["maxVotes"] = mandatory + optional
+
+	def spend_vote_cards(self, player: Dict[str, Any], total_votes: int) -> List[Dict[str, Any]]:
+		"""
+		Remove the cards used to cast ``total_votes`` votes from a player's hand.
+
+		Mandatory cards (Vote / Goodwill Gamble) are spent first, then Extra Votes.
+		Returns the list of spent cards (for the discard pile).
+		"""
+		spent = []
+		hand = player.setdefault("hand", [])
+
+		def _take(types, limit):
+			taken = 0
+			i = 0
+			while i < len(hand) and taken < limit:
+				if hand[i].get("type") in types:
+					spent.append(hand.pop(i))
+					taken += 1
+				else:
+					i += 1
+			return taken
+
+		used = _take(MANDATORY_VOTE_CARD_TYPES, total_votes)
+		if used < total_votes:
+			_take(OPTIONAL_VOTE_CARD_TYPES, total_votes - used)
+		return spent
 		
 	def _create_tribal_council_cards(self, player_count: int) -> List[Dict[str, Any]]:
 		"""Create tribal council cards based on player count mapping."""
@@ -412,6 +524,8 @@ class SurvivorRulesEngine:
 			return self._validate_action_card_play(game, player_id, card, phase, params)
 		elif category == "vote":
 			return self._validate_vote_card_play(game, player_id, card, phase, params)
+		elif category == "challenge":
+			return self._validate_challenge_card_play(game, player_id, card, phase, params)
 		elif category == "tribal_council":
 			return self._validate_tribal_council_card_play(game, player_id, card, phase, params)
 			
@@ -463,7 +577,44 @@ class SurvivorRulesEngine:
 		
 		playable, _ = self.is_card_playable(game, player_id, card)
 		return playable
-		
+
+	def can_play_card_in_phase(self, card: Dict[str, Any], phase: str) -> bool:
+		"""
+		Pure phase check: is this card playable during ``phase``?
+
+		Unlike ``can_play_card`` this needs no game state — it answers purely from
+		the card's declared ``playable_phases`` (falling back to the registry when
+		the caller passes a bare ``{"type": ...}``).
+		"""
+		playable_phases = card.get("playable_phases")
+		if playable_phases is None:
+			definition = self.get_card_definition(card.get("type")) or {}
+			playable_phases = definition.get("playable_phases", [])
+
+		if phase not in playable_phases:
+			return False
+
+		reactive_only = card.get("reactive_only")
+		if reactive_only is None:
+			definition = self.get_card_definition(card.get("type")) or {}
+			reactive_only = definition.get("reactive_only", False)
+
+		if reactive_only and phase != "reactive_theft":
+			return False
+
+		return True
+
+	def get_complete_card(self, card_type: str) -> Optional[Dict[str, Any]]:
+		"""
+		Build a fully-resolved card dict from a card type name.
+
+		Returns None for unknown card types.
+		"""
+		if not self.get_card_definition(card_type):
+			return None
+		return self.resolve_card({"type": card_type})
+
+
 	def advance_tribal_phase(self, game: Dict[str, Any], target_phase: str) -> Tuple[bool, str]:
 		"""
 		Advance tribal council to a specific phase with validation.
@@ -555,7 +706,9 @@ class SurvivorRulesEngine:
 		
 		# Execute advantage effect
 		advantage_effects = {
-		"extra_vote": lambda: self._effect_extra_vote(game, player_id, advantage_card, {}),
+		"control_the_vote": lambda: self._effect_control_the_vote(game, player_id, advantage_card, {"targetId": target_id}),
+		"goodwill_gamble": lambda: self._effect_goodwill_gamble(game, player_id, advantage_card, {"targetId": target_id}),
+		"im_the_leader_now": lambda: self._effect_im_the_leader_now(game, player_id, advantage_card, {}),
 		"steal_vote": lambda: self._effect_steal_vote(game, player_id, advantage_card, {"targetId": target_id}),
 		"block_vote": lambda: self._effect_block_vote(game, player_id, advantage_card, {"targetId": target_id}),
 		"grant_immunity": lambda: self._effect_grant_immunity(game, player_id, advantage_card, {"targetId": target_id})
@@ -627,9 +780,33 @@ class SurvivorRulesEngine:
 		return True, "Action card play is valid"
 		
 	def _validate_vote_card_play(self, game: Dict[str, Any], player_id: str, card: Dict[str, Any], phase: str, params: Dict[str, Any]) -> Tuple[bool, str]:
-		"""Validate vote card play."""
-		# Vote cards are generally straightforward - just check playable phases
-		return True, "Vote card play is valid"
+		"""
+		Validate vote card play.
+
+		Vote Cards and Extra Vote Cards are never "played" onto the discard pile —
+		they are placed in the Voting Box when you vote, which the engine models as
+		spending them through ``cast_vote``. Reject direct plays with a clear reason.
+		"""
+		return False, "Vote cards are spent when you vote at Tribal Council, not played from your hand"
+
+	def _validate_challenge_card_play(self, game: Dict[str, Any], player_id: str, card: Dict[str, Any], phase: str, params: Dict[str, Any]) -> Tuple[bool, str]:
+		"""Validate a Let's Go To Rocks Challenge Card play (combined mode)."""
+		if not game.get("expansion"):
+			return False, "Challenge Cards require a game created with the Let's Go To Rocks expansion enabled"
+
+		if game.get("challenge") and game["challenge"].get("phase") != "complete":
+			return False, "A Challenge is already in progress"
+
+		# Combined-mode rule: "If both of your Survivor Character Cards have been
+		# voted out you can't take part in Challenges."
+		participants = [
+			pid for pid, p in game.get("players", {}).items()
+			if not p.get("isEliminated", False)
+		]
+		if len(participants) < 2:
+			return False, "A Challenge needs at least 2 players still in the game"
+
+		return True, "Challenge card play is valid"
 		
 	def _validate_tribal_council_card_play(self, game: Dict[str, Any], player_id: str, card: Dict[str, Any], phase: str, params: Dict[str, Any]) -> Tuple[bool, str]:
 		"""Validate tribal council card play."""
@@ -656,15 +833,17 @@ class SurvivorRulesEngine:
 		"reward_challenge_do_or_die": self._effect_reward_challenge_do_or_die,
 		"reward_challenge_power_pair": self._effect_reward_challenge_power_pair,
 		"reward_challenge_its_a_numbers_game": self._effect_reward_challenge_its_a_numbers_game,
-		
-		# Vote Cards
-		"extra_vote": self._effect_extra_vote,
-		
+
 		# Generic tribal advantage effects (for backward compatibility)
 		"steal_vote": self._effect_steal_vote,
 		"block_vote": self._effect_block_vote,
 		"grant_immunity": self._effect_grant_immunity,
 		}
+
+		# Let's Go To Rocks Challenge Cards (combined mode) all start a Challenge;
+		# the server owns the challenge state machine.
+		for challenge_type in CHALLENGE_CARD_TYPES:
+			self.card_effects_registry[challenge_type] = self._effect_start_challenge
 		
 	def execute_card_effect(self, game: Dict[str, Any], player_id: str, card: Dict[str, Any], params: Dict[str, Any] = None) -> Dict[str, Any]:
 		"""
@@ -693,6 +872,179 @@ class SurvivorRulesEngine:
 			logger.error(f"Error executing card effect for {card_type}: {e}")
 			return {"success": False, "message": f"Card effect failed: {str(e)}"}
 			
+	# ═══════════════════════════════════════════════════════════════════════════════════
+	# TRIBAL ELIMINATION RESOLUTION (F9) — official tie & double-elimination cascade
+	# ═══════════════════════════════════════════════════════════════════════════════════
+
+	def resolve_tribal_eliminations(
+		self,
+		game: Dict[str, Any],
+		vote_counts: Dict[str, int],
+		protected_players=None,
+		idol_players=None,
+		elimination_type: str = "single",
+	) -> Dict[str, Any]:
+		"""
+		Decide who is voted out from a tallied set of votes, per the official rules.
+
+		Single Elimination
+		  Most votes goes out. On a tie, the Tribal Council Leader decides.
+
+		Double Elimination
+		  · 3+ players tied for most votes → Leader decides which 2 of them go out.
+		  · exactly 2 tied for most votes  → both go out (no choice).
+		  · 1 clear most + 2 or more tied for second → the most-votes player goes out
+		    first, then the Leader decides which of the second-place tied players
+		    is also voted out.
+		  · If eliminating 2 could leave fewer than 2 players in the game, only 1 is
+		    voted out and the Final Tribal Council begins immediately.
+
+		Unclear who is voted out?
+		  The Leader must choose using this priority ladder:
+		    1. non-immune players who got votes
+		    2. non-immune players who got no votes
+		    3. players who played Immunity Idols (or wear the Necklace)
+
+		Returns a dict describing the outcome:
+		  eliminated            — players voted out with no Leader input required
+		  tieBreakNeeded        — True if the Leader must choose
+		  tiedPlayers           — candidates the Leader chooses from (priority order)
+		  eliminationsNeeded    — total vote-outs this Tribal Council
+		  finalTribalAfter      — True if the double-elim was reduced to protect the
+		                          "never leave 1 player" rule
+		  reason                — human-readable explanation
+		"""
+		protected_players = set(protected_players or ())
+		idol_players = set(idol_players or ())
+		players = game.get("players", {})
+		counts = {pid: n for pid, n in (vote_counts or {}).items() if n > 0}
+
+		alive = [pid for pid, p in players.items() if not p.get("isEliminated", False)]
+		needed = 2 if elimination_type == "double" else 1
+		if len(alive) <= 2:
+			needed = min(needed, max(0, len(alive) - 1))
+
+		def players_left_after(chosen) -> int:
+			left = 0
+			for pid in alive:
+				cards = players[pid].get("characterCards", 1)
+				if pid in chosen:
+					cards -= 1
+				if cards >= 1:
+					left += 1
+			return left
+
+		# Candidate tiers for the "unclear who is voted out" ladder. Immunity Idol
+		# players and the Necklace wearer are only chosen as a last resort.
+		safe = protected_players | idol_players
+		non_immune = [pid for pid in alive if pid not in safe]
+		with_votes = sorted(
+			[pid for pid in non_immune if counts.get(pid, 0) > 0],
+			key=lambda pid: -counts[pid],
+		)
+		without_votes = [pid for pid in non_immune if counts.get(pid, 0) == 0]
+		last_resort = [pid for pid in alive if pid in safe]
+
+		def ladder(picks_needed: int, exclude=()) -> List[str]:
+			out: List[str] = []
+			for tier in (with_votes, without_votes, last_resort):
+				for pid in tier:
+					if pid not in out and pid not in exclude:
+						out.append(pid)
+				if len(out) >= picks_needed:
+					break
+			return out
+
+		# ── "Never leave only 1 player" guard (official 3-players-left rule) ──
+		final_tribal_after = False
+		if needed == 2:
+			# Worst case: the two chosen players are the ones closest to elimination.
+			pool = with_votes or ladder(2)
+			worst = sorted(pool, key=lambda pid: players[pid].get("characterCards", 1))[:2]
+			if len(worst) >= 2 and players_left_after(worst) < 2:
+				needed = 1
+				final_tribal_after = True
+
+		result = {
+			"eliminated": [],
+			"tieBreakNeeded": False,
+			"tiedPlayers": [],
+			"eliminationsNeeded": needed,
+			"finalTribalAfter": final_tribal_after,
+			"reason": "",
+		}
+
+		if needed <= 0:
+			result["reason"] = "Not enough players remain to vote anyone out"
+			return result
+
+		def unclear(picks_needed: int, already: List[str]) -> None:
+			"""Fill the result using the unclear-who-is-voted-out priority ladder."""
+			candidates = ladder(picks_needed, exclude=tuple(already))
+			result["eliminated"] = list(already)
+			if len(candidates) <= picks_needed:
+				result["eliminated"].extend(candidates)
+				result["reason"] = "Unclear who is voted out — only enough candidates for a forced outcome"
+			else:
+				result["tieBreakNeeded"] = True
+				result["tiedPlayers"] = candidates
+				result["reason"] = "Unclear who is voted out — Council Leader must choose"
+
+		if not with_votes:
+			unclear(needed, [])
+			return result
+
+		top_votes = counts[with_votes[0]]
+		tied_first = [pid for pid in with_votes if counts[pid] == top_votes]
+
+		if needed == 1:
+			if len(tied_first) == 1:
+				result["eliminated"] = list(tied_first)
+				result["reason"] = f"{players[tied_first[0]].get('name', tied_first[0])} received the most votes"
+			else:
+				result["tieBreakNeeded"] = True
+				result["tiedPlayers"] = tied_first
+				result["reason"] = f"{len(tied_first)} players tied with {top_votes} votes — Council Leader breaks the tie"
+			return result
+
+		# ── Double elimination ──
+		if len(tied_first) >= 3:
+			result["tieBreakNeeded"] = True
+			result["tiedPlayers"] = tied_first
+			result["reason"] = (
+				f"{len(tied_first)} players tied with {top_votes} votes — "
+				"Council Leader decides which 2 are voted out"
+			)
+			return result
+
+		if len(tied_first) == 2:
+			result["eliminated"] = list(tied_first)
+			result["reason"] = f"2 players tied with {top_votes} votes — both are voted out"
+			return result
+
+		# Exactly one player has the most votes; resolve second place.
+		first = tied_first[0]
+		rest = [pid for pid in with_votes if pid != first]
+		if not rest:
+			unclear(1, [first])
+			return result
+
+		second_votes = counts[rest[0]]
+		tied_second = [pid for pid in rest if counts[pid] == second_votes]
+		if len(tied_second) == 1:
+			result["eliminated"] = [first, tied_second[0]]
+			result["reason"] = "Most votes and second-most votes are both voted out"
+		else:
+			result["eliminated"] = [first]
+			result["tieBreakNeeded"] = True
+			result["tiedPlayers"] = tied_second
+			result["reason"] = (
+				f"{players[first].get('name', first)} is voted out first; "
+				f"{len(tied_second)} players tied for second with {second_votes} votes — "
+				"Council Leader decides who else goes"
+			)
+		return result
+
 	def _reset_post_tribal_flags(self, game: Dict[str, Any]) -> None:
 		"""
 		Reset all transient per-round flags after tribal council completion.
@@ -709,12 +1061,12 @@ class SurvivorRulesEngine:
 			# Reset vote manipulation flags
 			player.pop("voteStolen", None)
 			player.pop("voteBanned", None)
-			
-			# Reset extra vote flags (but preserve extra votes if not forced)
-			if player.get("mustUseExtraVotes"):
-				player["extraVotes"] = 0
-				player.pop("mustUseExtraVotes", None)
-				
+			player.pop("temporaryImmunity", None)
+
+			# Extra votes are now derived from the actual Extra Vote cards in hand
+			# (see sync_vote_counters), so there is no counter to zero out here.
+			player.pop("mustUseExtraVotes", None)
+
 			# Reset camp raid markers
 			player.pop("campRaidedBy", None)
 			
@@ -730,45 +1082,78 @@ class SurvivorRulesEngine:
 	# Card Effect Implementations
 	
 	def _effect_control_the_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Control The Vote card effect."""
+		"""
+		Execute Control The Vote card effect.
+
+		Survival Guide: "Play this card during a Tribal Council before voting begins
+		to take any player's Vote Card. You MUST use that Vote Card in addition to
+		your Vote Card during the Tribal Council at which this card is played. If the
+		player you pick has more than 1 Vote Card, you only take 1."
+		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
 			return {"message": "Control The Vote requires a valid target player"}
-			
+
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
-		# Update the council leader ID (isCouncilLeader will be derived from this)
-		if "currentVote" in game:
-			game["currentVote"]["councilLeaderId"] = target_id
-		else:
-			game["councilLeaderId"] = target_id
-			
-		return {"message": f"{player['name']} made {target['name']} the new Tribal Council Leader!"}
-		
+
+		# Take exactly one physical Vote Card out of the target's hand
+		stolen = None
+		for i, hand_card in enumerate(target.get("hand", []) or []):
+			if hand_card.get("type") == "vote":
+				stolen = target["hand"].pop(i)
+				break
+
+		if stolen is None:
+			self.sync_vote_counters(game)
+			return {"message": f"{player['name']} played Control The Vote, but {target['name']} had no Vote Card to take"}
+
+		player.setdefault("hand", []).append(stolen)
+		self.sync_vote_counters(game)
+
+		return {"message": f"{player['name']} took {target['name']}'s Vote Card — they must use it at this Tribal Council"}
+
 	def _effect_goodwill_gamble(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Goodwill Gamble card effect."""
+		"""
+		Execute Goodwill Gamble card effect.
+
+		Survival Guide: "Give this card to another player during a Tribal Council
+		before voting begins. This card counts as 1 vote, and MUST be used during the
+		Tribal Council at which it is played (just like a Vote Card). They can use it
+		to vote for any player they want."
+		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
 			return {"message": "Goodwill Gamble requires a valid target player"}
-			
+
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
-		# Give forced extra vote to target
-		target["extraVotes"] = target.get("extraVotes", 0) + 1
-		target["mustUseExtraVotes"] = True
-		
-		return {"message": f"{player['name']} gave Goodwill Gamble to {target['name']} - they gain 1 forced vote"}
-		
+
+		# The physical card moves into the recipient's hand and counts as 1 vote
+		target.setdefault("hand", []).append({"type": "goodwill_gamble"})
+		self.sync_vote_counters(game)
+
+		return {"message": f"{player['name']} gave a Goodwill Gamble to {target['name']} — it counts as 1 vote and must be used at this Tribal Council"}
+
 	def _effect_im_the_leader_now(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute I'm The Leader Now card effect."""
+		"""
+		Execute I'm The Leader Now card effect.
+
+		Survival Guide: "Play this card during a Tribal Council before voting begins
+		to become the Tribal Council Leader. It's your turn when the Tribal Council
+		ends (or the player after you if you are eliminated)."
+		"""
 		player = game["players"][player_id]
-		
+
 		# Update the council leader ID (isCouncilLeader will be derived from this)
 		if "currentVote" in game:
 			game["currentVote"]["councilLeaderId"] = player_id
-			
+
+		# The new leader takes the next turn once tribal council ends
+		turn_order = game.get("turnOrder", [])
+		if player_id in turn_order:
+			game["pendingTurnPlayerId"] = player_id
+
 		return {"message": f"{player['name']} is now the Tribal Council Leader!"}
 		
 	def _effect_immunity_idol(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
@@ -1058,15 +1443,20 @@ class SurvivorRulesEngine:
 		else:
 			return {"message": f"Numbers Game failed - closest players had no cards to steal"}
 			
-	def _effect_extra_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Extra Vote card effect."""
+	def _effect_start_challenge(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
+		"""
+		Marker effect for Let's Go To Rocks Challenge Cards.
+
+		The actual challenge state machine lives on the server (it needs to drive
+		multi-player turn-taking); this effect just signals which challenge to start.
+		"""
 		player = game["players"][player_id]
-		
-		# Grant extra vote for next tribal council
-		player["extraVotes"] = player.get("extraVotes", 0) + 1
-		
-		return {"message": f"{player['name']} gained an extra vote for the next Tribal Council"}
-		
+		challenge_type = card.get("type")
+		return {
+			"message": f"{player.get('name', player_id)} played {card.get('name', challenge_type)}",
+			"start_challenge": challenge_type,
+		}
+
 	def _effect_steal_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""Execute steal vote tribal advantage effect."""
 		target_id = params.get("targetId")
