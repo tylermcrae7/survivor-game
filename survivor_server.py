@@ -1418,20 +1418,29 @@ class GameState:
             logger.info(f"Final tribal tie between {winners}, leader must break tie")
 
     # ═══════════════════════════ Final Tribal Methods ═══════════════════════════
-    def advance_final_phase(self, gid, target_phase):
+    def advance_final_phase(self, gid, target_phase=None, **kwargs):
         """
         Advance final tribal council to a specific phase.
-        
+
         Args:
             gid: Game ID
-            target_phase: Phase to advance to ("deliberation", "voting", "reveal")
-            
+            target_phase: Phase to advance to ("deliberation", "voting", "reveal").
+                          The HTTP layer sends this as the keyword 'phase', which this
+                          signature must accept — it previously raised TypeError, so
+                          POST /api/final/advance never worked from the client.
+
         Returns:
             Boolean indicating success
         """
+        if target_phase is None:
+            target_phase = kwargs.get('phase')
+        if not target_phase:
+            return False
+
         if gid not in self.games:
             return False
-            
+
+
         game = self.games[gid]
         
         # Validate game is in final phase
@@ -1538,7 +1547,7 @@ class GameState:
         self._save()
         return True
 
-    def break_final_tie(self, gid, leaderId=None, winnerId=None, **kwargs):
+    def break_final_tie(self, gid, leaderId=None, winnerId=None, chosenWinner=None, **kwargs):
         """
         Break a tie in the final tribal council.
 
@@ -1549,7 +1558,10 @@ class GameState:
         Args:
             gid: Game ID
             leaderId: ID of the Final Tribal Council Leader (must be the tie-breaker)
-            winnerId: ID of the finalist chosen to win
+            winnerId: ID of the finalist chosen to win. The iOS client sends this as
+                      'chosenWinner' (which the route also requires), so both spellings
+                      are accepted — previously the chosen winner was dropped and the
+                      tie-break always failed.
 
         Returns:
             Boolean indicating success
@@ -1557,6 +1569,7 @@ class GameState:
         if gid not in self.games:
             return False
 
+        winnerId = winnerId or chosenWinner
         if not leaderId or not winnerId:
             return False
 
