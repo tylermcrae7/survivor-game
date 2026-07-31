@@ -8,7 +8,7 @@ struct ServerConfigTests {
     // MARK: - Legacy LAN Migration
 
     @Test @MainActor func legacyLANMigrationRunsOnce() throws {
-        UserDefaults.standard.removeObject(forKey: "didMigrateLegacyLANDefault")
+        UserDefaults.standard.removeObject(forKey: ServerConfig.legacyMigrationDefaultsKey)
         let container = try ModelContainer(
             for: ServerConfig.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
@@ -30,7 +30,7 @@ struct ServerConfigTests {
     }
 
     @Test @MainActor func freshInstallNeverMigratesALaterLANURL() throws {
-        UserDefaults.standard.removeObject(forKey: "didMigrateLegacyLANDefault")
+        UserDefaults.standard.removeObject(forKey: ServerConfig.legacyMigrationDefaultsKey)
         let container = try ModelContainer(
             for: ServerConfig.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)

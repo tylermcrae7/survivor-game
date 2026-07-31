@@ -1,7 +1,7 @@
 import XCTest
 
 final class AuthenticationUITests: XCTestCase {
-    private let serverURL = "http://127.0.0.1:8099"
+    private static let serverURL = "http://127.0.0.1:8099"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -11,7 +11,7 @@ final class AuthenticationUITests: XCTestCase {
     /// UI tests drive a real island. Without it, skip loudly instead of
     /// failing the whole default test action on a clean checkout.
     private static func requireScratchServer() throws {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:8099/api/access/check")!)
+        var request = URLRequest(url: URL(string: serverURL + "/api/access/check")!)
         request.timeoutInterval = 2
         let semaphore = DispatchSemaphore(value: 0)
         // The semaphore orders the write before the read.
@@ -34,7 +34,7 @@ final class AuthenticationUITests: XCTestCase {
         let app = XCUIApplication()
         let resetToken = UUID().uuidString
         app.launchEnvironment = [
-            "SURVIVOR_SERVER_URL": serverURL,
+            "SURVIVOR_SERVER_URL": Self.serverURL,
             "SURVIVOR_PLAYER_NAME": "Simulator Tyler",
             "SURVIVOR_RESET_ACCESS": resetToken,
         ]
@@ -74,7 +74,7 @@ final class AuthenticationUITests: XCTestCase {
         app.terminate()
         let relaunchedApp = XCUIApplication()
         relaunchedApp.launchEnvironment = [
-            "SURVIVOR_SERVER_URL": serverURL,
+            "SURVIVOR_SERVER_URL": Self.serverURL,
             "SURVIVOR_PLAYER_NAME": "Simulator Tyler",
         ]
         relaunchedApp.launch()

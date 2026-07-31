@@ -30,7 +30,7 @@ struct ContentView: View {
                 ReactiveTheftOverlay()
 
                 if gameClient.connectionState == .reconnecting
-                    || (gameClient.connectionState == .disconnected && gameClient.gameId != nil) {
+                    || (gameClient.connectionState == .disconnected && gameClient.gameState != nil) {
                     ConnectionBanner()
                 }
             }

@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class ServerConfig {
     static let publicIslandURL = URL(string: "https://survivor.mctech.biz")!
+    static let legacyMigrationDefaultsKey = "didMigrateLegacyLANDefault"
     private static let legacyLANURL = URL(string: "http://192.168.0.189:8080")!
 
     @Attribute(.unique) var id: String
@@ -27,7 +28,7 @@ final class ServerConfig {
     }
 
     static func loadDefault(from context: ModelContext) -> ServerConfig {
-        let migrationKey = "didMigrateLegacyLANDefault"
+        let migrationKey = legacyMigrationDefaultsKey
         let descriptor = FetchDescriptor<ServerConfig>(
             predicate: #Predicate { $0.id == "default" }
         )
