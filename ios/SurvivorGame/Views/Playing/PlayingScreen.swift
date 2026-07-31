@@ -8,10 +8,71 @@ struct PlayingScreen: View {
         if let vm = viewModel {
             PlayingContent(viewModel: vm)
         } else {
-            ProgressView().onAppear {
-                viewModel = PlayingViewModel(gameClient: gameClient)
-            }
+            ProgressView()
+                .tint(Torch.Color.torch)
+                .onAppear {
+                    viewModel = PlayingViewModel(gameClient: gameClient)
+                }
         }
+    }
+}
+
+/// The night-camp ground the whole screen sits on: bg → bg-deep with the
+/// torchlight radial pooling in from the top (web §Background scene layers).
+private struct NightBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Torch.Color.torch.opacity(0.14), .clear],
+                           center: UnitPoint(x: 0.5, y: -0.12),
+                           startRadius: 0, endRadius: 460)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// Header pill chip (web §Top bar): small-caps label on a sunken capsule.
+private struct CampChip<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 6) { content }
+            .font(Torch.Font.label(Torch.TextSize.xs))
+            .tracking(Torch.Track.label * Torch.TextSize.xs)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Torch.Color.surfaceSunken))
+            .overlay(Capsule().strokeBorder(Torch.Color.line, lineWidth: 1))
+    }
+}
+
+/// "A note pinned by the fire" (web §Phase guidance): sunken row with a
+/// 3px torch left edge.
+private struct GuidanceNote: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(Torch.Font.body(Torch.TextSize.xs))
+            .foregroundStyle(Torch.Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                    .fill(Torch.Color.surfaceSunken)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                    .strokeBorder(Torch.Color.line, lineWidth: 1)
+            )
+            .overlay(alignment: .leading) {
+                UnevenRoundedRectangle(topLeadingRadius: Torch.Radius.md,
+                                       bottomLeadingRadius: Torch.Radius.md)
+                    .fill(Torch.Color.torch)
+                    .frame(width: 3)
+            }
     }
 }
 
@@ -24,106 +85,139 @@ private struct PlayingContent: View {
     @State private var showHallOfFame = false
     @State private var confirmBurn = false
     @State private var pendingStealTarget: String?
+    @State private var turnPulseTrigger = 0
     @AppStorage("confirmSteals") private var confirmSteals = false
+
+    private var eliminatedIds: [String] {
+        viewModel.sortedPlayers.filter(\.isEliminated).map(\.id)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(Torch.Color.line).frame(height: 1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // The camp strip: fire code chip, story drawer, camp menu
-            HStack {
-                if let code = gameClient.gameId {
-                    SurvivorChip {
-                        Text("FIRE").foregroundStyle(.secondary)
-                        Text(code).font(.caption.monospaced().bold())
+            StaggeredRise(index: 0) {
+                HStack {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(Torch.Color.torch)
+                        .flameFlicker()
+                        .accessibilityHidden(true)
+                    if let code = gameClient.gameId {
+                        CampChip {
+                            Text("FIRE").foregroundStyle(Torch.Color.textSecondary)
+                            Text(code)
+                                .font(.caption.monospaced().bold())
+                                .foregroundStyle(Torch.Color.torch)
+                        }
                     }
-                }
-                Spacer()
-                Button {
-                    showStory = true
-                } label: {
-                    Image(systemName: "scroll")
-                }
-                .accessibilityLabel("The story so far")
+                    Spacer()
+                    Button {
+                        showStory = true
+                    } label: {
+                        Image(systemName: "scroll")
+                            .foregroundStyle(Torch.Color.textSecondary)
+                    }
+                    .accessibilityLabel("The story so far")
 
-                Menu {
-                    Button {
-                        showSettings = true
+                    Menu {
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("Settings", systemImage: "gearshape")
+                        }
+                        Button {
+                            showPace = true
+                        } label: {
+                            Label("Game Pace", systemImage: "hourglass")
+                        }
+                        Button {
+                            showHallOfFame = true
+                        } label: {
+                            Label("Hall of Fame", systemImage: "crown")
+                        }
+                        Divider()
+                        Button {
+                            gameClient.leaveGame()
+                        } label: {
+                            Label("Leave this game", systemImage: "figure.walk.departure")
+                        }
+                        Button(role: .destructive) {
+                            confirmBurn = true
+                        } label: {
+                            Label("Burn it down", systemImage: "flame")
+                        }
                     } label: {
-                        Label("Settings", systemImage: "gearshape")
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
-                    Button {
-                        showPace = true
-                    } label: {
-                        Label("Game Pace", systemImage: "hourglass")
-                    }
-                    Button {
-                        showHallOfFame = true
-                    } label: {
-                        Label("Hall of Fame", systemImage: "crown")
-                    }
-                    Divider()
-                    Button {
-                        gameClient.leaveGame()
-                    } label: {
-                        Label("Leave this game", systemImage: "figure.walk.departure")
-                    }
-                    Button(role: .destructive) {
-                        confirmBurn = true
-                    } label: {
-                        Label("Burn it down", systemImage: "flame")
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal")
+                    .accessibilityLabel("Camp menu")
                 }
-                .accessibilityLabel("Camp menu")
+                .font(.body)
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
             }
-            .font(.body)
-            .padding(.horizontal, 16)
-            .padding(.top, 6)
 
             // Turn indicator: the web's "Your torch burns" tracker on your
             // turn, the plain whose-turn strip otherwise
-            if viewModel.isMyTurn, let phase = viewModel.turnPhase {
-                TurnPhaseTracker(phase: phase)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-            } else {
-                TurnIndicatorView(
-                    currentPlayer: viewModel.currentPlayer,
-                    isMyTurn: viewModel.isMyTurn,
-                    turnPhase: viewModel.turnPhase,
-                    deckCount: viewModel.deckCount
-                )
+            StaggeredRise(index: 1) {
+                if viewModel.isMyTurn, let phase = viewModel.turnPhase {
+                    TurnPhaseTracker(phase: phase)
+                        .turnPulse(trigger: turnPulseTrigger, cornerRadius: 16)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                } else {
+                    TurnIndicatorView(
+                        currentPlayer: viewModel.currentPlayer,
+                        isMyTurn: viewModel.isMyTurn,
+                        turnPhase: viewModel.turnPhase,
+                        deckCount: viewModel.deckCount
+                    )
+                }
             }
 
             // Player status bar
-            PlayerStatusBar(
-                players: viewModel.sortedPlayers,
-                currentPlayerId: viewModel.gameState?.currentPlayerId,
-                myPlayerId: viewModel.myPlayerId
-            )
-            .padding(.vertical, 8)
-
-            Divider()
-
-            // Main content area
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Action buttons (when it's your turn)
-                    if viewModel.isMyTurn {
-                        TurnActionsView(viewModel: viewModel)
-                    } else {
-                        WaitingView(playerName: viewModel.currentPlayerName)
-                    }
-                }
-                .padding()
+            StaggeredRise(index: 2) {
+                PlayerStatusBar(
+                    players: viewModel.sortedPlayers,
+                    currentPlayerId: viewModel.gameState?.currentPlayerId,
+                    myPlayerId: viewModel.myPlayerId
+                )
+                .padding(.vertical, 8)
             }
 
-            Divider()
+            hairline
+
+            // Main content area — the lit panel
+            ScrollView {
+                StaggeredRise(index: 3) {
+                    VStack(spacing: 16) {
+                        // Action buttons (when it's your turn)
+                        if viewModel.isMyTurn {
+                            TurnActionsView(viewModel: viewModel)
+                        } else {
+                            WaitingView(playerName: viewModel.currentPlayerName)
+                        }
+                    }
+                    .padding(Torch.Spacing.md)
+                    .frame(maxWidth: .infinity)
+                    .torchCard()
+                    .padding()
+                }
+            }
+
+            hairline
 
             // Card hand
-            CardHandView()
-                .padding(.vertical, 8)
+            StaggeredRise(index: 4) {
+                CardHandView()
+                    .padding(.vertical, 8)
+            }
         }
+        .background(NightBackground())
+        .tint(Torch.Color.torch)
         .sheet(isPresented: $showStory) {
             StorySoFarDrawer()
         }
@@ -172,6 +266,21 @@ private struct PlayingContent: View {
                 pendingStealTarget = nil
             }
         }
+        // "It's your turn" — amber ring + soft double swell, on the same
+        // turn-order change the indicator already reacts to.
+        .onChange(of: viewModel.gameState?.currentPlayerId, initial: true) { _, _ in
+            guard viewModel.isMyTurn else { return }
+            turnPulseTrigger += 1
+            HapticEngine.turnPulse()
+        }
+        // Tribal snuffs belong to EliminationView (it fires the pattern
+        // there); this covers only eliminations that land while the camp is
+        // on screen, so nothing double-fires.
+        .onChange(of: eliminatedIds) { old, new in
+            guard new.count > old.count else { return }
+            HapticEngine.elimination()
+            TorchSound.play(.torchSnuff)
+        }
         .errorAlert($viewModel.error)
     }
 }
@@ -182,27 +291,21 @@ private struct TurnActionsView: View {
     var body: some View {
         VStack(spacing: 12) {
             if viewModel.canSteal {
-                HStack(spacing: 12) {
-                    Button {
-                        viewModel.showStealPicker = true
-                    } label: {
-                        Label("Steal", systemImage: "hand.raised.fill")
-                    }
-                    .buttonStyle(.survivor(color: .red))
-                    .disabled(viewModel.stealTargets.isEmpty || viewModel.isPerformingAction)
-                    .accessibilityLabel("Steal card from player")
-                    .accessibilityHint("Opens player selection to steal a random card from another player")
+                Button {
+                    viewModel.showStealPicker = true
+                } label: {
+                    Label("Steal", systemImage: "hand.raised.fill")
                 }
+                .buttonStyle(.torchGlow)
+                .disabled(viewModel.stealTargets.isEmpty || viewModel.isPerformingAction)
+                .accessibilityLabel("Steal card from player")
+                .accessibilityHint("Opens player selection to steal a random card from another player")
 
-                Text("You must steal a card first")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                GuidanceNote(text: "You must steal a card first")
             }
 
             if viewModel.canPlay {
-                Text("Play a card if you like, then draw to end your turn")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                GuidanceNote(text: "Play a card if you like, then draw to end your turn")
             }
 
             // Official turn: the draw IS the end of the turn. No End Turn
@@ -212,13 +315,14 @@ private struct TurnActionsView: View {
             } label: {
                 Label("Draw Card & End Turn", systemImage: "arrow.down.doc.fill")
             }
-            .buttonStyle(.survivor(color: .blue))
+            .buttonStyle(.torchSecondary)
             .disabled(!viewModel.canDraw || viewModel.isPerformingAction)
             .accessibilityLabel("Draw card and end your turn")
             .accessibilityHint("Draws from the deck; drawing ends your turn automatically")
 
             if viewModel.isPerformingAction {
                 ProgressView()
+                    .tint(Torch.Color.torch)
             }
         }
     }
@@ -231,10 +335,10 @@ private struct WaitingView: View {
         VStack(spacing: 12) {
             Image(systemName: "hourglass")
                 .font(.system(size: 32))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Torch.Color.textFaint)
             Text("Waiting for \(playerName)...")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.display(Torch.TextSize.displaySM, weight: 700))
+                .foregroundStyle(Torch.Color.parchment)
         }
         .padding(.vertical, 32)
     }
