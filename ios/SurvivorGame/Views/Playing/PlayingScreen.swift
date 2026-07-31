@@ -175,30 +175,30 @@ private struct PlayingContent: View {
 
             hairline
 
-            // Main content area — the lit panel
+            // Main content area — the lit action panel and the hand flow
+            // together in ONE scroll region (the web's glanceable pattern).
             ScrollView {
-                StaggeredRise(index: 3) {
-                    VStack(spacing: 16) {
-                        // Action buttons (when it's your turn)
-                        if viewModel.isMyTurn {
-                            TurnActionsView(viewModel: viewModel)
-                        } else {
-                            WaitingView(playerName: viewModel.currentPlayerName)
+                VStack(spacing: Torch.Spacing.md) {
+                    StaggeredRise(index: 3) {
+                        VStack(spacing: 16) {
+                            // Action buttons (when it's your turn)
+                            if viewModel.isMyTurn {
+                                TurnActionsView(viewModel: viewModel)
+                            } else {
+                                WaitingView(playerName: viewModel.currentPlayerName)
+                            }
                         }
+                        .padding(Torch.Spacing.md)
+                        .frame(maxWidth: .infinity)
+                        .torchCard()
                     }
-                    .padding(Torch.Spacing.md)
-                    .frame(maxWidth: .infinity)
-                    .torchCard()
-                    .padding()
+
+                    StaggeredRise(index: 4) {
+                        CardHandView()
+                    }
                 }
-            }
-
-            hairline
-
-            // Card hand
-            StaggeredRise(index: 4) {
-                CardHandView()
-                    .padding(.vertical, 8)
+                .padding(Torch.Spacing.md)
+                .padding(.bottom, Torch.Spacing.lg)
             }
         }
         .background(TorchNightBackground(radialColor: Torch.Color.torch.opacity(0.14),

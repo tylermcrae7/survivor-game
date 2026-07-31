@@ -3,6 +3,8 @@ import SwiftUI
 /// Card sheet: full art-free detail + the play flow. Targeted cards collect
 /// their parameters (target, ally+victim, a named card, an RPS throw, a spied
 /// card) before the single server call — mirroring the web app's pickers.
+/// Chrome is the web's card sheet: 4px category rule, Fraunces title, phase
+/// chips, glowing play CTA.
 struct CardDetailSheet: View {
     @Environment(GameClient.self) private var gameClient
     @Environment(\.dismiss) private var dismiss
@@ -27,54 +29,92 @@ struct CardDetailSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Text(card.cardCategory.displayName.uppercased())
-                    .font(.caption.bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(card.cardCategory.color)
-                    .clipShape(Capsule())
+        VStack(spacing: 0) {
+            // The signature lit edge: full-width category rule at the very top.
+            card.cardCategory.torchGradient
+                .frame(height: 4)
+                .accessibilityHidden(true)
 
-                Text(card.displayName)
-                    .font(.title2.bold())
-                    .fontDesign(.serif)
-
-                if let desc = card.description {
-                    Text(desc)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-
-                VStack(spacing: 8) {
-                    if let phases = card.playablePhases, !phases.isEmpty {
-                        DetailRow(label: "Playable During",
-                                  value: phases.map { formatPhase($0) }.joined(separator: ", "))
+            ScrollView {
+                VStack(alignment: .leading, spacing: Torch.Spacing.md) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(card.cardCategory.displayName.lowercased())
+                            .font(Torch.Font.label(Torch.TextSize.xs))
+                            .tracking(Torch.Track.label * Torch.TextSize.xs)
+                            .foregroundStyle(Torch.Color.textFaint)
+                        Text(card.displayName)
+                            .font(Torch.Font.display(Torch.TextSize.displaySM, weight: 800))
+                            .foregroundStyle(Torch.Color.parchment)
                     }
-                    if card.reactiveOnly == true {
-                        DetailRow(label: "Reactive Only", value: "Yes")
+                    .padding(.trailing, 36) // room for the close button
+
+                    if let desc = card.description {
+                        Text(desc)
+                            .font(Torch.Font.body(Torch.TextSize.base))
+                            .foregroundStyle(Torch.Color.text)
+                            .lineSpacing(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    timingSection
+
+                    stepContent
+                        .padding(.top, Torch.Spacing.sm)
+                }
+                .padding(Torch.Spacing.lg)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(
+            // The night ground with the modal's subtle lit top.
+            LinearGradient(stops: [
+                .init(color: Torch.Color.surfaceRaised, location: 0),
+                .init(color: Torch.Color.surface, location: 0.30),
+                .init(color: Torch.Color.background, location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+        )
+        .overlay(alignment: .topTrailing) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Torch.Color.textSecondary)
+            }
+            .padding(Torch.Spacing.md)
+            .accessibilityLabel("Close")
+        }
+        .tint(Torch.Color.torch)
+        .errorAlert($error)
+    }
+
+    // MARK: - Timing ("playable during" phase chips)
+
+    @ViewBuilder
+    private var timingSection: some View {
+        let phases = (card.playablePhases ?? []).filter { $0 != "reactive_theft" }
+        if !phases.isEmpty {
+            VStack(alignment: .leading, spacing: Torch.Spacing.sm) {
+                Text("playable during")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.textFaint)
+                HStack(spacing: 6) {
+                    ForEach(phases, id: \.self) { phase in
+                        Text(formatPhase(phase).lowercased())
+                            .font(Torch.Font.label(Torch.TextSize.xs))
+                            .tracking(Torch.Track.label * Torch.TextSize.xs)
+                            .foregroundStyle(Torch.Color.torch)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .overlay(
+                                Capsule().strokeBorder(Torch.Color.torch.opacity(0.45),
+                                                       lineWidth: 1)
+                            )
                     }
                 }
-                .padding()
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                Spacer()
-
-                stepContent
             }
-            .padding(24)
-            .navigationTitle("Card")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .errorAlert($error)
         }
     }
 
@@ -84,19 +124,37 @@ struct CardDetailSheet: View {
     private var stepContent: some View {
         switch step {
         case .detail:
-            if isPlayable {
-                Button {
-                    beginPlay()
-                } label: {
-                    if isPlaying { ProgressView().tint(.white) }
-                    else { Text("Play This Card") }
+            if card.reactiveOnly == true {
+                // Reactive cards never get a play button — they play themselves.
+                Text("This card plays itself — when someone tries to raid you, you'll be offered it on the spot.")
+                    .font(Torch.Font.body(Torch.TextSize.sm))
+                    .foregroundStyle(Torch.Color.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if isPlayable {
+                VStack(spacing: Torch.Spacing.sm) {
+                    if card.requiresTarget == true {
+                        Text("You'll choose a target next.")
+                            .font(Torch.Font.body(Torch.TextSize.xs))
+                            .foregroundStyle(Torch.Color.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Button {
+                        beginPlay()
+                    } label: {
+                        if isPlaying { ProgressView().tint(Torch.Color.ink) }
+                        else { Text("play this card") }
+                    }
+                    .buttonStyle(.torchGlow)
+                    .disabled(isPlaying)
+                    .accessibilityHint("Plays \(card.displayName)")
                 }
-                .buttonStyle(.survivor)
-                .disabled(isPlaying)
             } else {
-                Text("This card can't be played right now")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Image(systemName: "hourglass")
+                    Text("Not playable right now.")
+                }
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textFaint)
             }
 
         case .pickTarget(let prompt):
@@ -111,16 +169,19 @@ struct CardDetailSheet: View {
 
         case .pickThrow(let targetId):
             VStack(spacing: 10) {
-                Text("Your secret throw").font(.subheadline.bold())
+                Text("Your secret throw")
+                    .font(Torch.Font.body(Torch.TextSize.sm, weight: .bold))
+                    .foregroundStyle(Torch.Color.parchment)
                 HStack(spacing: 12) {
                     ForEach(["rock", "paper", "scissors"], id: \.self) { choice in
-                        Button(choice.capitalized) {
+                        Button(choice) {
                             Task { await play(params: ["targetId": targetId, "choice": choice]) }
                         }
-                        .buttonStyle(.survivor(color: .teal))
+                        .buttonStyle(.torchSecondary)
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
 
         case .pickCardName(let targetId):
             cardNameList { named in
@@ -130,30 +191,29 @@ struct CardDetailSheet: View {
         case .pickSpiedCard(let targetId):
             VStack(alignment: .leading, spacing: 10) {
                 Text("Their hand, laid bare — take one")
-                    .font(.subheadline.bold())
-                ScrollView {
-                    ForEach(Array(spiedHand.enumerated()), id: \.offset) { i, spied in
-                        let resolved = CardCatalog.shared.resolve(spied)
-                        let locked = spied.type == "vote"
-                        Button {
-                            Task { await play(params: ["targetId": targetId, "takeIndex": i]) }
-                        } label: {
-                            HStack {
-                                Text(resolved.displayName)
-                                Spacer()
-                                if locked {
-                                    Text("out of reach").font(.caption).foregroundStyle(.secondary)
-                                }
+                    .font(Torch.Font.body(Torch.TextSize.sm, weight: .bold))
+                    .foregroundStyle(Torch.Color.parchment)
+                ForEach(Array(spiedHand.enumerated()), id: \.offset) { i, spied in
+                    let resolved = CardCatalog.shared.resolve(spied)
+                    let locked = spied.type == "vote"
+                    Button {
+                        Task { await play(params: ["targetId": targetId, "takeIndex": i]) }
+                    } label: {
+                        HStack {
+                            Text(resolved.displayName)
+                                .foregroundStyle(Torch.Color.text)
+                            Spacer()
+                            if locked {
+                                Text("out of reach")
+                                    .font(.caption)
+                                    .foregroundStyle(Torch.Color.textFaint)
                             }
-                            .padding(10)
-                            .background(.regularMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .buttonStyle(.plain)
-                        .disabled(locked)
+                        .torchPickerRow()
                     }
+                    .buttonStyle(.plain)
+                    .disabled(locked)
                 }
-                .frame(maxHeight: 260)
             }
 
         case .pickPair:
@@ -166,7 +226,9 @@ struct CardDetailSheet: View {
         onPick: @escaping (String) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(prompt).font(.subheadline.bold())
+            Text(prompt)
+                .font(Torch.Font.body(Torch.TextSize.sm, weight: .bold))
+                .foregroundStyle(Torch.Color.parchment)
             ForEach(eligibleTargets.filter { !excluding.contains($0.id) }) { player in
                 Button {
                     onPick(player.id)
@@ -174,17 +236,16 @@ struct CardDetailSheet: View {
                     HStack {
                         Circle().fill(player.swiftUIColor).frame(width: 14, height: 14)
                         Text(player.name)
+                            .foregroundStyle(Torch.Color.text)
                         Spacer()
                         Text("\(player.handCount)")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Torch.Color.textSecondary)
                         Image(systemName: "rectangle.portrait.on.rectangle.portrait")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
-                    .padding(10)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .torchPickerRow()
                 }
                 .buttonStyle(.plain)
                 .disabled(isPlaying)
@@ -196,7 +257,9 @@ struct CardDetailSheet: View {
 
     private var pairPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pick the pair (2 players)").font(.subheadline.bold())
+            Text("Pick the pair (2 players)")
+                .font(Torch.Font.body(Torch.TextSize.sm, weight: .bold))
+                .foregroundStyle(Torch.Color.parchment)
             ForEach(eligibleTargets) { player in
                 Button {
                     if pairSelection.contains(player.id) { pairSelection.remove(player.id) }
@@ -205,49 +268,49 @@ struct CardDetailSheet: View {
                     HStack {
                         Image(systemName: pairSelection.contains(player.id)
                               ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(pairSelection.contains(player.id)
+                                             ? Torch.Color.torch : Torch.Color.textSecondary)
                         Text(player.name)
+                            .foregroundStyle(Torch.Color.text)
                         Spacer()
                     }
-                    .padding(10)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .torchPickerRow()
                 }
                 .buttonStyle(.plain)
             }
-            Button("Call the Power Pair") {
+            Button("call the power pair") {
                 Task { await play(params: ["targetIds": Array(pairSelection)]) }
             }
-            .buttonStyle(.survivor)
+            .buttonStyle(.torchGlow)
             .disabled(pairSelection.count != 2 || isPlaying)
         }
     }
 
     private func cardNameList(onPick: @escaping (String) -> Void) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Name the card you demand").font(.subheadline.bold())
-                let nameable = CardCatalog.shared.cards.values
-                    .filter { $0.cardCategory != .tribalCouncil && $0.type != "vote" }
-                    .sorted { $0.displayName < $1.displayName }
-                ForEach(nameable) { option in
-                    Button {
-                        onPick(option.type)
-                    } label: {
-                        HStack {
-                            Text(option.displayName)
-                            Spacer()
-                            Text(option.cardCategory.displayName)
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        .padding(8)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Name the card you demand")
+                .font(Torch.Font.body(Torch.TextSize.sm, weight: .bold))
+                .foregroundStyle(Torch.Color.parchment)
+            let nameable = CardCatalog.shared.cards.values
+                .filter { $0.cardCategory != .tribalCouncil && $0.type != "vote" }
+                .sorted { $0.displayName < $1.displayName }
+            ForEach(nameable) { option in
+                Button {
+                    onPick(option.type)
+                } label: {
+                    HStack {
+                        Text(option.displayName)
+                            .foregroundStyle(Torch.Color.text)
+                        Spacer()
+                        Text(option.cardCategory.displayName)
+                            .font(.caption2)
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
-                    .buttonStyle(.plain)
+                    .torchPickerRow()
                 }
+                .buttonStyle(.plain)
             }
         }
-        .frame(maxHeight: 280)
     }
 
     // MARK: - Flow control
@@ -336,18 +399,23 @@ struct CardDetailSheet: View {
     }
 }
 
-private struct DetailRow: View {
-    let label: String
-    let value: String
+// MARK: - Picker-row chrome
 
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.caption.bold())
-        }
+private extension View {
+    /// The sheet's picker-row well: white@3% fill, 1px hairline, 48pt target.
+    func torchPickerRow() -> some View {
+        self
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(
+                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                    .strokeBorder(Torch.Color.line, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous))
     }
 }

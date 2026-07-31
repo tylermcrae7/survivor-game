@@ -15,50 +15,52 @@ struct CardHandView: View {
     }
 }
 
+/// Content-hugging hand grid: no inner scroll, no height cap, no padding of
+/// its own — the parent scroll region pads and scrolls the whole flow.
 private struct CardHandContent: View {
     @Bindable var viewModel: CardHandViewModel
     @Environment(GameClient.self) private var gameClient
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Your Hand")
-                    .font(.headline)
-                Spacer()
-                Text("\(viewModel.hand.count) cards")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text("your hand")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.textSecondary)
+                Text("· \(viewModel.hand.count)")
+                    .font(Torch.Font.body(Torch.TextSize.xs))
+                    .foregroundStyle(Torch.Color.textFaint)
             }
-            .padding(.horizontal)
 
             if viewModel.hand.isEmpty {
-                Text("No cards in hand")
-                    .foregroundStyle(.secondary)
+                Text("No cards — the island provides at the next draw.")
+                    .font(Torch.Font.body(Torch.TextSize.sm))
+                    .foregroundStyle(Torch.Color.textFaint)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                            .strokeBorder(Torch.Color.line,
+                                          style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    )
             } else {
-                // Two-column hand, like the web's card grid; scrolls when the
-                // hand outgrows two rows so the bottom slot stays bounded.
-                ScrollView(showsIndicators: false) {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8),
-                                        GridItem(.flexible(), spacing: 8)],
-                              spacing: 8) {
-                        ForEach(Array(viewModel.hand.enumerated()), id: \.offset) { index, card in
-                            Button {
-                                viewModel.selectCard(at: index)
-                                HapticEngine.selection()
-                            } label: {
-                                CardView(
-                                    card: card,
-                                    isPlayable: viewModel.isPlayable(card, at: index)
-                                )
-                            }
-                            .buttonStyle(.plain)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Torch.Spacing.sm),
+                                    GridItem(.flexible(), spacing: Torch.Spacing.sm)],
+                          spacing: Torch.Spacing.sm) {
+                    ForEach(Array(viewModel.hand.enumerated()), id: \.offset) { index, card in
+                        Button {
+                            viewModel.selectCard(at: index)
+                            HapticEngine.selection()
+                        } label: {
+                            CardView(
+                                card: card,
+                                isPlayable: viewModel.isPlayable(card, at: index)
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal)
                 }
-                .frame(maxHeight: 296) // two full rows; more cards scroll
             }
         }
         .sheet(isPresented: $viewModel.showCardDetail) {
@@ -68,6 +70,8 @@ private struct CardHandContent: View {
                     index: index,
                     isPlayable: viewModel.isPlayable(card, at: index)
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
     }

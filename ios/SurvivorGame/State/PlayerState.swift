@@ -179,6 +179,19 @@ enum CardCategory: String, Codable {
         case .house: return .teal
         }
     }
+
+    /// The web's per-category 4px card-rule gradient (research §Playing
+    /// cards): a left-to-right two-stop wash across the card's top edge.
+    var torchGradient: LinearGradient {
+        let stops: (Color, Color) = switch self {
+        case .action:          (Color(hex: "#579766") ?? .green, Color(hex: "#237356") ?? .green)
+        case .tribalAdvantage: (Color(hex: "#D8B349") ?? .yellow, Color(hex: "#C48225") ?? .yellow)
+        case .vote:            (Color(hex: "#DDCCA9") ?? .gray, Color(hex: "#AD9D7B") ?? .gray)
+        case .challenge:       (Color(hex: "#F3821D") ?? .orange, Color(hex: "#D84A00") ?? .orange)
+        case .tribalCouncil, .house: (Torch.Color.textFaint, Torch.Color.textFaint)
+        }
+        return LinearGradient(colors: [stops.0, stops.1], startPoint: .leading, endPoint: .trailing)
+    }
 }
 
 // MARK: - Color Extension
