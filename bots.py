@@ -535,6 +535,7 @@ STYLE_STEAL = {"chill": 0.25, "normal": 0.5, "cutthroat": 0.8}
 # can't race past the one moment a human may play I'm The Leader Now or an
 # idol. Bot-only games stay quick.
 HUMAN_WINDOW_FLOORS = {"advantage": 12.0, "discussion": 10.0}
+IMMUNITY_WINDOW_FLOOR = 12.0  # seconds — only when a human holds an idol/nullifier
 
 
 def _setting(game, key):
@@ -563,10 +564,17 @@ def windows_for(game):
         return dict(WINDOWS)   # test env: everything collapses to zero
     mult = window_mult(game)
     w = {k: v * mult for k, v in WINDOWS.items()}
-    if any(not p.get("isBot") and not p.get("isEliminated")
-           for p in game.get("players", {}).values()):
+    humans = [p for p in game.get("players", {}).values()
+              if not p.get("isBot") and not p.get("isEliminated")]
+    if humans:
         for k, floor in HUMAN_WINDOW_FLOORS.items():
             w[k] = max(w[k], floor * mult)
+        # The idol window only needs air when a human can actually act in it —
+        # a bot Council Leader must not race past a person holding an idol (or
+        # a nullifier answering one), but an idle window stays quick.
+        if any(c.get("type") in ("immunity_idol", "idol_nullifier")
+               for p in humans for c in (p.get("hand") or [])):
+            w["immunity"] = max(w["immunity"], IMMUNITY_WINDOW_FLOOR * mult)
     return w
 
 

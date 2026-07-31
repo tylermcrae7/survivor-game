@@ -338,6 +338,119 @@ def test_deck_math_never_strands():
     print("✅ every player count is guaranteed to reach Final Tribal\n")
 
 
+def _open_voting(gs, gid, game):
+    """Put the game straight into a tribal voting phase."""
+    game["phase"] = "tribal_council"
+    game["currentVote"] = {
+        "type": "single", "votes": {}, "phase": "voting",
+        "councilLeaderId": game["turnOrder"][0], "immunityPlayed": [],
+        "tieBreakNeeded": False, "tiedPlayers": [], "eliminated": []
+    }
+    for p in game["players"].values():
+        p["hasVoted"] = False
+
+
+def test_spent_vote_cards_leave_the_game_not_the_discard():
+    """
+    The Voting Box is not the Discard Pile. Spent Vote/Extra/Goodwill cards
+    used to be discarded; a long game legitimately empties the Draw Pile, the
+    discard reshuffles in, and suddenly Vote Cards are drawable — and Camp
+    Raid's force-take grabs them "no matter what it is". Tyler watched it
+    happen. Spent vote cards leave play; the completion mint is the return.
+    """
+    gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
+    try:
+        print("=== Spent vote cards never enter the discard ===")
+        _open_voting(gs, gid, game)
+        game["players"][ana]["hand"] = [{"type": "vote"}, {"type": "extra_vote"}]
+        gs.rules_engine.sync_vote_counters(game)
+
+        result = gs.cast_vote(gid, voterId=ana,
+                              votesData=[{"targetId": ben, "votes": 2}])
+        assert result["success"], result.get("message")
+        discard_types = [c.get("type") for c in game.get("discard", [])]
+        assert "vote" not in discard_types, discard_types
+        assert "extra_vote" not in discard_types, discard_types
+        # Bookkeeping for the UI survives
+        assert game["currentVote"]["cardsSpent"] == ["vote", "extra_vote"]
+        print("✅ the Voting Box is not the Discard Pile\n")
+    finally:
+        os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_reshuffle_filters_vote_cards_out_of_the_deck():
+    """Defense in depth: live saves already carry polluted discards — the
+    empty-deck reshuffle must never deal a vote-economy card back out."""
+    gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
+    try:
+        print("=== The reshuffle never returns vote cards ===")
+        set_turn(game, ana, played=True)
+        game["deck"] = []
+        game["discard"] = [{"type": "vote"}, {"type": "extra_vote"},
+                           {"type": "goodwill_gamble"}, {"type": "camp_raid"}]
+        result = gs.draw_card(gid, ana)
+        assert result["success"], result.get("message")
+        deck_and_hand = [c.get("type") for c in game.get("deck", [])] + \
+                        [c.get("type") for c in game["players"][ana]["hand"]]
+        assert "extra_vote" not in deck_and_hand, deck_and_hand
+        assert "goodwill_gamble" not in deck_and_hand, deck_and_hand
+        # Ana's own returned Vote Card isn't in play here; the drawn card and
+        # the remaining deck must be the camp_raid alone
+        assert "camp_raid" in deck_and_hand, deck_and_hand
+        vote_in_deck = [t for t in (c.get("type") for c in game.get("deck", []))
+                        if t == "vote"]
+        assert not vote_in_deck, vote_in_deck
+        print("✅ polluted discards are scrubbed at the reshuffle\n")
+    finally:
+        os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_inheritance_never_transfers_the_vote_card():
+    """A dead survivor's Vote Card goes back to the box, not to the heir —
+    otherwise the heir votes twice at every council from then on."""
+    gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
+    try:
+        print("=== Inheritance skips the Vote Card ===")
+        game["players"][ana]["inheritanceTarget"] = ben
+        game["players"][ben]["hand"] = [{"type": "vote"},
+                                        {"type": "goodwill_gamble"},
+                                        {"type": "camp_raid"}]
+        game["players"][ana]["hand"] = [{"type": "vote"}]
+        game["players"][ben]["isEliminated"] = True
+        gs.rules_engine.process_elimination_inheritance(game, ben)
+
+        ana_hand = hand_types(game, ana)
+        assert ana_hand.count("vote") == 1, ana_hand
+        assert "goodwill_gamble" not in ana_hand, ana_hand
+        assert "camp_raid" in ana_hand, ana_hand
+        print("✅ the heir gets the estate, not the ballot\n")
+    finally:
+        os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_ballot_may_split_across_targets():
+    """Official: Extra Votes are separate ballots — 'you know how this works,
+    played with your Vote Card for 2 total votes' on anyone you like. The
+    server must tally a split ballot; the phone UI builds on this."""
+    gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
+    try:
+        print("=== A split ballot tallies per target ===")
+        _open_voting(gs, gid, game)
+        game["players"][ana]["hand"] = [{"type": "vote"}, {"type": "extra_vote"}]
+        gs.rules_engine.sync_vote_counters(game)
+
+        result = gs.cast_vote(gid, voterId=ana, votesData=[
+            {"targetId": ben, "votes": 1},
+            {"targetId": cam, "votes": 1},
+        ])
+        assert result["success"], result.get("message")
+        recorded = game["currentVote"]["votes"][ana]
+        assert recorded == {ben: 1, cam: 1}, recorded
+        print("✅ vote and extra vote can land on different heads\n")
+    finally:
+        os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     print("🧪 Rules Enforcement (Survival Guide review 2026-07-30)")
     print("=" * 60)
@@ -349,6 +462,10 @@ if __name__ == "__main__":
         test_reward_challenge_steals_go_through_the_gate()
         test_three_players_left_rule()
         test_deck_math_never_strands()
+        test_spent_vote_cards_leave_the_game_not_the_discard()
+        test_the_reshuffle_filters_vote_cards_out_of_the_deck()
+        test_inheritance_never_transfers_the_vote_card()
+        test_a_ballot_may_split_across_targets()
         print("🎉 All rules-enforcement tests passed!")
     except AssertionError as e:
         print(f"❌ Test failed: {e}")

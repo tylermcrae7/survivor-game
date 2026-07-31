@@ -599,39 +599,91 @@ function renderImmunityPlayers(gameState) {
     const immunityPlayers = document.getElementById('immunityPlayers');
     if (!immunityPlayers || !gameState.players) return;
 
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const myself = gameState.players[me] || {};
+    const myHand = myself.hand || [];
+    const iHoldIdol = myHand.some(c => c.type === 'immunity_idol');
+    const iHoldNullifier = myHand.some(c => c.type === 'idol_nullifier');
+
     const players = Object.values(gameState.players).filter(p => !p.isEliminated);
     immunityPlayers.innerHTML = players.map(player => {
         const safeName = escapeHtml(player.name);
         const safeId = escapeHtml(player.id);
+        const isMe = player.id === me;
+        const shielded = !!player.immunityIdolProtection;
+        const actions = [];
+        // Your idol protects you (or an ally — tap their row while holding it)
+        if (iHoldIdol && !myself.immunityPlayed && !shielded) {
+            actions.push(`<button class="btn btn-sm btn-warning immunity-idol-btn"
+                                  data-player-id="${safeId}">
+                              ${icon('idol')} ${isMe ? 'Play Idol' : 'Shield them'}
+                          </button>`);
+        }
+        // A nullifier answers an idol that has been played on this player
+        if (iHoldNullifier && shielded) {
+            actions.push(`<button class="btn btn-sm btn-danger nullifier-btn"
+                                  data-player-id="${safeId}">
+                              ${icon('x')} Nullify
+                          </button>`);
+        }
         return `
             <div class="immunity-player" data-player-id="${safeId}">
-                <span>${safeName}</span>
-                <div class="immunity-actions">
-                    <button class="btn btn-sm btn-warning immunity-idol-btn" data-player-id="${safeId}">
-                        ${icon('idol')} Play Idol
-                    </button>
-                    <button class="btn btn-sm btn-danger nullifier-btn" data-player-id="${safeId}">
-                        ${icon('x')} Nullify
-                    </button>
-                </div>
+                <span>${safeName}${isMe ? ' (you)' : ''}${shielded
+                    ? ` <span class="panel-sub">· protected</span>` : ''}</span>
+                <div class="immunity-actions">${actions.join('')}</div>
             </div>
         `;
     }).join('');
 
-    // Bind event handlers instead of inline onclick (security best practice)
+    if (!iHoldIdol && !iHoldNullifier) {
+        immunityPlayers.innerHTML += `
+            <p class="panel-sub" style="text-align:center; margin-top:0.5rem">
+                Nothing in your hand plays in this window.
+            </p>`;
+    }
+
     immunityPlayers.querySelectorAll('.immunity-idol-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const playerId = btn.dataset.playerId;
-            if (window.playImmunityIdol) window.playImmunityIdol(playerId);
-        });
+        btn.addEventListener('click', () =>
+            window.playImmunityIdol(btn.dataset.playerId));
     });
     immunityPlayers.querySelectorAll('.nullifier-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const playerId = btn.dataset.playerId;
-            if (window.playIdolNullifier) window.playIdolNullifier(playerId);
-        });
+        btn.addEventListener('click', () =>
+            window.playIdolNullifier(btn.dataset.playerId));
     });
 }
+
+/**
+ * The idol/nullifier plays. These were referenced by the immunity screen's
+ * buttons but never defined — every tap was a silent no-op, which is exactly
+ * "couldn't play my hidden immunity idol" from the playtest.
+ */
+window.playImmunityIdol = async function (targetId) {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const playerId = window.SurvivorGame?.localGameState?.playerId;
+    if (!gameId || !playerId) return;
+    try {
+        const result = await window.SurvivorNetwork?.apiCall('/vote/immunity',
+            { gameId, playerId, targetId });
+        if (result?.success) {
+            Haptics.trigger('success');
+        } else if (result?.message) {
+            showToast(result.message, 'error');
+        }
+    } catch (error) {
+        showToast(error.message || 'The idol slipped', 'error');
+    }
+};
+
+window.playIdolNullifier = async function (targetId) {
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const hand = window.SurvivorGame?.fullGameState?.players?.[me]?.hand || [];
+    const idx = hand.findIndex(c => c.type === 'idol_nullifier');
+    if (idx < 0) {
+        showToast("You don't hold an Idol Nullifier", 'warning');
+        return;
+    }
+    playCard(idx, { targetId });
+};
 
 /**
  * Component Rendering
@@ -1380,11 +1432,24 @@ function showExtraVoteChooser(targetId) {
             </button>`;
     }
 
+    // Extra Votes are separate ballots — they may land on different heads
+    const otherTargets = Object.values(state?.players || {}).filter(p =>
+        !p.isEliminated && p.id !== voterId
+        && p.id !== state?.necklaceHolder).length;
+    const splitOption = (extra >= 1 && otherTargets >= 2) ? `
+        <button class="btn touch-target extra-vote-option-split"
+                style="width:100%; display:block;">
+            Split votes across players…
+            <span class="panel-sub" style="display:block; font-size:0.8em;">
+                Write different names on different parchments</span>
+        </button>` : '';
+
     showModal(`
         <p class="panel-sub" style="margin-bottom:0.75rem;">
             You hold ${extra} Extra Vote${extra === 1 ? '' : 's'}. Spend them now, or keep them hidden for a later Tribal Council.
         </p>
         ${buttons}
+        ${splitOption}
     `, { title: 'How many votes?' });
 
     document.querySelectorAll('.extra-vote-option').forEach(btn => {
@@ -1394,6 +1459,111 @@ function showExtraVoteChooser(targetId) {
             castVote(targetId, total);
         });
     });
+    document.querySelector('.extra-vote-option-split')?.addEventListener('click', () => {
+        hideModal();
+        setTimeout(() => showSplitBallotBuilder(voterId, targetId), 80);
+    });
+}
+
+/**
+ * Split-ballot builder: allocate your Vote + Extra Votes across several
+ * players. Mandatory cards must all be cast; extras are optional. The server
+ * has always tallied multi-target ballots — this is the phone UI for it.
+ */
+function showSplitBallotBuilder(voterId, firstTargetId = null) {
+    const state = window.SurvivorGame?.fullGameState;
+    const me = state?.players?.[voterId];
+    if (!me) return;
+
+    const mandatory = me.mandatoryVotes ?? 0;
+    const maxTotal = mandatory + (me.extraVotes ?? 0);
+    const targets = Object.values(state.players).filter(p =>
+        !p.isEliminated && p.id !== voterId && p.id !== state.necklaceHolder);
+    const alloc = {};
+    targets.forEach(t => { alloc[t.id] = 0; });
+    if (firstTargetId && firstTargetId in alloc) alloc[firstTargetId] = 1;
+
+    const rows = targets.map(t => `
+        <div class="settings-row" data-ballot-row="${escapeHtml(t.id)}">
+            <label>${escapeHtml(t.name)}</label>
+            <div class="seg-group">
+                <button class="seg-btn touch-target" data-ballot-minus="${escapeHtml(t.id)}">−</button>
+                <span class="seg-btn" data-ballot-count="${escapeHtml(t.id)}"
+                      style="cursor:default">${alloc[t.id]}</span>
+                <button class="seg-btn touch-target" data-ballot-plus="${escapeHtml(t.id)}">+</button>
+            </div>
+        </div>`).join('');
+
+    showModal(`
+        <div class="cardname-selection">
+            <p class="picker-hint" id="splitBallotStatus"></p>
+            ${rows}
+            <button class="btn btn-enhanced touch-target" id="splitBallotCast"
+                    style="width:100%; margin-top:0.75rem;">Cast this ballot</button>
+        </div>
+    `, { title: 'Write your parchments' });
+
+    const total = () => Object.values(alloc).reduce((a, b) => a + b, 0);
+    const refresh = () => {
+        targets.forEach(t => {
+            const el = document.querySelector(`[data-ballot-count="${t.id}"]`);
+            if (el) el.textContent = alloc[t.id];
+        });
+        const status = document.getElementById('splitBallotStatus');
+        const castBtn = document.getElementById('splitBallotCast');
+        const n = total();
+        if (status) {
+            status.textContent = n < mandatory
+                ? `Cast at least ${mandatory} (your Vote Card${mandatory > 1 ? 's' : ''} must be used) — ${n} placed`
+                : `${n} of up to ${maxTotal} votes placed`;
+        }
+        if (castBtn) castBtn.disabled = n < mandatory || n > maxTotal;
+    };
+
+    targets.forEach(t => {
+        document.querySelector(`[data-ballot-plus="${t.id}"]`)?.addEventListener('click', () => {
+            if (total() < maxTotal) { alloc[t.id] += 1; refresh(); }
+        });
+        document.querySelector(`[data-ballot-minus="${t.id}"]`)?.addEventListener('click', () => {
+            if (alloc[t.id] > 0) { alloc[t.id] -= 1; refresh(); }
+        });
+    });
+    refresh();
+
+    document.getElementById('splitBallotCast')?.addEventListener('click', () => {
+        const votesData = targets
+            .filter(t => alloc[t.id] > 0)
+            .map(t => ({ targetId: t.id, votes: alloc[t.id] }));
+        hideModal();
+        castSplitBallot(voterId, votesData);
+    });
+}
+
+async function castSplitBallot(voterId, votesData, skipConfirm = false) {
+    const gameId = window.SurvivorGame?.localGameState.gameId;
+    if (!gameId || !voterId || !votesData?.length) return;
+
+    if (!skipConfirm && window.SurvivorSettings?.get('confirmVotes')) {
+        const state = window.SurvivorGame?.fullGameState;
+        const summary = votesData.map(v =>
+            `${v.votes} on ${state?.players?.[v.targetId]?.name || 'them'}`).join(', ');
+        showConfirm(`Cast this ballot — ${summary}? A vote can't be taken back.`,
+            () => castSplitBallot(voterId, votesData, true));
+        return;
+    }
+
+    try {
+        showLoading('The parchments go in the box…');
+        const result = await window.SurvivorNetwork?.GameAPI.castVote(gameId, voterId, votesData);
+        if (result && result.success) {
+            Haptics.trigger('success');
+        }
+    } catch (error) {
+        showToast(error.message || 'Failed to cast votes', 'error');
+        Haptics.trigger('error');
+    } finally {
+        hideLoading();
+    }
 }
 
 function handleStealClick(event) {

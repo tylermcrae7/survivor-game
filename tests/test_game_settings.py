@@ -152,7 +152,18 @@ class TestBotPacing(SettingsTestBase):
             w = bots.windows_for(self.game)
             self.assertGreaterEqual(w["advantage"], 24.0)
 
+            # The idol window earns its floor only when a human can act in it
+            # (Tyler couldn't play his idol before the ceremony moved on)
+            self.game["settings"]["tribalPace"] = "normal"
+            human = self.game["players"][self.leader]
+            base_immunity = bots.windows_for(self.game)["immunity"]
+            human["hand"] = [{"type": "immunity_idol"}]
+            self.assertGreaterEqual(bots.windows_for(self.game)["immunity"], 12.0)
+            human["hand"] = []
+            self.assertEqual(bots.windows_for(self.game)["immunity"], base_immunity)
+
             # Bot-only games keep their quick ceremonies — no floor
+            self.game["settings"]["tribalPace"] = "relaxed"
             for p in self.game["players"].values():
                 p["isBot"] = True
             w = bots.windows_for(self.game)

@@ -288,12 +288,16 @@ class TestTurnActionCards(CardEffectTestBase):
         self.assertTrue(result["success"], result.get("message"))
         self.assertEqual(self.game["players"][heir]["inheritanceTarget"], doomed)
 
-        doomed_hand = list(self.hand(doomed))
+        # The estate transfers — but a dead survivor's Vote Card (and any
+        # Goodwill Gamble) returns to the box, or the heir votes twice forever.
+        doomed_estate = [c for c in self.hand(doomed)
+                         if c.get("type") not in ("vote", "goodwill_gamble")]
         heir_before = len(self.hand(heir))
 
         messages = self.gs.rules_engine.process_elimination_inheritance(self.game, doomed)
         self.assertTrue(messages)
-        self.assertEqual(len(self.hand(heir)), heir_before + len(doomed_hand))
+        self.assertEqual(len(self.hand(heir)), heir_before + len(doomed_estate))
+        self.assertEqual(self.hand_types(heir).count("vote"), 1)
         self.assertEqual(self.hand(doomed), [])
         self.assertIsNone(self.game["players"][heir]["inheritanceTarget"])
 

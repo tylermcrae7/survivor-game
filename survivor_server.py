@@ -6,7 +6,7 @@ import uuid, time, os, json, socket, re, sys, threading, random, hmac, hashlib
 import logging
 from pathlib import Path
 from functools import wraps
-from rules_engine import SurvivorRulesEngine, TribalPhase, takeable_indices
+from rules_engine import SurvivorRulesEngine, TribalPhase, takeable_indices, VOTE_CARD_TYPES
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 import push_notify
 from interactions import interaction_engine
@@ -701,9 +701,12 @@ class GameState:
         current_vote["votes"][voterId] = vote_targets
         voter["hasVoted"] = True
 
-        # Physically spend the cards used to vote
+        # Physically spend the cards used to vote. The Voting Box is NOT the
+        # Discard Pile: discarded cards reshuffle into the Draw Pile when it
+        # empties, which put spent Vote Cards back into circulation — drawable,
+        # and grabbable by Camp Raid's take-no-matter-what. Spent vote cards
+        # leave play entirely; complete_tribal's mint is the official return.
         spent = self.rules_engine.spend_vote_cards(voter, total_votes_cast)
-        game.setdefault("discard", []).extend(spent)
         current_vote.setdefault("cardsSpent", []).extend(c.get("type") for c in spent)
         self.rules_engine.sync_vote_counters(game)
 
@@ -2449,8 +2452,17 @@ class GameState:
                 # The table would do exactly this: shuffle the Discard Pile into
                 # a fresh Draw Pile (used Tribal Council Cards return with it,
                 # which is what keeps the game finishable).
-                random.shuffle(discard)
-                game["deck"] = discard
+                # Defense in depth: older saves discarded spent Vote Cards, and
+                # a vote-economy card must never be dealt back out of the Draw
+                # Pile. Scrub them here; they simply leave the game.
+                scrubbed = [c for c in discard
+                            if c.get("type") not in VOTE_CARD_TYPES]
+                if len(scrubbed) != len(discard):
+                    logger.info(
+                        f"Reshuffle scrubbed {len(discard) - len(scrubbed)} "
+                        f"vote-economy card(s) out of the Draw Pile in {gid}")
+                random.shuffle(scrubbed)
+                game["deck"] = scrubbed
                 game["discard"] = []
                 deck = game["deck"]
                 # The official deck math guarantees Final Tribal before the pile

@@ -5,9 +5,9 @@
 
 // Bump these on every client change — the static cache is cache-first, so a stale
 // cache name means installed PWAs keep running the old game.js/ui.js/styles.css.
-const CACHE_NAME = 'survivor-v3.11.0';
-const STATIC_CACHE = 'survivor-static-v3.11.0';
-const DYNAMIC_CACHE = 'survivor-dynamic-v3.11.0';
+const CACHE_NAME = 'survivor-v3.11.1';
+const STATIC_CACHE = 'survivor-static-v3.11.1';
+const DYNAMIC_CACHE = 'survivor-dynamic-v3.11.1';
 
 // Assets to cache immediately
 const STATIC_ASSETS = [
@@ -117,37 +117,8 @@ self.addEventListener('sync', event => {
     }
 });
 
-/**
- * Push Notifications (future feature)
- */
-self.addEventListener('push', event => {
-    const options = {
-        body: event.data ? event.data.text() : 'Game update available',
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-        vibrate: [100, 50, 100],
-        data: {
-            dateOfArrival: Date.now(),
-            primaryKey: 1
-        },
-        actions: [
-            {
-                action: 'explore',
-                title: 'View Game',
-                icon: '/icon-192x192.png'
-            },
-            {
-                action: 'close',
-                title: 'Close',
-                icon: '/icon-192x192.png'
-            }
-        ]
-    };
-    
-    event.waitUntil(
-        self.registration.showNotification('Survivor Game', options)
-    );
-});
+// (The real Web Push handlers live at the bottom of this file — a legacy
+// "future feature" push listener here used to double-notify on every send.)
 
 /**
  * Helper Functions

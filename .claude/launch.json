@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "survivor-dev",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": ["PORT=8123", ".venv/bin/python", "survivor_server.py"],
+      "port": 8123
+    }
+  ]
+}

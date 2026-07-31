@@ -1990,10 +1990,15 @@ class SurvivorRulesEngine:
 		if not eliminated_player:
 			return inheritance_messages
 			
-		eliminated_hand = eliminated_player.get("hand", [])
+		# A dead survivor's Vote Card (and any Goodwill Gamble bound to a
+		# council they'll never attend) goes back to the box, not to the heir —
+		# otherwise the heir votes twice at every council after this one.
+		eliminated_hand = [c for c in eliminated_player.get("hand", [])
+		                   if c.get("type") not in MANDATORY_VOTE_CARD_TYPES]
+		eliminated_player["hand"] = eliminated_hand
 		if not eliminated_hand:
 			return inheritance_messages
-			
+
 		# Find players who have inheritance on this eliminated player
 		for player_id, player in game["players"].items():
 			if player.get("inheritanceTarget") == eliminated_player_id and not player.get("isEliminated"):
