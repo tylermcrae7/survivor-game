@@ -262,9 +262,12 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
             for pid in it.get("awaiting", []):
                 if is_bot(game, pid):
                     hand = _hand(game, pid)
-                    if hand:
-                        give = min(range(len(hand)),
-                                   key=lambda i: _card_value(hand[i]))
+                    # The Vote Card can't be handed over — offering it would be
+                    # refused and the bot would re-offer it forever.
+                    givable = [i for i, c in enumerate(hand)
+                               if c.get("type") != "vote"]
+                    if givable:
+                        give = min(givable, key=lambda i: _card_value(hand[i]))
                         return _act("interaction_action", playerId=pid,
                                     action="give", value=give)
         elif it.get("phase") == "choose_victim":
@@ -310,7 +313,17 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
             else:
                 value = nxt
         elif action == "pull" and ch.get("type") == "lowest_score_loses":
-            value = rng.randint(1, 2)
+            # Earlier players may have emptied the bag. The Guide: "When you get
+            # the bag it might be empty - that's fine, just pretend to take some
+            # Rocks and pass the bag to the next player." Asking for more than
+            # the bag holds is refused, and a bot that keeps asking wedges the
+            # whole game, so clamp to what is actually left.
+            bag = ch.get("bag") or {}
+            left = bag.get("grey", 0) + bag.get("purple", 0)
+            ceiling = ch.get("maxPull")
+            if isinstance(ceiling, int):
+                left = min(left, ceiling)
+            value = rng.randint(0, max(0, min(2, left)))
         elif action == "steal":
             targets = ch.get("stealTargets") or []
             if targets and rng.random() < 0.5:

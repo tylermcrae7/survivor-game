@@ -69,6 +69,26 @@ MANDATORY_VOTE_CARD_TYPES = ("vote", "goodwill_gamble")
 OPTIONAL_VOTE_CARD_TYPES = ("extra_vote",)
 VOTE_CARD_TYPES = MANDATORY_VOTE_CARD_TYPES + OPTIONAL_VOTE_CARD_TYPES
 
+# The Vote Card is not part of your hand of Action Cards. Setup pulls all 6 out
+# of the 67 before dealing ("remove the 9 Tribal Council and 6 Vote Cards. Give
+# each player 1 Vote Card, and put the extras away"), and Tribal returns one to
+# every survivor. So it is never stolen, swapped, demanded, or discarded by the
+# ordinary card economy — only Control The Vote ("take any player's Vote Card")
+# and the house Steal A Vote name it, and they reach it through their own paths.
+# Extra Vote is NOT protected: it rides in the Draw Pile and lives in your hand
+# like any other card.
+UNTAKEABLE_CARD_TYPES = ("vote",)
+
+
+def is_takeable(card: Dict[str, Any]) -> bool:
+	"""True if a steal/take/swap may move this card out of a hand."""
+	return (card or {}).get("type") not in UNTAKEABLE_CARD_TYPES
+
+
+def takeable_indices(hand: Optional[List[Dict[str, Any]]]) -> List[int]:
+	"""Indices of the cards in ``hand`` that a steal or take may remove."""
+	return [i for i, card in enumerate(hand or []) if is_takeable(card)]
+
 # Let's Go To Rocks expansion — the 5 Orange Challenge Cards (Phase 4).
 CHALLENGE_CARD_TYPES = (
     "challenge_lowest_score_loses",
@@ -114,19 +134,32 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 	moved: List[str] = []
 
 	if kind == "random_each":
+		# Count per thief so two cards read "took 2 cards", not "took a card;
+		# took a card" — Power Pair and Do Or Die both land here.
+		taken: Dict[str, int] = {}
 		for take in spec.get("takes", []):
 			thief = game["players"].get(take.get("thiefId"))
 			if not thief:
 				continue
 			for _ in range(int(take.get("count", 1))):
 				hand = victim.get("hand") or []
-				if not hand:
+				reachable = takeable_indices(hand)
+				if not reachable:
 					break
-				card = hand.pop(random.randrange(len(hand)))
+				card = hand.pop(random.choice(reachable))
 				thief.setdefault("hand", []).append(card)
-				moved.append(f"{names(take['thiefId'])} took a card")
-		message = ("; ".join(moved) + f" from {victim.get('name')}") if moved 			else f"{victim.get('name')} had no cards to take"
-		return {"success": True, "message": message, "moved": len(moved)}
+				taken[take["thiefId"]] = taken.get(take["thiefId"], 0) + 1
+		if not taken:
+			return {"success": True,
+			        "message": f"{victim.get('name')} had no cards to take",
+			        "moved": 0}
+		moved = [f"{names(pid)} took {n} card{'' if n == 1 else 's'}"
+		         for pid, n in taken.items()]
+		if len(moved) == 1:
+			message = f"{moved[0]} from {victim.get('name')}"
+		else:
+			message = f"{', '.join(moved[:-1])} and {moved[-1]} from {victim.get('name')}"
+		return {"success": True, "message": message, "moved": sum(taken.values())}
 
 	if kind == "index":
 		thief = game["players"].get(spec.get("thiefId"))
@@ -134,6 +167,14 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 		idx = spec.get("index")
 		if thief is None or not isinstance(idx, int) or not 0 <= idx < len(hand):
 			return {"success": True, "message": f"{victim.get('name')}'s card was out of reach"}
+		# Camp Raid claims the card they just drew "no matter what it is", so it
+		# passes force=True. (Vote Cards never reach the Draw Pile, so in a real
+		# game this only ever matters for ordinary Action Cards.) Every other
+		# index take — The Spy Shack — respects the Vote Card.
+		if not spec.get("force") and not is_takeable(hand[idx]):
+			return {"success": True,
+			        "message": f"{victim.get('name')}'s Vote Card stays with them — "
+			                   "only Control The Vote can take a Vote Card"}
 		card = hand.pop(idx)
 		thief.setdefault("hand", []).append(card)
 		return {"success": True,
@@ -142,6 +183,9 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 	if kind == "by_type":
 		thief = game["players"].get(spec.get("thiefId"))
 		wanted = spec.get("cardType")
+		if wanted in UNTAKEABLE_CARD_TYPES:
+			return {"success": True,
+			        "message": "A Vote Card can't be demanded — only Control The Vote takes one"}
 		hand = victim.get("hand") or []
 		for i2, card in enumerate(hand):
 			if card.get("type") == wanted:
@@ -1793,23 +1837,24 @@ class SurvivorRulesEngine:
 		steal_count = 1 + thief.get("stealBonus", 0)
 		thief["stealBonus"] = 0  # Reset bonus after use
 		
-		# Steal random cards
+		# Steal random cards — a Vote Card is never among them
 		stolen_cards = []
-		for _ in range(min(steal_count, len(target.get("hand", [])))):
-			if target.get("hand"):
-				stolen_card_idx = random.randint(0, len(target["hand"]) - 1)
-				stolen_card = target["hand"].pop(stolen_card_idx)
-				thief["hand"].append(stolen_card)
-				stolen_cards.append(stolen_card.get("type", "unknown"))
-				
+		for _ in range(steal_count):
+			reachable = takeable_indices(target.get("hand"))
+			if not reachable:
+				break
+			stolen_card = target["hand"].pop(random.choice(reachable))
+			thief["hand"].append(stolen_card)
+			stolen_cards.append(stolen_card.get("type", "unknown"))
+
 		thief["hasStolen"] = True
-		
+
 		# Check for Camp Raid effect - steal extra card at end of turn
 		if target.get("campRaidedBy") == thief_id:
 			target["campRaidedBy"] = None  # Use up the camp raid
-			if target.get("hand"):
-				extra_stolen_idx = random.randint(0, len(target["hand"]) - 1)
-				extra_stolen = target["hand"].pop(extra_stolen_idx)
+			reachable = takeable_indices(target.get("hand"))
+			if reachable:
+				extra_stolen = target["hand"].pop(random.choice(reachable))
 				thief["hand"].append(extra_stolen)
 				stolen_cards.append(f"(+{extra_stolen.get('type', 'unknown')} from Camp Raid)")
 				
@@ -1899,7 +1944,8 @@ class SurvivorRulesEngine:
 				player["campRaidedBy"] = None  # the trap is spent either way
 				pending, result = request_take(
 					game, [camp_raider_id], player_id, "Camp Raid",
-					{"kind": "index", "thiefId": camp_raider_id, "index": index})
+					{"kind": "index", "thiefId": camp_raider_id, "index": index,
+					 "force": True})
 				if not pending:
 					drawn_cards[-1] = {"type": "stolen_by_camp_raid", "original": stolen_card}
 					logger.info(f"Camp Raid: {camp_raider_id} took the drawn card from {player_id}")

@@ -385,6 +385,56 @@ class TestLowestScoreLoses(RocksTestBase):
         result = self.act("pull", -1)
         self.assertFalse(result["success"])
 
+    def test_an_empty_bag_still_lets_the_turn_pass(self):
+        """
+        Rocks Guide: "When you get the bag it might be empty - that's fine, just
+        pretend to take some Rocks and pass the bag to the next player."
+
+        The first player is allowed to take all 8, so every later seat can meet an
+        empty bag. Refusing their turn there strands whoever is holding the bag —
+        which is what wedged bot games.
+        """
+        self.start_challenge("challenge_lowest_score_loses")
+        order = list(self.game["challenge"]["pending"])
+        self.assertGreaterEqual(len(order), 3)
+
+        # The opener empties the bag entirely
+        self.act("pull", 8, player=order[0])
+        self.assertEqual(self.game["challenge"]["bag"], {"grey": 0, "purple": 0})
+        self.assertEqual(self.game["challenge"]["maxPull"], 0)
+
+        # The next seat still gets to take their turn, even asking for rocks
+        # that aren't there — it resolves as a pull of nothing.
+        result = self.act("pull", 2, player=order[1])
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertNotEqual(self.game["challenge"]["currentPlayerId"], order[1])
+
+        # And the round still reaches a reveal rather than stalling
+        for pid in order[2:]:
+            self.act("pull", 1, player=pid)
+        self.assertIn("lastRound", self.game["challenge"])
+
+    def test_bot_never_asks_for_rocks_an_empty_bag_cannot_give(self):
+        """The bot's pull must be legal at an empty bag or it retries forever."""
+        import random as _random
+        from bots import next_action
+
+        self.start_challenge("challenge_lowest_score_loses")
+        order = list(self.game["challenge"]["pending"])
+        self.act("pull", 8, player=order[0])
+
+        challenge = self.game["challenge"]
+        # Hand the empty bag to a bot seat
+        bot_id = challenge["pending"][0]
+        self.game["players"][bot_id]["isBot"] = True
+        challenge["currentPlayerId"] = bot_id
+        for seed in range(25):
+            action = next_action(self.game, 0.0, _random.Random(seed))
+            self.assertIsNotNone(action)
+            self.assertEqual(action["kwargs"]["action"], "pull")
+            self.assertEqual(action["kwargs"]["value"], 0,
+                             "an empty bag can only yield a pull of 0")
+
     def test_scoring_and_knockout(self):
         self.start_challenge("challenge_lowest_score_loses")
         challenge = self.game["challenge"]

@@ -445,7 +445,13 @@ class ChallengeEngine:
         if count < 0:
             return {"success": False, "message": "You can't pull a negative number of rocks"}
         available = self._bag_size(ch)
-        if count > available:
+        if available == 0:
+            # "When you get the bag it might be empty - that's fine, just pretend
+            # to take some Rocks and pass the bag to the next player." An empty
+            # bag is a real position, not a client error: take the turn as a pull
+            # of nothing rather than refusing and stalling whoever is holding it.
+            count = 0
+        elif count > available:
             return {"success": False, "message": f"There are only {available} rocks left in the bag"}
 
         grabbed = {"grey": 0, "purple": 0}

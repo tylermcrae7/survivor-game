@@ -617,6 +617,121 @@ class TestReactiveCardMechanics(CardEffectTestBase):
         self.assertIn("Only the theft target", result["message"])
 
 
+class TestVoteCardIsNotStealable(CardEffectTestBase):
+    """
+    The Vote Card is not part of your hand of Action Cards.
+
+    Setup removes all 6 from the 67 before dealing and hands one to each player;
+    Tribal returns one to every survivor. Only Control The Vote ("Play this card
+    during a Tribal Council before voting begins to take any player's Vote Card")
+    can move it. Every ordinary taking path must leave it alone.
+
+    Extra Vote is deliberately NOT protected — it rides in the Draw Pile and sits
+    in your hand like any other card.
+    """
+
+    def test_turn_steal_never_takes_the_vote_card(self):
+        thief, victim = self.player_ids[0], self.player_ids[1]
+
+        for _ in range(60):
+            self.game["players"][thief]["hasStolen"] = False
+            self.hand(thief)[:] = []
+            self.hand(victim)[:] = [{"type": "vote"}, {"type": "camp_raid"}]
+
+            result = self.gs.steal_card(self.game_id, thief, victim)
+            self.assertTrue(result["success"], result.get("message"))
+            self.assertNotIn("vote", [c["type"] for c in self.hand(thief)])
+            self.assertIn("vote", [c["type"] for c in self.hand(victim)])
+
+    def test_steal_from_a_vote_only_hand_takes_nothing(self):
+        thief, victim = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(thief)[:] = []
+        self.hand(victim)[:] = [{"type": "vote"}]
+
+        result = self.gs.steal_card(self.game_id, thief, victim)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.hand_types(thief), [])
+        self.assertEqual(self.hand_types(victim), ["vote"])
+        # The steal step is still spent — you raided, you just found nothing
+        self.assertTrue(self.game["players"][thief]["hasStolen"])
+
+    def test_extra_vote_is_still_stealable(self):
+        thief, victim = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(thief)[:] = []
+        self.hand(victim)[:] = [{"type": "extra_vote"}]
+
+        result = self.gs.steal_card(self.game_id, thief, victim)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.hand_types(thief), ["extra_vote"])
+
+    def test_spy_shack_cannot_take_the_vote_card(self):
+        spy, victim = self.player_ids[0], self.player_ids[1]
+        # The spy holds only the card they are about to play, so any Vote Card
+        # showing up afterwards can only have come from the victim.
+        self.hand(spy)[:] = [{"type": "the_spy_shack"}]
+        self.hand(victim)[:] = [{"type": "vote"}, {"type": "camp_raid"}]
+
+        result = self.play(spy, "the_spy_shack", targetId=victim, takeIndex=0)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertNotIn("vote", self.hand_types(spy))
+        self.assertIn("vote", self.hand_types(victim))
+
+    def test_knowledge_is_power_cannot_demand_the_vote_card(self):
+        asker, victim = self.player_ids[0], self.player_ids[1]
+        self.hand(asker)[:] = [{"type": "knowledge_is_power"}]
+        self.hand(victim)[:] = [{"type": "vote"}]
+
+        result = self.play(asker, "knowledge_is_power", targetId=victim, cardType="vote")
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertNotIn("vote", self.hand_types(asker))
+        self.assertEqual(self.hand_types(victim), ["vote"])
+
+    def test_random_take_effects_never_reach_the_vote_card(self):
+        """Do Or Die, Power Pair and It's A Numbers Game all take at random."""
+        from rules_engine import execute_take_spec
+
+        thief, victim = self.player_ids[0], self.player_ids[1]
+        for _ in range(60):
+            self.hand(thief)[:] = []
+            self.hand(victim)[:] = [{"type": "vote"}, {"type": "inheritance"}]
+            execute_take_spec(self.game, {
+                "kind": "random_each",
+                "victimId": victim,
+                "takes": [{"thiefId": thief, "count": 2}],
+            })
+            self.assertNotIn("vote", self.hand_types(thief))
+            self.assertIn("vote", self.hand_types(victim))
+
+    def test_camp_raid_bonus_steal_skips_the_vote_card(self):
+        raider, victim = self.player_ids[0], self.player_ids[1]
+        for _ in range(40):
+            self.game["players"][raider]["hasStolen"] = False
+            self.game["players"][victim]["campRaidedBy"] = raider
+            self.hand(raider)[:] = []
+            self.hand(victim)[:] = [{"type": "vote"}, {"type": "inheritance"},
+                                    {"type": "immunity_idol"}]
+
+            self.gs.steal_card(self.game_id, raider, victim)
+            self.assertNotIn("vote", self.hand_types(raider))
+
+    def test_control_the_vote_still_takes_the_vote_card(self):
+        """The one card that is supposed to reach it must keep working."""
+        from rules_engine import execute_take_spec
+
+        thief, victim = self.player_ids[0], self.player_ids[1]
+        self.hand(thief)[:] = []
+        self.hand(victim)[:] = [{"type": "vote"}]
+
+        result = execute_take_spec(self.game, {
+            "kind": "vote_card", "victimId": victim, "thiefId": thief,
+        })
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.hand_types(thief), ["vote"])
+        self.assertEqual(self.hand_types(victim), [])
+
+
 if __name__ == '__main__':
     print("🧪 Testing Card Effects & Validation (Including Reactive Cards)")
     print("=" * 70)

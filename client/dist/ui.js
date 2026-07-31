@@ -547,8 +547,8 @@ function renderVoteResults(gameState) {
                         showLoading('Breaking the tie…');
                         const result = await window.SurvivorNetwork?.apiCall('/vote/tiebreak',
                             { gameId, leaderId, chosenId });
-                        if (result?.success) showToast(result.message || 'The tie is broken', 'success');
-                        else if (result?.message) showToast(result.message, 'error');
+                        // apiCall toasts the success message itself; only the refusal needs saying
+                        if (!result?.success && result?.message) showToast(result.message, 'error');
                     } catch (error) {
                         showToast(error.message || 'Tie-break failed', 'error');
                     } finally {
@@ -1423,11 +1423,8 @@ async function playCard(cardIndex, params = {}) {
 
     try {
         showLoading('Playing card...');
-        const result = await window.SurvivorNetwork?.GameAPI.playCard(gameId, playerId, cardIndex, params);
-
-        if (result && result.success) {
-            showToast(result.message || 'Card played successfully', 'success');
-        }
+        // apiCall already toasts result.message on success — don't say it twice
+        await window.SurvivorNetwork?.GameAPI.playCard(gameId, playerId, cardIndex, params);
     } catch (error) {
         showToast(error.message || 'Failed to play card', 'error');
     } finally {
@@ -1463,8 +1460,8 @@ async function castVote(targetId, totalVotes = null) {
         const votesData = maxVotes === 0 ? [] : [{ targetId, votes }];
         const result = await window.SurvivorNetwork?.GameAPI.castVote(gameId, voterId, votesData);
 
+        // apiCall already toasts result.message on success — only the haptic here
         if (result && result.success) {
-            showToast(result.message || 'The parchment is in the box', 'success');
             Haptics.trigger('success');
         }
     } catch (error) {
@@ -1650,9 +1647,11 @@ function showCardNamePicker({ title = 'Name a card', hint = '', onPick }) {
 
     // Only offer cards that can actually be in someone's hand in THIS game:
     // no tribal council cards ever, no Challenge cards outside the expansion,
-    // no house cards outside the extended deck.
+    // no house cards outside the extended deck, and never the Vote Card —
+    // only Control The Vote can take that.
     const nameable = Object.values(cards)
         .filter(c => c.category !== 'tribal_council')
+        .filter(c => c.type !== 'vote')
         .filter(c => gameState.expansion || c.category !== 'challenge')
         .filter(c => gameState.deckMode === 'extended' || !HOUSE_CARD_TYPES.includes(c.type))
         .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
@@ -1695,16 +1694,23 @@ function showSpyHandPicker({ targetId, onPick }) {
         return;
     }
 
+    // You see everything — that is the card. But the Vote Card is not yours to take.
+    const anyTakeable = hand.some(c => c.type !== 'vote');
     const content = `
         <div class="cardname-selection">
-            <p class="picker-hint">${escapeHtml(target.name)}'s hand, laid bare — take one.</p>
+            <p class="picker-hint">${escapeHtml(target.name)}'s hand, laid bare — ${anyTakeable
+                ? 'take one.'
+                : 'but they hold nothing you can take.'}</p>
             <div class="cardname-grid">
                 ${hand.map((c, i) => {
                     const info = window.SurvivorGame?.getCardInfo(c.type);
+                    const locked = c.type === 'vote';
                     return `
-                        <button class="cardname-option touch-target" data-take-index="${i}">
+                        <button class="cardname-option touch-target${locked ? ' is-locked' : ''}"
+                                ${locked ? 'disabled aria-label="Vote Card — only Control The Vote can take this"' : `data-take-index="${i}"`}>
                             <span class="cardname-cat">${escapeHtml(CATEGORY_LABELS[info?.category] || info?.category || '')}</span>
                             <span class="cardname-name">${escapeHtml(info?.name || c.type)}</span>
+                            ${locked ? '<span class="cardname-locked">out of reach</span>' : ''}
                         </button>
                     `;
                 }).join('')}
@@ -2529,7 +2535,9 @@ function showRaidDialog(gameState, pending, thiefName) {
         </div>
     `;
 
-    showModal(content, { title: source ? `${source}!` : 'Camp Raid!', showClose: false });
+    // Don't fall back to "Camp Raid!" — that is a real card, and the plain
+    // turn-opening steal is not it.
+    showModal(content, { title: source ? `${source}!` : 'A Raid On Your Camp', showClose: false });
     Haptics.trigger('warning');
 
     setTimeout(() => {
@@ -2662,6 +2670,10 @@ function showInteractionGiveModal(gameState, it) {
     const me = window.SurvivorGame?.localGameState?.playerId;
     const hand = gameState.players?.[me]?.hand || [];
     const swap = it.giveReason === 'swap';
+    // The Vote Card never leaves your hand this way — only Control The Vote takes it.
+    const offerable = hand
+        .map((c, i) => ({ card: c, index: i }))
+        .filter(({ card }) => card.type !== 'vote');
 
     const content = `
         <div class="interaction-ui cardname-selection">
@@ -2669,12 +2681,12 @@ function showInteractionGiveModal(gameState, it) {
                 ? 'A tie! Choose the card you hand to your opponent.'
                 : 'All three matched — choose the card you discard.'}</p>
             <div class="cardname-grid">
-                ${hand.map((c, i) => {
-                    const info = window.SurvivorGame?.getCardInfo(c.type);
+                ${offerable.map(({ card, index }) => {
+                    const info = window.SurvivorGame?.getCardInfo(card.type);
                     return `
-                        <button class="cardname-option touch-target" data-give-index="${i}">
+                        <button class="cardname-option touch-target" data-give-index="${index}">
                             <span class="cardname-cat">${escapeHtml(CATEGORY_LABELS[info?.category] || info?.category || '')}</span>
-                            <span class="cardname-name">${escapeHtml(info?.name || c.type)}</span>
+                            <span class="cardname-name">${escapeHtml(info?.name || card.type)}</span>
                         </button>
                     `;
                 }).join('')}

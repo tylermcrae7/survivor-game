@@ -215,12 +215,22 @@ def test_sorry_for_you_gates_every_taking():
         # No SFY in hand → no gate, take is immediate
         set_turn(game, ana, played=False)
         game["players"][ana]["hand"] = [{"type": "knowledge_is_power"}]
+        game["players"][ben]["hand"] = [{"type": "camp_raid"}]
+        r = gs.play_card(gid, playerId=ana, cardIdx=0,
+                         params={"targetId": ben, "cardType": "camp_raid"})
+        assert r["success"] is True
+        assert not game.get("pending_theft")
+        assert "camp_raid" in hand_types(game, ana)
+
+        # ...but the Vote Card is never the prize — only Control The Vote takes one
+        set_turn(game, ana, played=False)
+        game["players"][ana]["hand"] = [{"type": "knowledge_is_power"}]
         game["players"][ben]["hand"] = [{"type": "vote"}]
         r = gs.play_card(gid, playerId=ana, cardIdx=0,
                          params={"targetId": ben, "cardType": "vote"})
         assert r["success"] is True
-        assert not game.get("pending_theft")
-        assert "vote" in hand_types(game, ana)
+        assert "vote" not in hand_types(game, ana)
+        assert "vote" in hand_types(game, ben)
 
         print("✅ taking gate\n")
     finally:

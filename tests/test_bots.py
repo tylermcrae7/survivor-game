@@ -195,8 +195,12 @@ def _human_move(gs, gid, human, rng):
             gs.interaction_action(gid, playerId=human, action="pick", value=value)
             return True
         if it.get("phase") == "give" and human in it.get("awaiting", []):
-            if me.get("hand"):
-                gs.interaction_action(gid, playerId=human, action="give", value=0)
+            # Not index 0 blindly — the Vote Card can't be handed over, and
+            # offering it would be refused on a loop.
+            givable = next((i for i, c in enumerate(me.get("hand") or [])
+                            if c.get("type") != "vote"), None)
+            if givable is not None:
+                gs.interaction_action(gid, playerId=human, action="give", value=givable)
                 return True
         if it.get("phase") == "choose_victim" and it.get("winnerId") == human:
             victim = next((p for p in game["turnOrder"]

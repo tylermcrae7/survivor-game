@@ -344,15 +344,26 @@ class TestSpyShack(InteractionTestBase):
         result = self.play(self.me, "the_spy_shack", targetId=victim, takeIndex=99)
         self.assertFalse(result["success"])
 
-    def test_taking_a_vote_card_updates_the_vote_economy(self):
+    def test_cannot_take_the_vote_card(self):
+        """
+        The Vote Card is not part of the hand The Spy Shack rifles through — it is
+        dealt outside the deck and returned each Tribal. Only Control The Vote
+        ("take any player's Vote Card") reaches it, so the vote economy is
+        untouched here even though the spy got to look at everything.
+        """
         victim = self.pids[1]
         vote_index = next(i for i, c in enumerate(self.hand(victim)) if c["type"] == "vote")
+        victim_votes_before = self.game["players"][victim]["voteCards"]
+        my_votes_before = self.game["players"][self.me]["voteCards"]
         self.give_card(self.me, "the_spy_shack")
 
         result = self.play(self.me, "the_spy_shack", targetId=victim, takeIndex=vote_index)
         self.assertTrue(result["success"], result.get("message"))
-        self.assertEqual(self.game["players"][victim]["voteCards"], 0)
-        self.assertEqual(self.game["players"][self.me]["voteCards"], 2)
+        self.assertIn("Vote Card", result["message"])
+
+        self.assertEqual(self.game["players"][victim]["voteCards"], victim_votes_before)
+        self.assertEqual(self.game["players"][self.me]["voteCards"], my_votes_before)
+        self.assertIn("vote", [c["type"] for c in self.hand(victim)])
 
 
 class TestInteractionHygiene(InteractionTestBase):

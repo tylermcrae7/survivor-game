@@ -6,7 +6,7 @@ import uuid, time, os, json, socket, re, sys, threading, random, hmac, hashlib
 import logging
 from pathlib import Path
 from functools import wraps
-from rules_engine import SurvivorRulesEngine, TribalPhase
+from rules_engine import SurvivorRulesEngine, TribalPhase, takeable_indices
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS
 from interactions import interaction_engine
 import bots as bots_module
@@ -1979,7 +1979,15 @@ class GameState:
         if not target.get("hand"):
             thief["hasStolen"] = True  # Mark as stolen even if no cards
             return {"success": True, "message": f"{target.get('name', 'Player')} has no cards to steal"}
-        
+
+        # A hand of nothing but the Vote Card is out of a raider's reach
+        if not takeable_indices(target.get("hand")):
+            thief["hasStolen"] = True
+            self._save()
+            return {"success": True,
+                    "message": f"{target.get('name', 'Player')} holds only their Vote Card — "
+                               "there is nothing to take"}
+
         # Check if target has reactive cards (Sorry For You)
         reactive_cards = []
         for i, card in enumerate(target.get("hand", [])):

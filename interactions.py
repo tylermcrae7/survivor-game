@@ -29,7 +29,7 @@ convention as the Rocks challenge engine).
 
 import logging
 
-from rules_engine import request_take
+from rules_engine import request_take, takeable_indices
 import random
 from typing import Any, Dict, List, Optional
 
@@ -71,9 +71,10 @@ class InteractionEngine:
         moved = 0
         for _ in range(count):
             hand = victim.get("hand") or []
-            if not hand:
+            reachable = takeable_indices(hand)
+            if not reachable:
                 break
-            card = hand.pop(random.randrange(len(hand)))
+            card = hand.pop(random.choice(reachable))
             thief.setdefault("hand", []).append(card)
             moved += 1
         return moved
@@ -244,7 +245,8 @@ class InteractionEngine:
         if throw_a == throw_b:
             # "If you tie, you each swap 1 card of your choice."
             it["lastRound"] = {"round": it["round"], "picks": picks, "outcome": "tie"}
-            givers = [p for p in (a, b) if game["players"][p].get("hand")]
+            givers = [p for p in (a, b)
+                      if takeable_indices(game["players"][p].get("hand"))]
             if not givers:
                 return self._finish(game, it, f"A tie — but neither player has a card to swap.")
             it["phase"] = "give"
@@ -283,7 +285,8 @@ class InteractionEngine:
         if len(set(values)) == 1:
             # "If ALL players show the same number, each player discards 1."
             it["lastRound"] = {"round": it["round"], "picks": picks, "outcome": "all matched"}
-            givers = [p for p in it["participants"] if game["players"][p].get("hand")]
+            givers = [p for p in it["participants"]
+                      if takeable_indices(game["players"][p].get("hand"))]
             if not givers:
                 return self._finish(game, it, "All matched — but nobody has a card to discard.")
             it["phase"] = "give"
@@ -379,6 +382,9 @@ class InteractionEngine:
             return {"success": False, "message": "Choose a card from your hand"}
         if not 0 <= idx < len(hand):
             return {"success": False, "message": "Choose a card from your hand"}
+        if idx not in takeable_indices(hand):
+            return {"success": False,
+                    "message": "Your Vote Card isn't yours to hand over — choose another card"}
 
         it.setdefault("_gives", {})[player_id] = idx
         it["awaiting"] = [p for p in it["awaiting"] if p != player_id]
