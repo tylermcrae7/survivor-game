@@ -62,6 +62,7 @@
 		A838EE2CB80C1A2F2C8E5B0C /* InteractionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */; };
 		A8D88EDDD19265E64E1BF7EC /* tribal_announcement.json in Resources */ = {isa = PBXBuildFile; fileRef = 67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */; };
 		A9337789DFF95D57581E077D /* TorchComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A766C981BE5C3792457D7D /* TorchComponents.swift */; };
+		A9AA72353E33B964C5E35FAB /* TorchAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DADDCA25868D3BFCF509268 /* TorchAudio.swift */; };
 		AC36887BE6C5E1F847FCAE13 /* ReactiveTheftOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */; };
 		ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */; };
 		B1E4E38E15E1EAA91EA2497A /* TurnIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */; };
@@ -122,6 +123,7 @@
 /* Begin PBXFileReference section */
 		0045BA401656BFAA514B6D63 /* IslandAccessScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandAccessScreen.swift; sourceTree = "<group>"; };
 		083E4829752E7D45735E2195 /* LobbyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyScreen.swift; sourceTree = "<group>"; };
+		0DADDCA25868D3BFCF509268 /* TorchAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchAudio.swift; sourceTree = "<group>"; };
 		0DC5D2C9DAB382995407D3F5 /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
 		0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeState.swift; sourceTree = "<group>"; };
 		14E083D4215CD09F2236FE12 /* AdvantagePlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvantagePlayView.swift; sourceTree = "<group>"; };
@@ -514,6 +516,7 @@
 			children = (
 				57A00B4F7F52DF16D539B5C8 /* FlameEffects.swift */,
 				32C075937A0671D2605E1D40 /* Theme.swift */,
+				0DADDCA25868D3BFCF509268 /* TorchAudio.swift */,
 				68A766C981BE5C3792457D7D /* TorchComponents.swift */,
 				44CC6A2F1EDA6D37EEE5E171 /* TorchTransitions.swift */,
 			);
@@ -764,6 +767,7 @@
 				F9C27661153509EA11A3AADB /* Theme.swift in Sources */,
 				E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */,
 				79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */,
+				A9AA72353E33B964C5E35FAB /* TorchAudio.swift in Sources */,
 				A9337789DFF95D57581E077D /* TorchComponents.swift in Sources */,
 				B918A86338CDCC406920D84B /* TorchTransitions.swift in Sources */,
 				577D9E98A849DA3DFE397FD4 /* TribalScreen.swift in Sources */,
