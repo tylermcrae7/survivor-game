@@ -18,6 +18,7 @@ struct StartScreen: View {
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape")
+                                    .foregroundStyle(Torch.Color.textSecondary)
                             }
                             .accessibilityLabel("Settings")
                             .accessibilityHint("Open server settings")
@@ -28,8 +29,12 @@ struct StartScreen: View {
                     }
             } else {
                 ProgressView()
+                    .tint(Torch.Color.torch)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(TorchNightBackground())
             }
         }
+        .tint(Torch.Color.torch)
         .onAppear {
             if viewModel == nil {
                 let vm = StartViewModel(gameClient: gameClient)
@@ -65,71 +70,89 @@ private struct StartContent: View {
         ScrollView {
             VStack(spacing: 32) {
                 // The wordmark — same ceremony as the web app
-                SurvivorWordmark()
-                    .padding(.top, 20)
+                StaggeredRise(index: 0) {
+                    TorchWordmark()
+                        .padding(.top, 20)
+                }
 
                 // Player setup
-                PlayerSetupView(
-                    playerName: $viewModel.playerName,
-                    selectedColor: $viewModel.preferredColor
-                )
+                StaggeredRise(index: 1) {
+                    PlayerSetupView(
+                        playerName: $viewModel.playerName,
+                        selectedColor: $viewModel.preferredColor
+                    )
+                }
 
                 // Actions
-                VStack(spacing: 12) {
-                    Button("Light the Fire") {
-                        showCreateOptions = true
-                    }
-                    .buttonStyle(.survivor)
-                    .disabled(viewModel.loadingState.isLoading)
-                    .accessibilityLabel("Create new game")
-                    .accessibilityHint("Choose the deck, then create a game with a code others can join")
-                    .accessibilityIdentifier("create-game-button")
-
-                    HStack {
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundStyle(.secondary.opacity(0.3))
-                        Text("OR")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundStyle(.secondary.opacity(0.3))
-                    }
-
-                    HStack(spacing: 12) {
-                        TextField("Game Code", text: $viewModel.joinCode)
-                            .textFieldStyle(.roundedBorder)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .accessibilityLabel("Game code")
-                            .accessibilityHint("Enter the game code provided by the host")
-
-                        Button("Join") {
-                            Task { await viewModel.joinGame() }
+                StaggeredRise(index: 2) {
+                    VStack(spacing: 12) {
+                        Button("Light the Fire") {
+                            showCreateOptions = true
                         }
-                        .buttonStyle(.survivor(color: .teal))
+                        .buttonStyle(.torchGlow)
                         .disabled(viewModel.loadingState.isLoading)
-                        .accessibilityLabel("Join game")
-                        .accessibilityHint("Join an existing game using the code above")
-                    }
+                        .accessibilityLabel("Create new game")
+                        .accessibilityHint("Choose the deck, then create a game with a code others can join")
+                        .accessibilityIdentifier("create-game-button")
 
-                    Button {
-                        showHallOfFame = true
-                    } label: {
-                        Label("Hall of Fame", systemImage: "crown")
-                            .frame(maxWidth: .infinity)
+                        HStack {
+                            Rectangle()
+                                .frame(height: 1)
+                                .foregroundStyle(Torch.Color.line)
+                            Text("or")
+                                .font(Torch.Font.label(Torch.TextSize.xs))
+                                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                .foregroundStyle(Torch.Color.textFaint)
+                            Rectangle()
+                                .frame(height: 1)
+                                .foregroundStyle(Torch.Color.line)
+                        }
+
+                        HStack(spacing: 12) {
+                            // The game-code input: small caps, wide-tracked.
+                            TextField("Game Code", text: $viewModel.joinCode,
+                                      prompt: Text("game code")
+                                          .foregroundStyle(Torch.Color.textFaint))
+                                .font(Torch.Font.label(Torch.TextSize.sm))
+                                .tracking(0.3 * Torch.TextSize.sm)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .torchField()
+                                .accessibilityLabel("Game code")
+                                .accessibilityHint("Enter the game code provided by the host")
+
+                            Button("Join") {
+                                Task { await viewModel.joinGame() }
+                            }
+                            .buttonStyle(.torchGlow)
+                            .frame(width: 108)
+                            .disabled(viewModel.loadingState.isLoading)
+                            .accessibilityLabel("Join game")
+                            .accessibilityHint("Join an existing game using the code above")
+                        }
+
+                        Button {
+                            showHallOfFame = true
+                        } label: {
+                            Label("Hall of Fame", systemImage: "crown")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.torchSecondary)
                     }
-                    .buttonStyle(.survivorSecondary)
                 }
 
                 if viewModel.loadingState.isLoading {
                     ProgressView("Connecting...")
+                        .tint(Torch.Color.torch)
+                        .font(Torch.Font.label(Torch.TextSize.xs))
+                        .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                        .foregroundStyle(Torch.Color.textSecondary)
                 }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 40)
         }
+        .background(TorchNightBackground())
         .errorAlert($viewModel.error)
         .sheet(isPresented: $showCreateOptions) {
             CreateGameSheet(viewModel: viewModel)
@@ -163,13 +186,21 @@ private struct CreateGameSheet: View {
                     .labelsHidden()
 
                     Toggle("Add Let's Go To Rocks Challenges", isOn: $viewModel.expansion)
+                        .tint(Torch.Color.emberDeep)
                 } header: {
-                    Text("Choose your deck")
+                    Text("choose your deck")
+                        .font(Torch.Font.label(Torch.TextSize.xs))
+                        .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                        .foregroundStyle(Torch.Color.torch)
+                        .textCase(nil)
                 } footer: {
                     Text("Extended adds Idol Nullifier, Steal A Vote, Block A Vote and Grant Immunity. Rocks adds the 5 Orange Challenge Cards.")
+                        .font(Torch.Font.body(Torch.TextSize.xs))
+                        .foregroundStyle(Torch.Color.textSecondary)
                 }
+                .listRowBackground(Torch.Color.surfaceRaised)
 
-                Section("Pace") {
+                Section {
                     Picker("Computer player speed", selection: $viewModel.botPace) {
                         Text("Chill").tag("chill"); Text("Normal").tag("normal"); Text("Fast").tag("fast")
                     }
@@ -179,7 +210,14 @@ private struct CreateGameSheet: View {
                     Picker("Computer player style", selection: $viewModel.botStyle) {
                         Text("Chill").tag("chill"); Text("Normal").tag("normal"); Text("Cutthroat").tag("cutthroat")
                     }
+                } header: {
+                    Text("pace")
+                        .font(Torch.Font.label(Torch.TextSize.xs))
+                        .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                        .foregroundStyle(Torch.Color.torch)
+                        .textCase(nil)
                 }
+                .listRowBackground(Torch.Color.surfaceRaised)
 
                 Section {
                     Button {
@@ -189,18 +227,16 @@ private struct CreateGameSheet: View {
                         Label("Light the Fire", systemImage: "flame.fill")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.survivor)
+                    .buttonStyle(.torchGlow)
                     .listRowBackground(Color.clear)
                     .accessibilityIdentifier("create-game-submit")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Torch.Color.background.ignoresSafeArea())
+            .tint(Torch.Color.torch)
             .navigationTitle("New Game")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-}
-
-// Color extension for named colors
-private extension Color {
-    static let teal = Color(hex: "#4ECDC4")
 }

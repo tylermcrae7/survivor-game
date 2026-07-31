@@ -44,6 +44,11 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: mctech.SurvivorGame
             CFBundleURLSchemes: [survivorgame]
+        # Bundled Fraunces variable fonts (OFL) — filenames only; the
+        # resources phase flattens Resources/Fonts into the bundle root.
+        UIAppFonts:
+          - Fraunces-Variable.ttf
+          - Fraunces-Italic-Variable.ttf
     dependencies:
       - package: SocketIO
         product: SocketIO

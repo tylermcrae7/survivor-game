@@ -7,16 +7,18 @@ struct ImmunityView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Immunity Phase")
-                .font(.headline)
+            CeremonyTitle(text: "Immunity Phase", size: Torch.TextSize.displayMD,
+                          glow: Torch.Color.juryGold)
 
+            // The necklace moment wears jury gold.
             Image(systemName: "shield.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Torch.Color.juryGold)
+                .shadow(color: Torch.Color.juryGold.opacity(0.4), radius: 12) // --glow-gold
 
             Text("Players may play Hidden Immunity Idols or Idol Nullifiers now.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
             if !viewModel.isEliminated {
@@ -27,7 +29,7 @@ struct ImmunityView: View {
                     } label: {
                         Label("Play Immunity Idol", systemImage: "shield.fill")
                     }
-                    .buttonStyle(.survivor(color: .yellow))
+                    .buttonStyle(.torchGlow)
                     .disabled(viewModel.isPerformingAction)
 
                     // Your idol can protect an ally instead of you
@@ -38,7 +40,7 @@ struct ImmunityView: View {
                             .font(.subheadline)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Torch.Color.textSecondary)
                     .disabled(viewModel.isPerformingAction)
                 }
 
@@ -49,13 +51,13 @@ struct ImmunityView: View {
                     } label: {
                         Label("Play Idol Nullifier", systemImage: "shield.slash.fill")
                     }
-                    .buttonStyle(.survivor(color: .purple))
+                    .buttonStyle(.torchSecondary)
                     .disabled(viewModel.isPerformingAction)
                 }
 
                 if !viewModel.hasImmunityIdol && !viewModel.hasIdolNullifier {
                     Text("You have no immunity cards to play.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Torch.Color.textSecondary)
                         .padding()
                 }
             }
@@ -64,21 +66,31 @@ struct ImmunityView: View {
             if let played = viewModel.voteState?.immunityPlayed, !played.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Immunity Played")
-                        .font(.subheadline.bold())
+                        .font(Torch.Font.label(Torch.TextSize.sm))
+                        .tracking(Torch.Track.label * Torch.TextSize.sm)
+                        .foregroundStyle(Torch.Color.juryGold)
 
                     ForEach(played, id: \.self) { playerId in
                         let name = viewModel.gameState?.players[playerId]?.name ?? "Unknown"
                         HStack(spacing: 8) {
                             Image(systemName: "shield.fill")
-                                .foregroundStyle(.yellow)
+                                .foregroundStyle(Torch.Color.juryGold)
                             Text("\(name) is protected")
-                                .font(.caption)
+                                .font(Torch.Font.body(Torch.TextSize.xs))
+                                .foregroundStyle(Torch.Color.text)
                         }
                     }
                 }
                 .padding()
-                .background(.yellow.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                        .fill(Torch.Color.juryGold.opacity(0.1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                        .strokeBorder(Torch.Color.juryGold.opacity(0.4), lineWidth: 1)
+                )
             }
         }
         .sheet(isPresented: $showShieldTarget) {

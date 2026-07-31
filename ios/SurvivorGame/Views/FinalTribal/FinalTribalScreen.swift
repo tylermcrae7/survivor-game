@@ -1,5 +1,36 @@
 import SwiftUI
 
+/// Final-mode re-palette (web `body[data-mode="final"]` — jury gold).
+/// Exact hex from docs/design/torchlit-ios-research.md; in this mode the
+/// torch accent itself becomes jury gold.
+enum FinalPalette {
+    static let bg = Color(hex: "#070501") ?? .black
+    static let bgDeep = Color(hex: "#030200") ?? .black
+    static let surface = Color(hex: "#0F0B02") ?? .black
+    static let surfaceRaised = Color(hex: "#181203") ?? .black
+    /// `--flame-hot` in final mode (`oklch(0.86 0.13 95)`).
+    static let flameHot = Color(hex: "#ECD065") ?? .yellow
+    /// Torchlight radial core (`oklch(0.50 0.10 92 / 0.42)`), applied at 42%.
+    static let torchlightCore = Color(hex: "#786107") ?? .yellow
+    /// Gold-tinted hairline (`oklch(0.85 0.1 90 / 0.13)`).
+    static let line = (Color(hex: "#E7CB80") ?? .yellow).opacity(0.13)
+}
+
+/// The final-council ground: gold-cast night with the torchlight pooling
+/// gold instead of amber.
+struct FinalBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [FinalPalette.bg, FinalPalette.bgDeep],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [FinalPalette.torchlightCore.opacity(0.42), .clear],
+                           center: UnitPoint(x: 0.5, y: -0.12),
+                           startRadius: 0, endRadius: 460)
+        }
+        .ignoresSafeArea()
+    }
+}
+
 struct FinalTribalScreen: View {
     @Environment(GameClient.self) private var gameClient
     @State private var viewModel: FinalTribalViewModel?
@@ -10,11 +41,17 @@ struct FinalTribalScreen: View {
                 FinalTribalContent(viewModel: vm)
                     .navigationTitle("Final Tribal Council")
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbarBackground(FinalPalette.bg, for: .navigationBar)
             } else {
-                ProgressView().onAppear {
-                    viewModel = FinalTribalViewModel(gameClient: gameClient)
-                    HapticEngine.tribalStart()
-                }
+                ProgressView()
+                    .tint(Torch.Color.juryGold)
+                    .onAppear {
+                        viewModel = FinalTribalViewModel(gameClient: gameClient)
+                        // Mounts once per ceremony (ContentView swaps it in on
+                        // navigationState == .finalTribal).
+                        HapticEngine.tribalStart()
+                        TorchSound.play(.tribalGong)
+                    }
             }
         }
     }
@@ -22,6 +59,10 @@ struct FinalTribalScreen: View {
 
 private struct FinalTribalContent: View {
     @Bindable var viewModel: FinalTribalViewModel
+
+    private var hairline: some View {
+        Rectangle().fill(FinalPalette.line).frame(height: 1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,7 +73,7 @@ private struct FinalTribalContent: View {
             )
             .padding(.vertical, 12)
 
-            Divider()
+            hairline
 
             ScrollView {
                 VStack(spacing: 20) {
@@ -53,6 +94,7 @@ private struct FinalTribalContent: View {
                             WinnerRevealContent(winner: winner)
                         } else {
                             ProgressView("Revealing...")
+                                .tint(Torch.Color.juryGold)
                         }
                     }
                 }
@@ -61,10 +103,12 @@ private struct FinalTribalContent: View {
 
             // Council leader phase advance
             if viewModel.isCouncilLeader {
-                Divider()
+                hairline
                 FinalLeaderBar(viewModel: viewModel)
             }
         }
+        .background(FinalBackground())
+        .tint(Torch.Color.juryGold)
         .errorAlert($viewModel.error)
     }
 
@@ -84,23 +128,31 @@ private struct FinalistsRow: View {
     var body: some View {
         VStack(spacing: 8) {
             Text("Finalists")
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.label(Torch.TextSize.sm))
+                .tracking(Torch.Track.label * Torch.TextSize.sm)
+                .foregroundStyle(Torch.Color.juryGold)
 
             HStack(spacing: 24) {
                 ForEach(finalists) { player in
                     VStack(spacing: 8) {
                         PlayerAvatarView(player: player, size: 56)
                         Text(player.name)
-                            .font(.subheadline.bold())
+                            .font(Torch.Font.display(Torch.TextSize.base, weight: 700))
+                            .foregroundStyle(Torch.Color.parchment)
                     }
                 }
             }
         }
         .padding()
         .frame(maxWidth: .infinity)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(
+            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                .fill(FinalPalette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                .strokeBorder(Torch.Color.juryGold.opacity(0.4), lineWidth: 1)
+        )
     }
 }
 
@@ -111,18 +163,19 @@ private struct QuestionsPhase: View {
         VStack(spacing: 12) {
             Image(systemName: "questionmark.bubble.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Torch.Color.juryGold)
+                .shadow(color: Torch.Color.juryGold.opacity(0.4), radius: 12)
 
             Text("The jury may now question the finalists.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
             if viewModel.isJuryMember && !viewModel.isReady {
                 Button("Ready to Vote") {
                     Task { await viewModel.signalReady() }
                 }
-                .buttonStyle(.survivor)
+                .buttonStyle(.torchGlow)
                 .disabled(viewModel.isPerformingAction)
             }
 
@@ -142,17 +195,18 @@ private struct DeliberationPhase: View {
         VStack(spacing: 12) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(.purple)
+                .foregroundStyle(Torch.Color.juryGold)
+                .shadow(color: Torch.Color.juryGold.opacity(0.4), radius: 12)
 
             Text("The jury is deliberating.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
 
             if viewModel.isJuryMember && !viewModel.isReady {
                 Button("Ready to Vote") {
                     Task { await viewModel.signalReady() }
                 }
-                .buttonStyle(.survivor)
+                .buttonStyle(.torchGlow)
                 .disabled(viewModel.isPerformingAction)
             }
 
@@ -171,22 +225,32 @@ private struct JuryReadyList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Jury Status")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
 
             ForEach(juryMembers) { member in
                 HStack(spacing: 8) {
                     Image(systemName: readySet.contains(member.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(readySet.contains(member.id) ? .green : .secondary)
+                        .foregroundStyle(readySet.contains(member.id)
+                                         ? Torch.Color.juryGold : Torch.Color.textFaint)
                         .font(.caption)
                     Text(member.name)
-                        .font(.caption)
+                        .font(Torch.Font.body(Torch.TextSize.xs))
+                        .foregroundStyle(Torch.Color.text)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(
+            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                .fill(FinalPalette.surfaceRaised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                .strokeBorder(FinalPalette.line, lineWidth: 1)
+        )
     }
 }
 
@@ -195,13 +259,11 @@ private struct FinalTieBreakView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Tie!")
-                .font(.title.bold())
-                .foregroundStyle(.yellow)
+            CeremonyTitle(text: "Tie!", glow: Torch.Color.juryGold)
 
             Text("The council leader must choose the winner.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
 
             if viewModel.isCouncilLeader {
                 ForEach(viewModel.tiedFinalists) { player in
@@ -211,21 +273,28 @@ private struct FinalTieBreakView: View {
                         HStack(spacing: 12) {
                             PlayerAvatarView(player: player, size: 48, showName: false)
                             Text(player.name)
-                                .font(.headline)
+                                .font(Torch.Font.display(Torch.TextSize.base, weight: 700))
+                                .foregroundStyle(Torch.Color.parchment)
                             Spacer()
                             Image(systemName: "crown.fill")
-                                .foregroundStyle(.yellow)
+                                .foregroundStyle(Torch.Color.juryGold)
                         }
                         .padding()
-                        .background(.yellow.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(
+                            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                                .fill(Torch.Color.juryGold.opacity(0.1))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                                .strokeBorder(Torch.Color.juryGold.opacity(0.4), lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(viewModel.isPerformingAction)
                 }
             } else {
                 Text("Waiting for the council leader...")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Torch.Color.textSecondary)
             }
         }
     }
@@ -241,13 +310,13 @@ private struct FinalLeaderBar: View {
                 Button("Advance to Deliberation") {
                     Task { await viewModel.advancePhase(to: "deliberation") }
                 }
-                .buttonStyle(.survivor)
+                .buttonStyle(.torchGlow)
 
             case .deliberation:
                 Button("Start Voting") {
                     Task { await viewModel.advancePhase(to: "voting") }
                 }
-                .buttonStyle(.survivor)
+                .buttonStyle(.torchGlow)
 
             case .voting:
                 EmptyView()
@@ -257,13 +326,13 @@ private struct FinalLeaderBar: View {
                     Button("Record Winner") {
                         Task { await viewModel.finishGame(winnerId: winner.id) }
                     }
-                    .buttonStyle(.survivor(color: .green))
+                    .buttonStyle(.torchGlow)
                 }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.regularMaterial)
+        .background(FinalPalette.surfaceRaised)
         .disabled(viewModel.isPerformingAction)
     }
 }

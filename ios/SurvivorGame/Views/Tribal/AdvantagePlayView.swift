@@ -8,12 +8,11 @@ struct AdvantagePlayView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Advantage Play Phase")
-                .font(.headline)
+            CeremonyTitle(text: "Advantage Play Phase", size: Torch.TextSize.displayMD)
 
             Text("Play any tribal advantage cards now.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
             if !viewModel.isEliminated {
@@ -23,7 +22,7 @@ struct AdvantagePlayView: View {
 
                 if advantages.isEmpty {
                     Text("You have no advantage cards to play.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Torch.Color.textSecondary)
                         .padding()
                 } else {
                     ForEach(Array(advantages.enumerated()), id: \.offset) { _, card in
@@ -41,20 +40,27 @@ struct AdvantagePlayView: View {
                                 CardView(card: card, isPlayable: true, isCompact: true)
                                 VStack(alignment: .leading) {
                                     Text(card.displayName)
-                                        .font(.subheadline.bold())
+                                        .font(Torch.Font.body(Torch.TextSize.sm, weight: .bold))
+                                        .foregroundStyle(Torch.Color.parchment)
                                     if let desc = card.description {
                                         Text(desc)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(Torch.Font.body(Torch.TextSize.xs))
+                                            .foregroundStyle(Torch.Color.textSecondary)
                                     }
                                 }
                                 Spacer()
                                 Image(systemName: "play.fill")
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(Torch.Color.torch)
                             }
                             .padding(12)
-                            .background(.regularMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .background(
+                                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                                    .fill(CouncilPalette.surfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                                    .strokeBorder(CouncilPalette.line, lineWidth: 1)
+                            )
                         }
                         .buttonStyle(.plain)
                     }
@@ -65,7 +71,9 @@ struct AdvantagePlayView: View {
             if let played = viewModel.voteState?.advantageCardsPlayed, !played.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Advantages Played")
-                        .font(.subheadline.bold())
+                        .font(Torch.Font.label(Torch.TextSize.sm))
+                        .tracking(Torch.Track.label * Torch.TextSize.sm)
+                        .foregroundStyle(Torch.Color.torch)
 
                     ForEach(Array(played.enumerated()), id: \.offset) { _, record in
                         let playerName = record.playerId
@@ -74,16 +82,24 @@ struct AdvantagePlayView: View {
                             .replacingOccurrences(of: "_", with: " ")
                         HStack {
                             Text(playerName)
-                                .font(.caption.bold())
+                                .font(Torch.Font.body(Torch.TextSize.xs, weight: .bold))
+                                .foregroundStyle(Torch.Color.parchment)
                             Text("played \(advantage)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Torch.Font.body(Torch.TextSize.xs))
+                                .foregroundStyle(Torch.Color.textSecondary)
                         }
                     }
                 }
                 .padding()
-                .background(.orange.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                        .fill(Torch.Color.torch.opacity(0.1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                        .strokeBorder(Torch.Color.torch.opacity(0.45), lineWidth: 1)
+                )
             }
         }
         .sheet(isPresented: $showTargetPicker) {
@@ -117,11 +133,16 @@ struct TargetPickerSheet: View {
                     HStack(spacing: 12) {
                         PlayerAvatarView(player: player, size: 36, showName: false)
                         Text(player.name)
-                            .font(.body)
+                            .font(Torch.Font.body(Torch.TextSize.base))
+                            .foregroundStyle(Torch.Color.text)
                         Spacer()
                     }
                 }
+                .listRowBackground(CouncilPalette.surfaceSunken)
             }
+            .scrollContentBackground(.hidden)
+            .background(CouncilBackground())
+            .tint(Torch.Color.torch)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

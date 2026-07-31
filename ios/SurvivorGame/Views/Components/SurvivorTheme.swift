@@ -101,30 +101,30 @@ struct TurnPhaseTracker: View {
     var body: some View {
         VStack(spacing: 8) {
             Text("Your torch burns")
-                .font(.title3.weight(.black))
-                .fontDesign(.serif)
-                .foregroundStyle(SurvivorTheme.flame)
+                .font(Torch.Font.display(Torch.TextSize.displaySM, weight: 900,
+                                         relativeTo: .title3))
+                .foregroundStyle(Torch.Color.flame)
 
             HStack(spacing: 10) {
                 ForEach(steps, id: \.1) { step, label in
                     let state = stepState(step)
-                    Text(label.uppercased())
-                        .font(.caption2.weight(.bold))
-                        .tracking(1.5)
+                    Text(label)
+                        .font(Torch.Font.label(Torch.TextSize.xs))
+                        .tracking(Torch.Track.label * Torch.TextSize.xs)
                         .strikethrough(state == -1)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
                         .background(
                             Capsule().fill(state == 0
-                                ? SurvivorTheme.ember
-                                : Color.clear)
+                                ? Torch.Color.torch
+                                : Torch.Color.surfaceSunken)
                         )
-                        .foregroundStyle(state == 0 ? .black
-                            : (state == -1 ? .secondary : Color.secondary.opacity(0.7)))
+                        .foregroundStyle(state == 0 ? Torch.Color.ink
+                            : (state == -1 ? Torch.Color.textSecondary : Torch.Color.textFaint))
                     if label != "Draw" {
                         Image(systemName: "arrow.right")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
                 }
             }
@@ -132,10 +132,10 @@ struct TurnPhaseTracker: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(SurvivorTheme.inkRaised.opacity(0.8))
-                .overlay(RoundedRectangle(cornerRadius: 16)
-                    .stroke(SurvivorTheme.ember.opacity(0.35), lineWidth: 1))
+            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                .fill(Torch.Color.surfaceRaised)
+                .overlay(RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                    .strokeBorder(Torch.Color.torch.opacity(0.35), lineWidth: 1))
         )
     }
 }

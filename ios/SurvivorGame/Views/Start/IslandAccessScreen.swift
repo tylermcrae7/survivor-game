@@ -14,72 +14,32 @@ struct IslandAccessScreen: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 28) {
-                    SurvivorWordmark(subtitle: "This Island Is Hidden")
-                        .padding(.top, 52)
-
-                    Text("Speak the code to come ashore. Ask your host if you don't have it.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 360)
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("ISLAND CODE")
-                            .font(.caption2.weight(.bold))
-                            .tracking(2)
-                            .foregroundStyle(.secondary)
-
-                        TextField("the island code", text: $code)
-                            .textFieldStyle(.roundedBorder)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .textContentType(.oneTimeCode)
-                            .submitLabel(.go)
-                            .focused($codeFocused)
-                            .onSubmit { unlock() }
-                            .accessibilityLabel("Island code")
-                            .accessibilityIdentifier("island-access-code")
-
-                        Button {
-                            unlock()
-                        } label: {
-                            if gameClient.isLoading {
-                                ProgressView()
-                                    .tint(.black)
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Label("Come Ashore", systemImage: "flame.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(.survivor)
-                        .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || gameClient.isLoading)
-                        .accessibilityIdentifier("island-come-ashore")
-
-                        if let errorMessage {
-                            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                                .accessibilityLabel("Access error: \(errorMessage)")
-                                .accessibilityIdentifier("island-access-error")
-                        }
+                    StaggeredRise(index: 0) {
+                        TorchWordmark(subtitle: "This Island Is Hidden")
+                            .padding(.top, 52)
                     }
-                    .padding(20)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(SurvivorTheme.ember.opacity(0.35), lineWidth: 1)
+
+                    StaggeredRise(index: 1) {
+                        Text("Speak the code to come ashore. Ask your host if you don't have it.")
+                            .font(Torch.Font.body())
+                            .foregroundStyle(Torch.Color.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 360)
                     }
-                    .padding(.horizontal, 24)
+
+                    StaggeredRise(index: 2) {
+                        accessPanel
+                    }
                 }
             }
+            .background(TorchNightBackground())
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
                     .accessibilityLabel("Island settings")
                 }
@@ -89,6 +49,60 @@ struct IslandAccessScreen: View {
             }
             .onAppear { codeFocused = true }
         }
+        .tint(Torch.Color.torch)
+    }
+
+    private var accessPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("island code")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
+
+            // The access-gate input: centered, wide-tracked, lowercase.
+            TextField("Island code", text: $code,
+                      prompt: Text("the island code")
+                          .foregroundStyle(Torch.Color.textFaint))
+                .font(Torch.Font.body(18))
+                .tracking(0.18 * 18)
+                .multilineTextAlignment(.center)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.oneTimeCode)
+                .submitLabel(.go)
+                .focused($codeFocused)
+                .onSubmit { unlock() }
+                .torchField(focused: codeFocused)
+                .accessibilityLabel("Island code")
+                .accessibilityIdentifier("island-access-code")
+
+            Button {
+                unlock()
+            } label: {
+                if gameClient.isLoading {
+                    ProgressView()
+                        .tint(Torch.Color.ink)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Label("Come Ashore", systemImage: "flame.fill")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.torchGlow)
+            .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || gameClient.isLoading)
+            .accessibilityIdentifier("island-come-ashore")
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(Torch.Font.body(Torch.TextSize.xs))
+                    .foregroundStyle(Torch.Color.danger)
+                    .accessibilityLabel("Access error: \(errorMessage)")
+                    .accessibilityIdentifier("island-access-error")
+            }
+        }
+        .padding(20)
+        .torchCard()
+        .padding(.horizontal, 24)
     }
 
     private func unlock() {
@@ -97,7 +111,10 @@ struct IslandAccessScreen: View {
                 try await gameClient.unlockIsland(with: code)
                 code = ""
                 errorMessage = nil
-                HapticEngine.notification(.success)
+                // The gate lifts — the ceremonial arrival, felt and heard at
+                // the view layer as the screen transitions to unlocked.
+                HapticEngine.unlock()
+                TorchSound.play(.tribalGong)
             } catch {
                 errorMessage = error.localizedDescription
                 HapticEngine.notification(.error)
@@ -116,23 +133,29 @@ struct IslandUnavailableScreen: View {
         NavigationStack {
             ContentUnavailableView {
                 Label("The island is out of reach", systemImage: "wifi.exclamationmark")
+                    .font(Torch.Font.display(Torch.TextSize.displaySM))
+                    .foregroundStyle(Torch.Color.parchment)
             } description: {
                 Text(message)
+                    .font(Torch.Font.body())
+                    .foregroundStyle(Torch.Color.textSecondary)
             } actions: {
                 Button("Try Again") {
                     Task { await gameClient.checkIslandAccess() }
                 }
-                .buttonStyle(.survivor)
+                .buttonStyle(.torchGlow)
 
                 Button("Island Settings") {
                     showSettings = true
                 }
-                .buttonStyle(.survivorSecondary)
+                .buttonStyle(.torchSecondary)
             }
+            .background(TorchNightBackground())
             .navigationTitle("Survivor")
             .sheet(isPresented: $showSettings) {
                 AppSettingsSheet()
             }
         }
+        .tint(Torch.Color.torch)
     }
 }

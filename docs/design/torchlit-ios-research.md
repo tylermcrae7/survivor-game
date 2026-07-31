@@ -1037,7 +1037,8 @@ struct EmberField: View {
                 let now = ctx.date.timeIntervalSinceReferenceDate
                 for s in seeds {
                     let t = ((now / s.dur) + s.phase).truncatingRemainder(dividingBy: 1)
-                    let y = size.height * 0.08 - CGFloat(t) * size.height * 0.46
+                    // Erratum (C1 review): 0.92, not 0.08 — the top-anchored origin rose particles off-canvas.
+                    let y = size.height * 0.92 - CGFloat(t) * size.height * 0.46
                     let x = s.x * size.width + CGFloat(t) * size.width * 0.06
                     let k = 1 - 0.6 * CGFloat(t)
                     g.opacity = 0.9 * (1 - t)

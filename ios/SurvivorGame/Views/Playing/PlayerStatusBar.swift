@@ -38,6 +38,7 @@ private struct PlayerStatusCard: View {
             Text(isMe ? "You" : player.name)
                 .font(.caption2.bold())
                 .foregroundStyle(isMe ? .orange : .primary)
+                .strikethrough(player.isEliminated)
                 .lineLimit(1)
 
             TorchLivesView(lives: player.characterCards)
@@ -58,5 +59,10 @@ private struct PlayerStatusCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isCurrentTurn ? .orange : .clear, lineWidth: 1)
         )
+        // The torchSnuff end state, held: a snuffed player reads as
+        // extinguished — desaturated, dimmed, faded (web `.eliminated`).
+        .saturation(player.isEliminated ? 0 : 1)
+        .colorMultiply(player.isEliminated ? Color(white: 0.55) : .white)
+        .opacity(player.isEliminated ? 0.45 : 1)
     }
 }

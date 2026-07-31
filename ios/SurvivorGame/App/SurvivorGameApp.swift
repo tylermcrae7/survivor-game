@@ -90,7 +90,7 @@ struct SurvivorGameApp: App {
                 }
             }
             .preferredColorScheme(.dark)
-            .tint(SurvivorTheme.ember)
+            .tint(Torch.Color.torch)
             .onAppear { updateIdleTimer() }
             .onChange(of: keepAwake) { _, _ in updateIdleTimer() }
             .onChange(of: gameClient.gameId) { _, _ in updateIdleTimer() }
