@@ -2903,6 +2903,10 @@ function openCampMenu() {
                     ${icon('eye')}
                     <span><strong>The Story So Far</strong><em>Everything that's happened this game</em></span>
                 </button>
+                <button class="camp-menu-item touch-target" data-camp="pace">
+                    ${icon('hourglass')}
+                    <span><strong>Game pace</strong><em>Bot speed, tribal rhythm — the Leader's call</em></span>
+                </button>
                 <button class="camp-menu-item touch-target" data-camp="leave">
                     ${icon('swap')}
                     <span><strong>Leave this game</strong><em>Just you — the game keeps going</em></span>
@@ -2930,6 +2934,10 @@ function openCampMenu() {
             hideModal();
             setTimeout(openStory, 80);
         });
+        document.querySelector('[data-camp="pace"]')?.addEventListener('click', () => {
+            hideModal();
+            setTimeout(showGamePaceSheet, 80);
+        });
         document.querySelector('[data-camp="leave"]')?.addEventListener('click', () => {
             hideModal();
             window.SurvivorGame?.leaveGame();
@@ -2941,6 +2949,50 @@ function openCampMenu() {
                 'Burn this game down for everyone? Every player is sent back to the start screen and the game is gone for good.',
                 () => window.SurvivorGame?.wipeGame()
             ), 120);
+        });
+    }, 0);
+}
+
+/** Game pace sheet — per-game settings, enforced Leader-only by the server. */
+function showGamePaceSheet() {
+    const gameState = window.SurvivorGame?.fullGameState || {};
+    const settings = gameState.settings
+        || { botPace: 'normal', tribalPace: 'normal', botStyle: 'normal' };
+    const ROWS = [
+        ['botPace', 'Computer player speed',
+            [['chill', 'Chill'], ['normal', 'Normal'], ['fast', 'Fast']]],
+        ['tribalPace', 'Tribal ceremony pace',
+            [['normal', 'Normal'], ['relaxed', 'Relaxed'], ['tv', 'TV drama']]],
+        ['botStyle', 'Computer player style',
+            [['chill', 'Chill'], ['normal', 'Normal'], ['cutthroat', 'Cutthroat']]],
+    ];
+    const content = `
+        <div class="cardname-selection">
+            <p class="picker-hint">The Leader sets the pace for the whole tribe.</p>
+            ${ROWS.map(([key, label, opts]) => `
+                <div class="settings-row"><label>${label}</label>
+                    <div class="seg-group">${opts.map(([v, l]) =>
+                        `<button class="seg-btn touch-target" data-pace-key="${key}"
+                                 data-pace-value="${v}"
+                                 aria-pressed="${(settings[key] || 'normal') === v}">${l}</button>`
+                    ).join('')}</div>
+                </div>`).join('')}
+        </div>
+    `;
+    showModal(content, { title: 'Game pace' });
+
+    setTimeout(() => {
+        document.querySelectorAll('[data-pace-key]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const gameId = window.SurvivorGame?.localGameState?.gameId;
+                const playerId = window.SurvivorGame?.localGameState?.playerId;
+                hideModal();
+                const result = await window.SurvivorNetwork?.GameAPI.updateGameSettings(
+                    gameId, playerId,
+                    { [btn.dataset.paceKey]: btn.dataset.paceValue });
+                // apiCall toasts the success message; only a refusal needs saying
+                if (!result?.success && result?.message) showToast(result.message, 'error');
+            });
         });
     }, 0);
 }

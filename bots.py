@@ -326,7 +326,7 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
             value = rng.randint(0, max(0, min(2, left)))
         elif action == "steal":
             targets = ch.get("stealTargets") or []
-            if targets and rng.random() < 0.5:
+            if targets and rng.random() < steal_chance(game):
                 value = targets[0]
             else:
                 action = "pull" if "pull" in actions else action
@@ -369,7 +369,7 @@ def _turn_action(game, mem, rng):
         # deferred advance ever leaves this state, end the turn rather than loop.
         return _act("advance_turn")
 
-    if not player.get("hasPlayed") and rng.random() < PLAY_CHANCE:
+    if not player.get("hasPlayed") and rng.random() < play_chance(game):
         play = _choose_card_play(game, current, rng)
         if play:
             idx, params = play
@@ -380,6 +380,7 @@ def _turn_action(game, mem, rng):
 
 
 def _tribal_action(game, age, rng):
+    w = windows_for(game)
     cv = game.get("currentVote") or {}
     vph = cv.get("phase", "announcement")
     leader = cv.get("councilLeaderId")
@@ -387,19 +388,19 @@ def _tribal_action(game, age, rng):
     alive = _alive(game)
 
     if vph == "announcement":
-        if leader_is_bot and age(("tribal", "announcement")) >= WINDOWS["announcement"]:
+        if leader_is_bot and age(("tribal", "announcement")) >= w["announcement"]:
             return _act("advance_tribal_phase", phase="advantage_play",
                         playerId=leader)
         return None
 
     if vph == "advantage_play":
-        if leader_is_bot and age(("tribal", "advantage_play")) >= WINDOWS["advantage"]:
+        if leader_is_bot and age(("tribal", "advantage_play")) >= w["advantage"]:
             return _act("advance_tribal_phase", phase="discussion",
                         playerId=leader)
         return None
 
     if vph == "discussion":
-        if leader_is_bot and age(("tribal", "discussion")) >= WINDOWS["discussion"]:
+        if leader_is_bot and age(("tribal", "discussion")) >= w["discussion"]:
             return _act("advance_tribal_phase", phase="voting",
                         playerId=leader)
         return None
@@ -431,7 +432,7 @@ def _tribal_action(game, age, rng):
             if _find_card(game, pid, "immunity_idol") is not None:
                 # Playing it consumes the card, so this fires at most once
                 return _act("play_immunity", playerId=pid, targetId=pid)
-        if leader_is_bot and age(("tribal", "immunity")) >= WINDOWS["immunity"]:
+        if leader_is_bot and age(("tribal", "immunity")) >= w["immunity"]:
             return _act("advance_tribal_phase", phase="reveal", playerId=leader)
         return None
 
@@ -441,12 +442,13 @@ def _tribal_action(game, age, rng):
         if tied:
             pick = sorted(tied, key=lambda p: (-_hand_count(game, p), p))[0]
             return _act("tie_break", leaderId=leader, chosenId=pick)
-    if leader_is_bot and age(("tribal", vph)) >= WINDOWS["reveal"]:
+    if leader_is_bot and age(("tribal", vph)) >= w["reveal"]:
         return _act("complete_tribal")
     return None
 
 
 def _final_action(game, age, rng):
+    w = windows_for(game)
     ft = game.get("finalTribal") or {}
     fph = ft.get("phase", "questions")
     leader = ft.get("leader")
@@ -457,7 +459,7 @@ def _final_action(game, age, rng):
     if fph == "questions":
         # Statements happen out loud at the table; a bot leader moves the
         # ceremony along once the window has passed.
-        if leader_is_bot and age(("final", "questions")) >= WINDOWS["final_questions"]:
+        if leader_is_bot and age(("final", "questions")) >= w["final_questions"]:
             return _act("advance_final_phase", phase="voting")
         return None
 
@@ -469,7 +471,7 @@ def _final_action(game, age, rng):
             if pid not in ready and is_bot(game, pid):
                 return _act("signal_jury_ready", juryMemberId=pid)
         all_ready = all(pid in ready for pid in jury)
-        if leader_is_bot and (all_ready or age(("final", "deliberation")) >= WINDOWS["final_questions"]):
+        if leader_is_bot and (all_ready or age(("final", "deliberation")) >= w["final_questions"]):
             return _act("advance_final_phase", phase="voting")
         return None
 
@@ -523,6 +525,50 @@ WINDOWS = _windows(BASE_DELAY)
 REFUSAL_BREAKER_STRIKES = 30
 REFUSAL_BREAKER_COOLDOWN = 120.0  # seconds
 
+# ── Per-game settings (game["settings"], set at creation / by the Leader) ──
+PACE_DELAY = {"chill": 1.8, "normal": 1.0, "fast": 0.4}
+TRIBAL_WINDOW = {"normal": 1.0, "relaxed": 2.0, "tv": 3.5}
+STYLE_PLAY = {"chill": PLAY_CHANCE * 0.5, "normal": PLAY_CHANCE, "cutthroat": 0.95}
+STYLE_STEAL = {"chill": 0.25, "normal": 0.5, "cutthroat": 0.8}
+# With a live human at the table, the advantage/discussion windows keep a
+# floor (seconds, scaled by the tribal multiplier) so a bot Council Leader
+# can't race past the one moment a human may play I'm The Leader Now or an
+# idol. Bot-only games stay quick.
+HUMAN_WINDOW_FLOORS = {"advantage": 12.0, "discussion": 10.0}
+
+
+def _setting(game, key):
+    return (game.get("settings") or {}).get(key, "normal")
+
+
+def delay_mult(game):
+    return PACE_DELAY.get(_setting(game, "botPace"), 1.0)
+
+
+def window_mult(game):
+    return TRIBAL_WINDOW.get(_setting(game, "tribalPace"), 1.0)
+
+
+def play_chance(game):
+    return STYLE_PLAY.get(_setting(game, "botStyle"), PLAY_CHANCE)
+
+
+def steal_chance(game):
+    return STYLE_STEAL.get(_setting(game, "botStyle"), 0.5)
+
+
+def windows_for(game):
+    """Ceremony windows for THIS game: base × tribalPace, with human floors."""
+    if not BASE_DELAY:
+        return dict(WINDOWS)   # test env: everything collapses to zero
+    mult = window_mult(game)
+    w = {k: v * mult for k, v in WINDOWS.items()}
+    if any(not p.get("isBot") and not p.get("isEliminated")
+           for p in game.get("players", {}).values()):
+        for k, floor in HUMAN_WINDOW_FLOORS.items():
+            w[k] = max(w[k], floor * mult)
+    return w
+
 
 # ─────────────────────────────── the runner ──────────────────────────────────
 
@@ -560,7 +606,7 @@ class BotRunner:
         if not game or not game_has_bot(game) or not has_human(game):
             return
         if delay is None:
-            base = BASE_DELAY
+            base = BASE_DELAY * delay_mult(game)
             delay = base * (0.7 + 0.6 * self.rng.random()) if base else 0.01
         self._scheduled.add(gid)
         self._spawn_later(delay, self._tick, gid)

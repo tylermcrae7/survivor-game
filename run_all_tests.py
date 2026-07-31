@@ -144,6 +144,10 @@ def main():
         {
             'file': 'tests/test_bots.py',
             'description': 'Computer Players — lifecycle, Hall of Fame guard, decisions, full bot games to completion'
+        },
+        {
+            'file': 'tests/test_game_settings.py',
+            'description': 'Per-Game Settings — bot pace/style, tribal windows with human floors, Leader control'
         }
     ]
     

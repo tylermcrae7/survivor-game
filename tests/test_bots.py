@@ -318,11 +318,12 @@ def _human_move(gs, gid, human, rng):
     return False
 
 
-def _play_full_bot_game(deck_mode, expansion, seed):
+def _play_full_bot_game(deck_mode, expansion, seed, settings=None):
     gs, original_cwd, tmp = fresh_state()
     try:
         rng = random.Random(seed)
-        gid = gs.create_game(deckMode=deck_mode, expansion=expansion)
+        gid = gs.create_game(deckMode=deck_mode, expansion=expansion,
+                             settings=settings)
         human = gs.add_player(gid, "Tyler", "red")
         for _ in range(3):
             assert gs.add_bot(gid)["success"]

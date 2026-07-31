@@ -154,6 +154,27 @@ def validate_player_color(color):
         return True, None
     return False, f"'{color}' is not a valid color (use #RRGGBB or a color name)."
 
+# ───────────────────────── Per-game settings ────────────────────────
+# Set at creation from the creating device's defaults; adjusted mid-game by
+# the Leader. Bots read these instead of module-level constants.
+GAME_SETTINGS_DEFAULTS = {"botPace": "normal", "tribalPace": "normal", "botStyle": "normal"}
+GAME_SETTINGS_VALUES = {
+    "botPace": ("chill", "normal", "fast"),
+    "tribalPace": ("normal", "relaxed", "tv"),
+    "botStyle": ("chill", "normal", "cutthroat"),
+}
+
+
+def sanitize_game_settings(raw, base=None):
+    """Unknown keys are dropped; unknown values fall back to the base/default."""
+    out = dict(base or GAME_SETTINGS_DEFAULTS)
+    for key, allowed in GAME_SETTINGS_VALUES.items():
+        value = (raw or {}).get(key)
+        if value in allowed:
+            out[key] = value
+    return out
+
+
 # ───────────────────────── Persistent Game State ────────────────────
 class GameState:
     _FILE = 'games.json'
@@ -295,7 +316,7 @@ class GameState:
                 self.garbage_collect()
         threading.Thread(target=gc_worker, daemon=True).start()
 
-    def create_game(self, deckMode=None, expansion=None, **kwargs):
+    def create_game(self, deckMode=None, expansion=None, settings=None, **kwargs):
         """
         Creates a new game with a unique ID.
 
@@ -305,6 +326,8 @@ class GameState:
                       Block A Vote, Grant Immunity)
             expansion: True to add the 5 Orange Challenge Cards from
                        Survivor: Let's Go To Rocks (combined mode)
+            settings: optional {botPace, tribalPace, botStyle} from the
+                      creating device's defaults (sanitized; junk is dropped)
         """
         gid = str(uuid.uuid4())[:8]
         deck_mode = "extended" if str(deckMode or "official").lower() == "extended" else "official"
@@ -314,6 +337,7 @@ class GameState:
             'lastActivity': time.time(),
             'deckMode': deck_mode,
             'expansion': bool(expansion),
+            'settings': sanitize_game_settings(settings),
             'necklaceHolder': None,
             'challenge': None,
             'interaction': None,
@@ -457,6 +481,37 @@ class GameState:
         g["challenge"] = None
         self._save()
         return {"success": True, "message": "Game started!"}
+
+    def update_game_settings(self, gid, playerId=None, settings=None, **kwargs):
+        """
+        Leader-only: adjust botPace / tribalPace / botStyle mid-game. Junk keys
+        or values are refused outright (not silently dropped) so a stale client
+        can't think a change landed when it didn't.
+        """
+        game = self.games.get(gid)
+        if not game:
+            return {"success": False, "message": "Game not found"}
+        if playerId not in game.get("players", {}):
+            return {"success": False, "message": "Invalid player ID"}
+        leader = self._get_council_leader_id(game)
+        if leader and playerId != leader:
+            return {"success": False,
+                    "message": "Only the Leader can change the game's pace"}
+        if not isinstance(settings, dict) or not settings:
+            return {"success": False, "message": "Nothing to change"}
+        for key, value in settings.items():
+            allowed = GAME_SETTINGS_VALUES.get(key)
+            if allowed is None:
+                return {"success": False, "message": f"'{key}' is not a game setting"}
+            if value not in allowed:
+                return {"success": False,
+                        "message": f"'{value}' is not a valid {key} "
+                                   f"(one of: {', '.join(allowed)})"}
+        game["settings"] = sanitize_game_settings(settings, base=game.get("settings"))
+        self._save()
+        changed = ", ".join(f"{k}: {v}" for k, v in settings.items())
+        name = game["players"][playerId].get("name", "The Leader")
+        return {"success": True, "message": f"{name} set the game's pace — {changed}"}
 
     def get_game_state(self, gid):
         """Returns the complete state of a game (hidden challenge info stripped)."""
@@ -3023,7 +3078,7 @@ def handle(action, required):
                                    message="Only the player whose turn it is can end the turn"), 403
 
         LEADER_ONLY = {'advance_tribal_phase', 'reveal_votes', 'complete_tribal',
-                       'start_voting', 'reset_tribal_council'}
+                       'start_voting', 'reset_tribal_council', 'update_game_settings'}
         if action in LEADER_ONLY:
             cv = game_state.games[gid].get("currentVote") or {}
             leader = cv.get("councilLeaderId")
@@ -3578,6 +3633,7 @@ def api_create():
         game_id = game_state.create_game(
             deckMode=d.get('deckMode'),
             expansion=d.get('expansion'),
+            settings=d.get('settings'),
         )
         if not game_id:
             return jsonify(success=False, message="Failed to create game"), 500
@@ -3646,6 +3702,8 @@ def api_tb():      return handle('tie_break',['leaderId','chosenId'])
 def api_done():    return handle('complete_tribal',[])
 @app.route('/api/game/reset',methods=['POST'])
 def api_reset():   return handle('reset_game',[])
+@app.route('/api/game/update_settings',methods=['POST'])
+def api_update_settings(): return handle('update_game_settings',['playerId','settings'])
 @app.route('/api/game/delete',methods=['POST'])
 def api_delete():  return handle('delete_game',[])
 @app.route('/api/player/rename',methods=['POST'])

@@ -745,6 +745,10 @@ const GameAPI = {
     async castVote(gameId, voterId, votesData) {
         return apiCall('/vote/cast', { gameId, voterId, votesData });
     },
+
+    async updateGameSettings(gameId, playerId, settings) {
+        return apiCall('/game/update_settings', { gameId, playerId, settings });
+    },
     
     async playImmunity(gameId, playerId) {
         return apiCall('/immunity/play', { gameId, playerId });
