@@ -17,9 +17,20 @@ Runs as a mobile-first PWA against a small Flask + Socket.IO server. One househo
 If the server is code-locked (see *Access gate* below), everyone enters the shared island code once per device first.
 
 ### The camp menu (☰ in the header)
+- **Settings** — see below; also the gear (⚙) in the header
 - **Hall of Fame** — every Sole Survivor ever recorded, ranked by wins. Wins record automatically when a game finishes, and the record is hand-editable (add a win from an off-app game night, fix a name or date, strike an entry)
+- **Game pace** — the Leader's dial for the current game: computer player speed, tribal ceremony pace, computer player style
 - **Leave this game** — just you; the game continues without you
 - **Burn it down** — wipes the game for *everyone* (with confirmation) and returns every phone to the start screen
+
+### Settings (⚙ in the header)
+Per-device, remembered between games:
+- **Reading & pacing** — message speed (Quick → Until tapped; every toast also dismisses on tap), plus this device's defaults for new games: computer player speed (Chill/Normal/Fast), tribal ceremony pace (Normal/Relaxed/TV drama — slower leaves room to play advantage cards against a bot Council Leader), computer player style (Chill/Normal/Cutthroat)
+- **Accessibility** — text size, reduce motion, vibration, master sound switch
+- **Table rules** — optional confirmations before votes and steals; default deck and Rocks choices
+- **You** — name and buff color, prefilled on the join form
+- **Device** — keep the screen awake during games; **turn notifications** (a push when your torch burns or Tribal opens — on iPhone, add the app to your Home Screen first); story-so-far length
+- **Housekeeping** — leave the game, forget this island, reset settings
 
 ---
 

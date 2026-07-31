@@ -495,9 +495,12 @@ class GameState:
         if playerId not in game.get("players", {}):
             return {"success": False, "message": "Invalid player ID"}
         leader = self._get_council_leader_id(game)
-        if leader and playerId != leader:
+        leader_is_bot = bool(game["players"].get(leader, {}).get("isBot"))
+        if leader and not leader_is_bot and playerId != leader:
             return {"success": False,
                     "message": "Only the Leader can change the game's pace"}
+        if game["players"][playerId].get("isBot"):
+            return {"success": False, "message": "Bots don't get a say in the pace"}
         if not isinstance(settings, dict) or not settings:
             return {"success": False, "message": "Nothing to change"}
         for key, value in settings.items():

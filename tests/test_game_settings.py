@@ -83,6 +83,34 @@ class TestGameSettings(SettingsTestBase):
             settings={"maxPlayers": 40})
         self.assertFalse(result["success"])
 
+    def test_a_bot_leader_defers_to_any_human(self):
+        """After a bot-led council the bot keeps the isCouncilLeader flag —
+        bots don't hold opinions on pacing, so any human may adjust (caught
+        live: the creator was locked out of Game Pace mid-game)."""
+        bot_id = next(p for p, pl in self.game["players"].items() if pl.get("isBot"))
+        for pid, pl in self.game["players"].items():
+            pl["isCouncilLeader"] = (pid == bot_id)
+        result = self.gs.update_game_settings(
+            self.game_id, playerId=self.leader,
+            settings={"tribalPace": "relaxed"})
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.game["settings"]["tribalPace"], "relaxed")
+
+    def test_a_human_leader_still_outranks_other_humans(self):
+        second = self.gs.add_player(self.game_id, "Rival", "blue")
+        for pid, pl in self.game["players"].items():
+            pl["isCouncilLeader"] = (pid == self.leader)
+        result = self.gs.update_game_settings(
+            self.game_id, playerId=second,
+            settings={"tribalPace": "relaxed"})
+        self.assertFalse(result["success"])
+
+    def test_bots_never_change_the_pace(self):
+        bot_id = next(p for p, pl in self.game["players"].items() if pl.get("isBot"))
+        result = self.gs.update_game_settings(
+            self.game_id, playerId=bot_id, settings={"botPace": "fast"})
+        self.assertFalse(result["success"])
+
 
 class TestBotPacing(SettingsTestBase):
     def test_pace_multipliers(self):
