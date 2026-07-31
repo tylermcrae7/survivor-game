@@ -8,7 +8,9 @@ final class SocketClient {
     private var socket: SocketIOClient?
     private var heartbeatTimer: Timer?
     private var reconnectAttempts = 0
-    private let maxReconnectAttempts = 10
+    // -1 = never give up: retries back off to 30s and continue for the life
+    // of the session, so a server that comes back is found without relaunch.
+    private let maxReconnectAttempts = -1
 
     private(set) var connectionState: ConnectionState = .disconnected {
         didSet {
@@ -59,6 +61,17 @@ final class SocketClient {
         let cookies = Self.connectionCookies(for: url)
         if !cookies.isEmpty {
             configuration.insert(.cookies(cookies))
+        }
+
+        // Starscream derives a missing Origin header from the websocket URL,
+        // yielding "wss://host" — which an exact-match ALLOWED_ORIGINS list
+        // (production) silently rejects, closing every upgrade and pinning the
+        // app at "Reconnecting". Send the island's real web origin explicitly;
+        // an explicit header always wins over the derivation.
+        if let host = url.host {
+            let portSuffix = url.port.map { ":\($0)" } ?? ""
+            let origin = "\(url.scheme ?? "https")://\(host)\(portSuffix)"
+            configuration.insert(.extraHeaders(["Origin": origin]))
         }
 
         manager = SocketManager(socketURL: url, config: configuration)
@@ -115,10 +128,12 @@ final class SocketClient {
             }
         }
 
+        // The library fires .reconnect when reconnection BEGINS, not when it
+        // succeeds — the namespace .connect above is the only true "connected"
+        // signal.
         socket.on(clientEvent: .reconnect) { [weak self] _, _ in
             Task { @MainActor in
-                self?.connectionState = .connected
-                self?.reconnectAttempts = 0
+                self?.connectionState = .reconnecting
             }
         }
 

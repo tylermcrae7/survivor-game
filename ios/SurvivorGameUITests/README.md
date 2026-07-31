@@ -26,6 +26,23 @@ xcodebuild test -project SurvivorGame.xcodeproj -scheme SurvivorGame \
     -only-testing:SurvivorGameUITests
 ```
 
+## Production-strict mode (origin check)
+
+Production runs with an exact-match `ALLOWED_ORIGINS` list, which rejects
+websocket handshakes whose `Origin` header doesn't match the site origin
+(the bug behind the perpetual "Reconnecting" banner: Starscream derives
+`Origin: wss://…` unless the client sends one explicitly). To exercise
+that path locally, start the scratch server origin-strict:
+
+```sh
+ALLOWED_ORIGINS=http://127.0.0.1:8099 SURVIVOR_ACCESS_CODE=torchtest2468 \
+    PORT=8099 .venv/bin/python survivor_server.py
+```
+
+The suite's "Connected" assertion then fails unless the app sends the
+correct explicit `Origin` header on the socket handshake. Prefer this
+mode — it is what production enforces.
+
 ## No server? The suite skips itself
 
 `setUpWithError` probes `http://127.0.0.1:8099/api/access/check` before
