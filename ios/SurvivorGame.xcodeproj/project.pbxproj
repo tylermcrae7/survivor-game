@@ -48,6 +48,7 @@
 		7E6866EED3C5AD6C0C1B1D0C /* playing_midturn.json in Resources */ = {isa = PBXBuildFile; fileRef = 835B2847716E322179470F0C /* playing_midturn.json */; };
 		7F51E26189039550DBA6B666 /* ViewModelState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17367F3603D03F66FA9D0E5E /* ViewModelState.swift */; };
 		7F92E4D565697CFBD7131AE2 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68644E98FB21432FA5656F26 /* HapticEngine.swift */; };
+		8165E32A1A1ECE759FE7CF6D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1AE837EA8BBB0B435CEFD146 /* README.md */; };
 		83EAAFA8BE7FE7FA7797BED6 /* StartScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE14A68AE3FEDAD4CC62A30 /* StartScreen.swift */; };
 		8E02DA709040646E6F0D1C2B /* InteractionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB0990923A310FD9070C0D2 /* InteractionState.swift */; };
 		8FA127114072649DF7470C51 /* LobbyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */; };
@@ -120,6 +121,7 @@
 		1517A7372D1302738C30068E /* CardHandViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardHandViewModel.swift; sourceTree = "<group>"; };
 		17367F3603D03F66FA9D0E5E /* ViewModelState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelState.swift; sourceTree = "<group>"; };
 		19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationUITests.swift; sourceTree = "<group>"; };
+		1AE837EA8BBB0B435CEFD146 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDecodingTests.swift; sourceTree = "<group>"; };
 		22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartViewModel.swift; sourceTree = "<group>"; };
 		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -337,6 +339,7 @@
 			isa = PBXGroup;
 			children = (
 				19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */,
+				1AE837EA8BBB0B435CEFD146 /* README.md */,
 			);
 			path = SurvivorGameUITests;
 			sourceTree = "<group>";
@@ -508,6 +511,7 @@
 			buildConfigurationList = 9FE00632CA719B0EAAA40AA1 /* Build configuration list for PBXNativeTarget "SurvivorGameUITests" */;
 			buildPhases = (
 				B2C671B00131343E0545BA46 /* Sources */,
+				13C73AB8E1C8E1F8DCE7A02D /* Resources */,
 			);
 			buildRules = (
 			);
@@ -607,6 +611,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		13C73AB8E1C8E1F8DCE7A02D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8165E32A1A1ECE759FE7CF6D /* README.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CC88A3F2F8840C1C11272BD2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
