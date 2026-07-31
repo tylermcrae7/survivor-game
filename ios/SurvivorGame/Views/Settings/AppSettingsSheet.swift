@@ -24,6 +24,7 @@ struct AppSettingsSheet: View {
     @AppStorage("defaultBotStyle") private var defaultBotStyle = "normal"
     @AppStorage("confirmVotes") private var confirmVotes = false
     @AppStorage("confirmSteals") private var confirmSteals = false
+    @AppStorage("soundEnabled") private var soundEnabled = true // TorchSound gate
     @AppStorage("hapticsEnabled") private var hapticsEnabled = true
     @AppStorage("keepAwake") private var keepAwake = false
     @AppStorage("historyLength") private var historyLength = "30"
@@ -43,32 +44,42 @@ struct AppSettingsSheet: View {
                     } label: {
                         Label("Use This Island", systemImage: "network")
                     }
+                    .buttonStyle(.torchGlow)
                     .disabled(gameClient.gameId != nil)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
                     LabeledContent("Access", value: accessDescription)
+                        .foregroundStyle(Torch.Color.text, Torch.Color.textSecondary)
 
                     if let statusMessage {
                         Text(statusMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Torch.Font.body(Torch.TextSize.xs))
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
                 } header: {
-                    Text("Island")
+                    sectionLabel("island")
                 } footer: {
                     if gameClient.gameId != nil {
-                        Text("Leave the current game before changing islands.")
+                        footerText("Leave the current game before changing islands.")
                     } else {
-                        Text("The public island uses HTTPS. Local development servers can use a private-network HTTP address.")
+                        footerText("The public island uses HTTPS. Local development servers can use a private-network HTTP address.")
                     }
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
+                .listRowSeparatorTint(Torch.Color.line)
 
-                Section("You") {
+                Section {
                     TextField("Your name", text: $playerName)
                         .textInputAutocapitalization(.words)
                     BuffColorPicker(selectedColor: $preferredColor)
+                } header: {
+                    sectionLabel("you")
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
+                .listRowSeparatorTint(Torch.Color.line)
 
-                Section("Defaults for New Games") {
+                Section {
                     Picker("Deck", selection: $defaultDeckMode) {
                         Text("Official").tag("official")
                         Text("Extended").tag("extended")
@@ -89,11 +100,16 @@ struct AppSettingsSheet: View {
                         Text("Normal").tag("normal")
                         Text("Cutthroat").tag("cutthroat")
                     }
+                } header: {
+                    sectionLabel("defaults for new games")
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
+                .listRowSeparatorTint(Torch.Color.line)
 
                 Section {
                     Toggle("Confirm before casting a vote", isOn: $confirmVotes)
                     Toggle("Confirm before stealing", isOn: $confirmSteals)
+                    Toggle("Sound", isOn: $soundEnabled)
                     Toggle("Vibration", isOn: $hapticsEnabled)
                     Toggle("Keep screen awake during games", isOn: $keepAwake)
                     Picker("Story so far", selection: $historyLength) {
@@ -101,24 +117,41 @@ struct AppSettingsSheet: View {
                         Text("Everything").tag("all")
                     }
                 } header: {
-                    Text("Table & Device")
+                    sectionLabel("table & device")
                 } footer: {
-                    Text("Text size and Reduce Motion follow your iPhone's Accessibility settings.")
+                    footerText("Text size and Reduce Motion follow your iPhone's Accessibility settings.")
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
+                .listRowSeparatorTint(Torch.Color.line)
 
-                Section("Housekeeping") {
+                Section {
                     Button("Forget This Island", role: .destructive) {
                         showForgetConfirmation = true
                     }
+                    .foregroundStyle(Torch.Color.danger)
 
                     Button("Reset Preferences") {
                         resetPreferences()
                     }
+                    .foregroundStyle(Torch.Color.torch)
+                } header: {
+                    sectionLabel("housekeeping")
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
+                .listRowSeparatorTint(Torch.Color.line)
             }
+            .foregroundStyle(Torch.Color.text)
+            .scrollContentBackground(.hidden)
+            .background(nightBackdrop)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Settings")
+                        .font(Torch.Font.display(Torch.TextSize.displaySM))
+                        .foregroundStyle(Torch.Color.parchment)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         saveIdentity()
@@ -149,6 +182,33 @@ struct AppSettingsSheet: View {
                 Text("The island code and saved game are removed from this device. Your player name and preferences stay.")
             }
         }
+        .tint(Torch.Color.torch)
+        .preferredColorScheme(.dark)
+    }
+
+    /// Night ground with the torchlight radial anchored above the top edge.
+    private var nightBackdrop: some View {
+        ZStack {
+            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Torch.Color.torch.opacity(0.10), .clear],
+                           center: UnitPoint(x: 0.5, y: -0.12),
+                           startRadius: 0, endRadius: 460)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(Torch.Font.label(Torch.TextSize.xs))
+            .tracking(Torch.Track.label * Torch.TextSize.xs)
+            .foregroundStyle(Torch.Color.textSecondary)
+    }
+
+    private func footerText(_ text: String) -> some View {
+        Text(text)
+            .font(Torch.Font.body(Torch.TextSize.xs))
+            .foregroundStyle(Torch.Color.textFaint)
     }
 
     private var accessDescription: String {
@@ -224,6 +284,7 @@ struct AppSettingsSheet: View {
         defaultBotStyle = "normal"
         confirmVotes = false
         confirmSteals = false
+        soundEnabled = true
         hapticsEnabled = true
         keepAwake = false
         historyLength = "30"
@@ -240,6 +301,9 @@ private struct BuffColorPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Your buff")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
             LazyVGrid(columns: columns, spacing: 12) {
                 colorButton(color: .gray, value: nil, label: "Any")
                 ForEach(PlayerColor.allCases, id: \.rawValue) { choice in
@@ -250,12 +314,15 @@ private struct BuffColorPicker: View {
                     )
                 }
             }
+            // The web toggle-thumb spring, reused for swatch selection.
+            .animation(.spring(response: 0.3, dampingFraction: 0.62), value: selectedColor)
         }
         .padding(.vertical, 4)
     }
 
     private func colorButton(color: Color, value: String?, label: String) -> some View {
-        Button {
+        let selected = selectedColor == value
+        return Button {
             selectedColor = value
             HapticEngine.selection()
         } label: {
@@ -263,13 +330,25 @@ private struct BuffColorPicker: View {
                 .fill(color)
                 .frame(width: 38, height: 38)
                 .overlay {
-                    if selectedColor == value {
-                        Circle().strokeBorder(.white, lineWidth: 3)
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 1, y: 1)
                     }
                 }
+                .overlay {
+                    if selected {
+                        // Web double ring: 3px bg gap, then the torch ring.
+                        Circle().inset(by: -1.5).stroke(Torch.Color.background, lineWidth: 3)
+                        Circle().inset(by: -4).stroke(Torch.Color.torch, lineWidth: 2)
+                    }
+                }
+                .shadow(color: Torch.Color.torch.opacity(selected ? 0.35 : 0), radius: 11)
+                .scaleEffect(selected ? 1.1 : 1)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-        .accessibilityAddTraits(selectedColor == value ? .isSelected : [])
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

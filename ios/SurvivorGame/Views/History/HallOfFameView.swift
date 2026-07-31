@@ -28,6 +28,8 @@ struct HallOfFameView: View {
             Group {
                 if !loaded {
                     ProgressView("Reading the tribe's history…")
+                        .tint(Torch.Color.torch)
+                        .foregroundStyle(Torch.Color.textSecondary)
                 } else if loadFailed {
                     ContentUnavailableView(
                         "Couldn't reach the island's records",
@@ -37,16 +39,28 @@ struct HallOfFameView: View {
                 } else if ranked.isEmpty {
                     ContentUnavailableView {
                         Label("No Sole Survivor yet", systemImage: "crown")
+                            .foregroundStyle(Torch.Color.parchment)
                     } description: {
                         Text("Win a game and your name is carved here.")
+                            .foregroundStyle(Torch.Color.textSecondary)
                     }
                 } else {
                     leaderboard
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(trophyBackdrop)
             .navigationTitle("Hall of Fame")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    // The trophy room reads in jury gold (final-mode palette).
+                    Text("Hall of Fame")
+                        .font(Torch.Font.display(Torch.TextSize.displaySM))
+                        .foregroundStyle(Torch.Color.juryGold)
+                        .shadow(color: Torch.Color.juryGold.opacity(0.4), radius: 12)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button(editing ? "Done Editing" : "Edit Record") {
                         Task {
@@ -96,43 +110,91 @@ struct HallOfFameView: View {
                 Text(mutationError ?? "Unknown error")
             }
         }
+        .tint(Torch.Color.torch)
+        .preferredColorScheme(.dark)
+    }
+
+    /// Night ground with a gold torchlight core and rising embers.
+    private var trophyBackdrop: some View {
+        ZStack {
+            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Torch.Color.juryGold.opacity(0.12), .clear],
+                           center: UnitPoint(x: 0.5, y: -0.12),
+                           startRadius: 0, endRadius: 460)
+            EmberFieldView(style: .embers)
+        }
+        .ignoresSafeArea()
     }
 
     private var leaderboard: some View {
-        List {
-            ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
-                HStack(spacing: 12) {
-                    ZStack {
-                        if index == 0 {
-                            Image(systemName: "crown.fill")
-                                .foregroundStyle(SurvivorTheme.flame)
-                        } else {
-                            Text("\(index + 1)")
-                                .font(.headline.monospacedDigit())
-                        }
+        ScrollView {
+            VStack(spacing: 12) {
+                ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
+                    StaggeredRise(index: index) {
+                        leaderRow(index: index, entry: entry)
                     }
-                    .frame(width: 32)
-                    .accessibilityLabel("Rank \(index + 1)")
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.winnerName)
-                            .font(.body.bold())
-                            .fontDesign(.serif)
-                        if let latest = entry.dates.first {
-                            Text("Last won \(latest)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Text("\(entry.victories) win\(entry.victories == 1 ? "" : "s")")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(SurvivorTheme.ember)
                 }
-                .listRowBackground(Color.clear)
+            }
+            .padding(.horizontal, Torch.Spacing.md)
+            .padding(.vertical, Torch.Spacing.md)
+        }
+    }
+
+    private func leaderRow(index: Int, entry: WinnerSummary) -> some View {
+        let champion = index == 0
+        return HStack(spacing: 12) {
+            ZStack {
+                if champion {
+                    Image(systemName: "crown.fill")
+                        .foregroundStyle(Torch.Color.juryGold)
+                        .shadow(color: Torch.Color.juryGold.opacity(0.4), radius: 12) // --glow-gold
+                } else {
+                    Text("\(index + 1)")
+                        .font(Torch.Font.display(18, weight: 700))
+                        .foregroundStyle(Torch.Color.textFaint)
+                }
+            }
+            .frame(width: 32)
+            .accessibilityLabel("Rank \(index + 1)")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.winnerName)
+                    .font(Torch.Font.display(17, weight: 700))
+                    .foregroundStyle(Torch.Color.parchment)
+                if let latest = entry.dates.first {
+                    Text("Last won \(latest)")
+                        .font(Torch.Font.label(Torch.TextSize.xs))
+                        .tracking(Torch.Track.label * Torch.TextSize.xs)
+                        .foregroundStyle(Torch.Color.textFaint)
+                }
+            }
+            Spacer()
+            Text("\(entry.victories) win\(entry.victories == 1 ? "" : "s")")
+                .font(Torch.Font.display(20, weight: 700))
+                .foregroundStyle(champion ? Torch.Color.juryGold : Torch.Color.torch)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background {
+            if champion {
+                // Champion wash: gold mixed into the card surface.
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(LinearGradient(colors: [Torch.Color.juryGold.opacity(0.14), .clear],
+                                         startPoint: .topLeading, endPoint: .trailing))
             }
         }
-        .listStyle(.plain)
+        .torchCard(.card)
+        .overlay {
+            if champion {
+                // The champion's gold border breathes (stepGlow).
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Torch.Color.juryGold.opacity(0.55), lineWidth: 1)
+                    .shadow(color: Torch.Color.juryGold.opacity(0.4), radius: 12)
+                    .stepGlow()
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private var recordList: some View {
@@ -142,23 +204,30 @@ struct HallOfFameView: View {
                     showingAdd = true
                 } label: {
                     Label("Add a Win", systemImage: "crown.badge.plus")
+                        .foregroundStyle(Torch.Color.torch)
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
             } footer: {
                 Text("Each row is one win. Changes are shared with everyone on this island.")
+                    .font(Torch.Font.body(Torch.TextSize.xs))
+                    .foregroundStyle(Torch.Color.textFaint)
             }
 
-            Section("Recorded Wins") {
+            Section {
                 if records.isEmpty {
                     Text("No wins recorded yet.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Torch.Color.textSecondary)
+                        .listRowBackground(Torch.Color.surfaceSunken)
                 }
                 ForEach(records.sorted { $0.date > $1.date }) { record in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(record.winnerName)
+                                .foregroundStyle(Torch.Color.text)
                             Text(record.date)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Torch.Font.label(Torch.TextSize.xs))
+                                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                .foregroundStyle(Torch.Color.textFaint)
                         }
                         Spacer()
                         Button {
@@ -173,14 +242,23 @@ struct HallOfFameView: View {
                             recordToDelete = record
                         } label: {
                             Image(systemName: "trash")
+                                .foregroundStyle(Torch.Color.danger)
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Delete \(record.winnerName)'s win")
                     }
                 }
+                .listRowBackground(Torch.Color.surfaceSunken)
+                .listRowSeparatorTint(Torch.Color.line)
+            } header: {
+                Text("recorded wins")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.textSecondary)
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
     }
 
     private func loadSummaries() async {
@@ -248,17 +326,30 @@ private struct WinnerEditorSheet: View {
             Form {
                 TextField("Winner", text: $winnerName)
                     .textInputAutocapitalization(.words)
+                    .foregroundStyle(Torch.Color.text)
+                    .listRowBackground(Torch.Color.surfaceSunken)
                 DatePicker("Date won", selection: $date, displayedComponents: .date)
+                    .foregroundStyle(Torch.Color.text)
+                    .listRowBackground(Torch.Color.surfaceSunken)
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .font(Torch.Font.body(Torch.TextSize.xs))
+                        .foregroundStyle(Torch.Color.danger)
+                        .listRowBackground(Torch.Color.surfaceSunken)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(editorBackdrop)
             .navigationTitle(record == nil ? "Add a Win" : "Edit This Win")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(record == nil ? "Add a Win" : "Edit This Win")
+                        .font(Torch.Font.display(Torch.TextSize.displaySM))
+                        .foregroundStyle(Torch.Color.parchment)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -268,6 +359,19 @@ private struct WinnerEditorSheet: View {
                 }
             }
         }
+        .tint(Torch.Color.torch)
+        .preferredColorScheme(.dark)
+    }
+
+    private var editorBackdrop: some View {
+        ZStack {
+            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Torch.Color.torch.opacity(0.10), .clear],
+                           center: UnitPoint(x: 0.5, y: -0.12),
+                           startRadius: 0, endRadius: 460)
+        }
+        .ignoresSafeArea()
     }
 
     private func save() {
