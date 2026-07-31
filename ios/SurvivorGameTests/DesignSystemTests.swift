@@ -154,3 +154,15 @@ struct DesignSystemTests {
         #expect(TorchCue.notification.duration == 0.2)
     }
 }
+
+/// Regression: a variation-axis font descriptor silently broke SwiftUI's
+/// Font bridge (rendered 12pt regardless of requested size). Render the
+/// display face and measure — not just inspect pointSize.
+@Suite struct DisplayFontRenderTests {
+    @Test @MainActor func displayFaceRendersAtRequestedSize() throws {
+        let renderer = ImageRenderer(content:
+            Text("Survivor").font(Torch.Font.display(56, weight: 900, soft: 30)))
+        let size = try #require(renderer.uiImage?.size)
+        #expect(size.width > 150 && size.height > 40)
+    }
+}

@@ -88,28 +88,35 @@ enum Torch {
         private static let italicName = "Fraunces-9ptBlackItalic"
 
         // OpenType variation axis tags as 4-byte integers.
-        private static let wght: UInt32 = 0x7767_6874 // 'wght'
-        private static let opsz: UInt32 = 0x6F70_737A // 'opsz'
-        private static let SOFT: UInt32 = 0x534F_4654 // 'SOFT'
-        private static let WONK: UInt32 = 0x574F_4E4B // 'WONK'
 
         /// True when the bundled Fraunces registered via UIAppFonts.
         static let frauncesAvailable = UIFont(name: romanName, size: 17) != nil
 
-        /// The ceremony/display face: Fraunces with the web's variation-axis
-        /// recipes (e.g. screen titles: 850/SOFT 40/WONK 1; ceremony titles:
-        /// 900 italic/SOFT 60). Falls back to New York when not bundled.
+        /// The ceremony/display face: the bundled Fraunces Black named
+        /// instance (the web's 900 ceremony weight). Falls back to New York
+        /// when not bundled.
+        ///
+        /// The web's per-recipe variation axes (wght 850/900, SOFT 40/60,
+        /// WONK, optical sizing) are NOT applied: a font built from a
+        /// kCTFontVariationAttribute descriptor breaks SwiftUI's Font bridge —
+        /// SwiftUI re-resolves such descriptors to CoreText's 12pt default,
+        /// flattening every display size (verified empirically; Font.custom
+        /// with the named instance renders correctly). The Black instance is
+        /// the closest fixed approximation of the ceremony recipes. `weight`,
+        /// `soft`, `wonk` and `relativeTo` are kept for call-site fidelity to
+        /// the research doc but are intentionally inert.
         static func display(_ size: CGFloat, weight: CGFloat = 850,
                             soft: CGFloat = 40, wonk: CGFloat = 1,
                             italic: Bool = false,
                             relativeTo style: SwiftUI.Font.TextStyle = .title) -> SwiftUI.Font {
-            guard let ui = displayUIFont(size, weight: weight, soft: soft,
-                                         wonk: wonk, italic: italic, relativeTo: style) else {
+            _ = (weight, soft, wonk, style)
+            guard frauncesAvailable else {
                 let fallback = SwiftUI.Font.system(size: size, weight: systemWeight(for: weight),
                                                    design: .serif)
                 return italic ? fallback.italic() : fallback
             }
-            return SwiftUI.Font(ui).leading(.tight) // headings line-height 1.12
+            return SwiftUI.Font.custom(italic ? italicName : romanName, size: size)
+                .leading(.tight) // headings line-height 1.12
         }
 
         /// UIFont form of `display` — nil when Fraunces isn't registered.
@@ -117,21 +124,8 @@ enum Torch {
                                   soft: CGFloat = 40, wonk: CGFloat = 1,
                                   italic: Bool = false,
                                   relativeTo style: SwiftUI.Font.TextStyle = .title) -> UIFont? {
-            guard frauncesAvailable else { return nil }
-            let variation: [UInt32: CGFloat] = [
-                wght: weight,
-                opsz: min(max(size, 9), 144),
-                SOFT: soft,
-                WONK: wonk,
-            ]
-            let descriptor = UIFontDescriptor(fontAttributes: [
-                .name: italic ? italicName : romanName,
-                UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): variation,
-            ])
-            let base = UIFont(descriptor: descriptor, size: size)
-            // UIFont(descriptor:size:) bakes the point size; UIFontMetrics
-            // restores Dynamic Type scaling (the web's text-size setting).
-            return UIFontMetrics(forTextStyle: uiTextStyle(style)).scaledFont(for: base)
+            _ = (weight, soft, wonk, style)
+            return UIFont(name: italic ? italicName : romanName, size: size)
         }
 
         /// Body copy: SF, the design-sanctioned `-apple-system` fallback.
