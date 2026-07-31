@@ -39,6 +39,7 @@
 		577D9E98A849DA3DFE397FD4 /* TribalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5236B756F1E39673589571 /* TribalScreen.swift */; };
 		613C911D0175476A406DB6E5 /* VoteRevealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CC4C7FEBB7493F02747CE34 /* VoteRevealView.swift */; };
 		61E0CE8C1DEBEE8D2402A0CF /* CardAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7519B7FA5A92C991D2A06F0B /* CardAnimations.swift */; };
+		63FB9311FDCAA0E0EBC3A8CF /* FlameEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A00B4F7F52DF16D539B5C8 /* FlameEffects.swift */; };
 		6588210FEAEEB4108AD7AFC7 /* MockGameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB96FC8285F596A14C699518 /* MockGameClient.swift */; };
 		66970C6962DCA3843B7D9FC6 /* VotingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEAA0AF59E6324AA323F21F /* VotingView.swift */; };
 		727FBFD5CDA13F859F0681A4 /* legacy_no_settings.json in Resources */ = {isa = PBXBuildFile; fileRef = 94C17E55F46E2B7F3ADF0577 /* legacy_no_settings.json */; };
@@ -60,6 +61,7 @@
 		9F0FB44D1289128C78EF57BE /* tribal_immunity.json in Resources */ = {isa = PBXBuildFile; fileRef = C8F4EFC64C011461248D2CEB /* tribal_immunity.json */; };
 		A838EE2CB80C1A2F2C8E5B0C /* InteractionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */; };
 		A8D88EDDD19265E64E1BF7EC /* tribal_announcement.json in Resources */ = {isa = PBXBuildFile; fileRef = 67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */; };
+		A9337789DFF95D57581E077D /* TorchComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A766C981BE5C3792457D7D /* TorchComponents.swift */; };
 		AC36887BE6C5E1F847FCAE13 /* ReactiveTheftOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */; };
 		ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */; };
 		B1E4E38E15E1EAA91EA2497A /* TurnIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */; };
@@ -137,12 +139,14 @@
 		4F0C398C7CA94DAB86E5CED0 /* PlayingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingScreen.swift; sourceTree = "<group>"; };
 		503E35CDBCFBE25AB9D87771 /* CardDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDefinition.swift; sourceTree = "<group>"; };
 		5618ECF801683DD6C8DBA6BE /* tribal_voting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_voting.json; sourceTree = "<group>"; };
+		57A00B4F7F52DF16D539B5C8 /* FlameEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlameEffects.swift; sourceTree = "<group>"; };
 		5CC4C7FEBB7493F02747CE34 /* VoteRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoteRevealView.swift; sourceTree = "<group>"; };
 		5D3F46EFB9F7ED22BAB45256 /* interaction_active.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = interaction_active.json; sourceTree = "<group>"; };
 		601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFameView.swift; sourceTree = "<group>"; };
 		622716FC89794F75AFD7283A /* challenge_active.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = challenge_active.json; sourceTree = "<group>"; };
 		67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_announcement.json; sourceTree = "<group>"; };
 		68644E98FB21432FA5656F26 /* HapticEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticEngine.swift; sourceTree = "<group>"; };
+		68A766C981BE5C3792457D7D /* TorchComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchComponents.swift; sourceTree = "<group>"; };
 		6BA6D340E92FC8B7447C972A /* tribal_reveal_tie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_reveal_tie.json; sourceTree = "<group>"; };
 		7060B4BFB85FE78AA190FD9A /* CardCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardCatalog.swift; sourceTree = "<group>"; };
 		72402B76C4C264F0CFCEAEBB /* TribalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TribalViewModel.swift; sourceTree = "<group>"; };
@@ -506,7 +510,9 @@
 		ECA397ABFE1CC534E7000CF2 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
+				57A00B4F7F52DF16D539B5C8 /* FlameEffects.swift */,
 				32C075937A0671D2605E1D40 /* Theme.swift */,
+				68A766C981BE5C3792457D7D /* TorchComponents.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -719,6 +725,7 @@
 				322C1630628F6ED6F828E5A1 /* FinalTribalScreen.swift in Sources */,
 				4961C36697A5B34E8EA34135 /* FinalTribalState.swift in Sources */,
 				B5C7A07069920F180EA34700 /* FinalTribalViewModel.swift in Sources */,
+				63FB9311FDCAA0E0EBC3A8CF /* FlameEffects.swift in Sources */,
 				796171B19E1C7D9B77015169 /* GameClient.swift in Sources */,
 				470BDC0D64C08772A45A0D41 /* GameHistoryView.swift in Sources */,
 				0881E7EE9556263D0213232A /* GamePhase.swift in Sources */,
@@ -754,6 +761,7 @@
 				F9C27661153509EA11A3AADB /* Theme.swift in Sources */,
 				E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */,
 				79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */,
+				A9337789DFF95D57581E077D /* TorchComponents.swift in Sources */,
 				577D9E98A849DA3DFE397FD4 /* TribalScreen.swift in Sources */,
 				DA5CA61FD9E6B322609D4926 /* TribalViewModel.swift in Sources */,
 				34B108E89F1AC173438D7A93 /* TribalVoteState.swift in Sources */,
