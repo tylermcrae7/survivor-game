@@ -17,21 +17,6 @@ struct PlayingScreen: View {
     }
 }
 
-/// The night-camp ground the whole screen sits on: bg → bg-deep with the
-/// torchlight radial pooling in from the top (web §Background scene layers).
-private struct NightBackground: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Torch.Color.torch.opacity(0.14), .clear],
-                           center: UnitPoint(x: 0.5, y: -0.12),
-                           startRadius: 0, endRadius: 460)
-        }
-        .ignoresSafeArea()
-    }
-}
-
 /// Header pill chip (web §Top bar): small-caps label on a sunken capsule.
 private struct CampChip<Content: View>: View {
     @ViewBuilder var content: Content
@@ -216,7 +201,8 @@ private struct PlayingContent: View {
                     .padding(.vertical, 8)
             }
         }
-        .background(NightBackground())
+        .background(TorchNightBackground(radialColor: Torch.Color.torch.opacity(0.14),
+                                         showEmbers: false, startRadius: 0, endRadius: 460))
         .tint(Torch.Color.torch)
         .sheet(isPresented: $showStory) {
             StorySoFarDrawer()

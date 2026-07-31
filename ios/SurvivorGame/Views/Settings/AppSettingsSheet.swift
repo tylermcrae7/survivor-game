@@ -142,7 +142,8 @@ struct AppSettingsSheet: View {
             }
             .foregroundStyle(Torch.Color.text)
             .scrollContentBackground(.hidden)
-            .background(nightBackdrop)
+            .background(TorchNightBackground(radialColor: Torch.Color.torch.opacity(0.10),
+                                             showEmbers: false, startRadius: 0, endRadius: 460))
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -184,18 +185,6 @@ struct AppSettingsSheet: View {
         }
         .tint(Torch.Color.torch)
         .preferredColorScheme(.dark)
-    }
-
-    /// Night ground with the torchlight radial anchored above the top edge.
-    private var nightBackdrop: some View {
-        ZStack {
-            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Torch.Color.torch.opacity(0.10), .clear],
-                           center: UnitPoint(x: 0.5, y: -0.12),
-                           startRadius: 0, endRadius: 460)
-        }
-        .ignoresSafeArea()
     }
 
     private func sectionLabel(_ title: String) -> some View {

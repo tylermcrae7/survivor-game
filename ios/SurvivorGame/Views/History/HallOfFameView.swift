@@ -49,7 +49,9 @@ struct HallOfFameView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(trophyBackdrop)
+            // The trophy room's night ground: gold torchlight core + embers.
+            .background(TorchNightBackground(radialColor: Torch.Color.juryGold.opacity(0.12),
+                                             startRadius: 0, endRadius: 460))
             .navigationTitle("Hall of Fame")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -112,19 +114,6 @@ struct HallOfFameView: View {
         }
         .tint(Torch.Color.torch)
         .preferredColorScheme(.dark)
-    }
-
-    /// Night ground with a gold torchlight core and rising embers.
-    private var trophyBackdrop: some View {
-        ZStack {
-            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Torch.Color.juryGold.opacity(0.12), .clear],
-                           center: UnitPoint(x: 0.5, y: -0.12),
-                           startRadius: 0, endRadius: 460)
-            EmberFieldView(style: .embers)
-        }
-        .ignoresSafeArea()
     }
 
     private var leaderboard: some View {
@@ -340,7 +329,8 @@ private struct WinnerEditorSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(editorBackdrop)
+            .background(TorchNightBackground(radialColor: Torch.Color.torch.opacity(0.10),
+                                             showEmbers: false, startRadius: 0, endRadius: 460))
             .navigationTitle(record == nil ? "Add a Win" : "Edit This Win")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -361,17 +351,6 @@ private struct WinnerEditorSheet: View {
         }
         .tint(Torch.Color.torch)
         .preferredColorScheme(.dark)
-    }
-
-    private var editorBackdrop: some View {
-        ZStack {
-            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Torch.Color.torch.opacity(0.10), .clear],
-                           center: UnitPoint(x: 0.5, y: -0.12),
-                           startRadius: 0, endRadius: 460)
-        }
-        .ignoresSafeArea()
     }
 
     private func save() {

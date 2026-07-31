@@ -33,6 +33,9 @@ enum Torch {
         static let background = hex("#020604")
         /// `--bg-deep` — deeper night: gradient bottom, drawers, overlays.
         static let backgroundDeep = hex("#010302")
+        /// `--torchlight` radial core (`oklch(0.42 0.10 55)`) — the warm
+        /// light pooling in from above the page, painted at 42%.
+        static let torchlight = hex("#753B07")
         /// `--surface` — card/panel base.
         static let surface = hex("#050F0A")
         /// `--surface-raised` — lifted surface (panel gradient top, hover).

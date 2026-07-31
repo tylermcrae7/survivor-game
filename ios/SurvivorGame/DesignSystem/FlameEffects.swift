@@ -171,6 +171,36 @@ struct EmberFieldView: View {
     }
 }
 
+// MARK: - Night Background (web §Background scene layers)
+
+/// The night scene the screens sit on: bg → bg-deep, the `--torchlight`
+/// radial pressing in from above the top edge, and (optionally) ambient
+/// embers rising off the fire. `EmberFieldView` self-gates under reduced
+/// motion, so callers never need to.
+struct TorchNightBackground: View {
+    /// The radial's core color, opacity included. Defaults to the web's
+    /// `--torchlight` at 42%; final-mode screens pass jury gold instead.
+    var radialColor: Color = Torch.Color.torchlight.opacity(0.42)
+    /// Ambient embers rising off the torchlight.
+    var showEmbers: Bool = true
+    var startRadius: CGFloat = 10
+    var endRadius: CGFloat = 480
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Torch.Color.background, Torch.Color.backgroundDeep],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [radialColor, .clear],
+                           center: UnitPoint(x: 0.5, y: -0.12),
+                           startRadius: startRadius, endRadius: endRadius)
+            if showEmbers {
+                EmberFieldView()
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 // MARK: - Glow helpers
 
 extension View {

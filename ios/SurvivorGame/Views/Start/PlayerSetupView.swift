@@ -21,21 +21,9 @@ struct PlayerSetupView: View {
             TextField("Your Name", text: $playerName,
                       prompt: Text("Your Name")
                           .foregroundStyle(Torch.Color.textFaint))
-                .textFieldStyle(.plain)
                 .font(Torch.Font.body())
-                .foregroundStyle(Torch.Color.text)
-                .tint(Torch.Color.torch)
                 .textInputAutocapitalization(.words)
-                .frame(minHeight: Torch.Spacing.touchTarget)
-                .padding(.horizontal, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
-                        .fill(Torch.Color.surfaceSunken)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
-                        .strokeBorder(Torch.Color.lineStrong, lineWidth: 1)
-                )
+                .torchField()
                 .accessibilityIdentifier("player-name")
 
             VStack(alignment: .leading, spacing: 8) {

@@ -194,7 +194,7 @@ private struct LobbyContent: View {
             } label: {
                 Label("Add a computer player", systemImage: "plus")
             }
-            .buttonStyle(.torchSecondary)
+            .buttonStyle(.torchGhost) // the web uses .btn-ghost here
             .disabled(viewModel.playerCount >= 6)
             .accessibilityLabel("Add a computer player")
         }
