@@ -437,4 +437,22 @@ async function clearCaches() {
     );
 }
 
+// ── Turn notifications (Web Push) ──
+self.addEventListener('push', (event) => {
+    let data = { title: 'Survivor', body: 'The tribe has news.' };
+    try { data = event.data.json(); } catch (e) { /* keep the fallback */ }
+    event.waitUntil(self.registration.showNotification(data.title, {
+        body: data.body,
+        icon: '/icon-192x192.png',
+        badge: '/icon-192x192.png',
+        tag: 'survivor-turn'
+    }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then(list => list.length ? list[0].focus() : clients.openWindow('/')));
+});
+
 console.log('🎮 Survivor Service Worker loaded');

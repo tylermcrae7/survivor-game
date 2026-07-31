@@ -24,6 +24,8 @@ rsync -a --delete \
     --exclude 'games.json' \
     --exclude 'games.json.*' \
     --exclude 'winners.json' \
+    --exclude 'push_keys.json' \
+    --exclude 'push_subs.json' \
     --exclude '*.log' \
     "$REPO_DIR/" "$DEPLOY_DIR/"
 

@@ -17,5 +17,8 @@ gevent-websocket>=0.10.1
 # Environment variable support (for production deployment)
 python-dotenv>=1.0.0,<2.0.0
 
+# Turn notifications over Web Push (VAPID keys auto-generate on first run)
+pywebpush>=2.0.0
+
 # Development dependencies (optional)
 # pytest>=7.0.0  # For running tests

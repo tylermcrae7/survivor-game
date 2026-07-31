@@ -749,6 +749,19 @@ const GameAPI = {
     async updateGameSettings(gameId, playerId, settings) {
         return apiCall('/game/update_settings', { gameId, playerId, settings });
     },
+
+    async pushPubkey() {
+        const response = await fetch('/api/push/pubkey', { cache: 'no-store' });
+        return response.ok ? response.json() : null;
+    },
+
+    async pushSubscribe(gameId, playerId, subscription) {
+        return apiCall('/push/subscribe', { gameId, playerId, subscription });
+    },
+
+    async pushUnsubscribe(gameId, playerId) {
+        return apiCall('/push/unsubscribe', { gameId, playerId });
+    },
     
     async playImmunity(gameId, playerId) {
         return apiCall('/immunity/play', { gameId, playerId });

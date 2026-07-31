@@ -8,6 +8,7 @@ from pathlib import Path
 from functools import wraps
 from rules_engine import SurvivorRulesEngine, TribalPhase, takeable_indices
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
+import push_notify
 from interactions import interaction_engine
 import bots as bots_module
 from bots import BotRunner
@@ -1370,6 +1371,17 @@ class GameState:
         else:
             leader_id = self._get_council_leader_id(game)
 
+        # Every subscribed, still-breathing human hears the conch. A push
+        # hiccup must never stop the council.
+        try:
+            for pid, player in game["players"].items():
+                if not player.get("isBot") and not player.get("isEliminated"):
+                    push_notify.notify_player(
+                        game.get("id", ""), pid, "Tribal Council",
+                        "The tribe must vote — bring your torch")
+        except Exception as e:
+            logger.warning(f"Tribal push failed: {e}")
+
         # Initialize the currentVote structure for tribal council
         game["currentVote"] = {
             "type": elimination_type,
@@ -2603,6 +2615,17 @@ class GameState:
             }
         
         self._save()
+
+        # A subscribed human gets a nudge when their torch lights. Never let a
+        # push hiccup break the turn.
+        try:
+            if not current_player.get("isBot"):
+                push_notify.notify_player(
+                    gid, turn_order[current_index], "Your torch burns",
+                    "It's your turn in Survivor")
+        except Exception as e:
+            logger.warning(f"Turn push failed for {gid}: {e}")
+
         return {
             "success": True,
             "message": f"Turn advanced to {current_player.get('name', 'player')}",
@@ -3704,6 +3727,36 @@ def api_done():    return handle('complete_tribal',[])
 def api_reset():   return handle('reset_game',[])
 @app.route('/api/game/update_settings',methods=['POST'])
 def api_update_settings(): return handle('update_game_settings',['playerId','settings'])
+
+# ── Turn notifications (Web Push). Gated by the island code like all /api/*. ──
+@app.route('/api/push/pubkey', methods=['GET'])
+@safe_api_call
+def api_push_pubkey():
+    key = push_notify.public_key()
+    if not key:
+        return jsonify(success=False,
+                       message="Notifications aren't set up on this server"), 404
+    return jsonify(success=True, key=key)
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@safe_api_call
+def api_push_subscribe():
+    d = request.get_json(silent=True) or {}
+    gid, pid, sub = d.get('gameId'), d.get('playerId'), d.get('subscription')
+    game = game_state.games.get(gid)
+    if not game or pid not in game.get("players", {}):
+        return jsonify(success=False, message="Game or player not found"), 404
+    if not isinstance(sub, dict) or not sub.get("endpoint"):
+        return jsonify(success=False, message="A push subscription is required"), 400
+    push_notify.subscribe(gid, pid, sub)
+    return jsonify(success=True, message="You'll hear the conch from anywhere")
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@safe_api_call
+def api_push_unsubscribe():
+    d = request.get_json(silent=True) or {}
+    push_notify.unsubscribe(d.get('gameId'), d.get('playerId'))
+    return jsonify(success=True, message="Notifications are off")
 @app.route('/api/game/delete',methods=['POST'])
 def api_delete():  return handle('delete_game',[])
 @app.route('/api/player/rename',methods=['POST'])

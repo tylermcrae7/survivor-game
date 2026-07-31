@@ -148,6 +148,10 @@ def main():
         {
             'file': 'tests/test_game_settings.py',
             'description': 'Per-Game Settings — bot pace/style, tribal windows with human floors, Leader control'
+        },
+        {
+            'file': 'tests/test_push_notifications.py',
+            'description': 'Turn Notifications — VAPID keys, subscriptions, turn/tribal sends, graceful failure'
         }
     ]
     

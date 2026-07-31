@@ -3373,12 +3373,68 @@ function findSettingsRowOnChange(key) {
     return null;
 }
 
-/** Placeholder until the notifications feature wires in (replaced by the push build). */
-function handleTurnNotificationsToggle(on) {
-    if (on) {
-        window.SurvivorSettings.set('turnNotifications', false);
-        showToast('Turn notifications are coming online shortly', 'info');
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = window.atob(base64);
+    return Uint8Array.from([...raw].map(ch => ch.charCodeAt(0)));
+}
+
+/** Enable/disable turn notifications: permission → subscribe → tell the server. */
+async function handleTurnNotificationsToggle(on) {
+    const S = window.SurvivorSettings;
+    const revert = (message) => {
+        S.set('turnNotifications', false);
+        if (message) showToast(message, 'warning');
         renderSettingsScreen();
+    };
+
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const playerId = window.SurvivorGame?.localGameState?.playerId;
+
+    if (!on) {
+        try {
+            const reg = await navigator.serviceWorker?.ready;
+            const sub = await reg?.pushManager.getSubscription();
+            if (sub) await sub.unsubscribe();
+        } catch (e) { /* local unsubscribe is best-effort */ }
+        if (gameId && playerId) {
+            window.SurvivorNetwork?.GameAPI.pushUnsubscribe(gameId, playerId);
+        }
+        return;
+    }
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)
+            || !('Notification' in window)) {
+        return revert("This browser can't do notifications — on iPhone, add the app to your Home Screen first");
+    }
+    if (!gameId || !playerId) {
+        return revert('Join a game first, then flip this on');
+    }
+
+    try {
+        const keyResult = await window.SurvivorNetwork?.GameAPI.pushPubkey();
+        if (!keyResult?.key) {
+            return revert("Notifications aren't set up on this server");
+        }
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            return revert('Notifications stay off until the browser allows them');
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(keyResult.key)
+        });
+        const result = await window.SurvivorNetwork?.GameAPI.pushSubscribe(
+            gameId, playerId, subscription.toJSON());
+        if (!result?.success) {
+            return revert(result?.message || 'The server refused the subscription');
+        }
+        // apiCall already toasted the server's confirmation
+    } catch (error) {
+        console.warn('Push subscribe failed:', error);
+        return revert('Could not turn notifications on');
     }
 }
 

@@ -50,3 +50,5 @@ ios/SourcePackages/
 
 # Xcode per-user UI state
 ios/**/xcuserdata/
+push_keys.json
+push_subs.json
