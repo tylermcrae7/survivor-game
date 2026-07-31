@@ -218,12 +218,21 @@ class ChallengeEngine:
             allowed = ", ".join(ch.get("actions", [])) or "none"
             return {"success": False, "message": f"'{action}' is not allowed right now (allowed: {allowed})"}
 
-        ch["actionCount"] = ch.get("actionCount", 0) + 1
-        if ch["actionCount"] > MAX_CHALLENGE_ACTIONS:
+        if ch.get("actionCount", 0) >= MAX_CHALLENGE_ACTIONS:
             return {"success": False, "message": "Challenge action limit reached — reset the Challenge"}
 
         handler = getattr(self, f"_action_{ch['type']}")
-        return handler(game, ch, player_id, action, value)
+        result = handler(game, ch, player_id, action, value)
+
+        # Only a move that actually advanced the Challenge counts against the cap.
+        # Counting refusals too meant a client retrying one illegal move burned the
+        # whole budget and poisoned the Challenge permanently, turning a transient
+        # bug into an unrecoverable game (seen live: a bot asked to pull from an
+        # empty bag ~6600 times, and the Challenge stayed dead after the bot was
+        # fixed). The cap still stops a genuine runaway of successful actions.
+        if result.get("success"):
+            ch["actionCount"] = ch.get("actionCount", 0) + 1
+        return result
 
     def _finish(self, game: Dict[str, Any], ch: Dict[str, Any], winner_id: str,
                 message: str) -> Dict[str, Any]:

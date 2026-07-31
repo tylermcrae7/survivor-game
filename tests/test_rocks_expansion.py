@@ -414,6 +414,32 @@ class TestLowestScoreLoses(RocksTestBase):
             self.act("pull", 1, player=pid)
         self.assertIn("lastRound", self.game["challenge"])
 
+    def test_refused_actions_do_not_burn_the_challenge_action_budget(self):
+        """
+        The action cap exists to stop a runaway of *real* moves. Counting refusals
+        too meant one client retrying an illegal move could poison the Challenge
+        permanently — which is exactly what stranded a live game: a bot asked to
+        pull from an empty bag ~6600 times, and the Challenge stayed dead even
+        after the bot itself was fixed.
+        """
+        from challenges import MAX_CHALLENGE_ACTIONS
+
+        self.start_challenge("challenge_lowest_score_loses")
+        challenge = self.game["challenge"]
+        player = challenge["currentPlayerId"]
+
+        # Hammer an illegal pull far past the cap
+        for _ in range(MAX_CHALLENGE_ACTIONS + 25):
+            result = self.act("pull", 99, player=player)
+            self.assertFalse(result["success"])
+
+        self.assertEqual(self.game["challenge"].get("actionCount", 0), 0,
+                         "refusals must not count against the cap")
+
+        # A legal move still lands afterwards
+        result = self.act("pull", 1, player=player)
+        self.assertTrue(result["success"], result.get("message"))
+
     def test_bot_never_asks_for_rocks_an_empty_bag_cannot_give(self):
         """The bot's pull must be legal at an empty bag or it retries forever."""
         import random as _random
