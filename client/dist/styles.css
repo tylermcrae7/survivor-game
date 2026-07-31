@@ -2746,3 +2746,74 @@
   }
   .story-empty { text-align: center; color: var(--text-faint); padding: 2rem 0.5rem; }
 }
+
+/* ══════════════ Device settings ══════════════ */
+
+/* Text size: everything in the app measures in rem, so scaling the root
+   scales cards, log, buttons — the lot. Percentages respect a user's own
+   browser-level font preference instead of stomping it with px. */
+html.text-large { font-size: 110%; }
+html.text-xl    { font-size: 122%; }
+
+/* Reduce motion: near-zero durations rather than `none` so animation-end
+   handlers (fade-out removal, screen transitions) still fire. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+  scroll-behavior: auto !important;
+}
+
+/* ── Settings screen ── */
+.settings-section { margin: 1.1rem 0 0.4rem; }
+.settings-section > h3 {
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  margin: 0 0 0.35rem;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row > label { flex: 1 1 12rem; }
+.settings-row .row-sub {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-faint);
+  margin-top: 0.15rem;
+}
+.seg-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.seg-btn {
+  padding: 0.42rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.seg-btn[aria-pressed="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #1a1108;
+  font-weight: 600;
+}
+.settings-row .form-input { max-width: 14rem; }
+.settings-danger { color: #e0705a; }
+.settings-about {
+  color: var(--text-faint);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: 1rem 0 0.4rem;
+}

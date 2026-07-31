@@ -205,6 +205,8 @@ const SoundManager = {
 
     // Generate sounds using Web Audio API
     play(soundType) {
+        // The narrator's own mute stays subordinate to the device master switch
+        if (window.SurvivorSettings && !window.SurvivorSettings.soundOn()) return;
         if (this.muted || !this.audioContext) return;
 
         try {

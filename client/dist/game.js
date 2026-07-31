@@ -557,7 +557,16 @@ async function createGame() {
     const expansion = !!document.getElementById('expansionToggle')?.checked;
 
     console.log('Creating new game...', { deckMode, expansion });
-    const result = await safeApiCall('/game/create', { deckMode, expansion });
+    // Per-game pacing/style ride along from this device's defaults; the server
+    // sanitizes unknown keys and values.
+    const S = window.SurvivorSettings;
+    const settings = S ? {
+        botPace: S.get('defaultBotPace'),
+        tribalPace: S.get('defaultTribalPace'),
+        botStyle: S.get('defaultBotStyle'),
+    } : null;
+    const result = await safeApiCall('/game/create',
+        settings ? { deckMode, expansion, settings } : { deckMode, expansion });
 
     if (result && result.gameId) {
         if (window.SurvivorGame) {
@@ -627,6 +636,12 @@ async function joinGame() {
             playerId: result.playerId,
             playerName: name
         }));
+
+        // Remember who you are for next time (device identity defaults)
+        if (window.SurvivorSettings) {
+            window.SurvivorSettings.set('identityName', name);
+            if (color) window.SurvivorSettings.set('identityColor', color);
+        }
 
         toast('Joined game successfully!', 'success');
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
@@ -814,6 +829,7 @@ function startNewGame() {
 // Export functions for use in other modules
 window.SurvivorGame = {
     // State
+    APP_VERSION: '3.11.0',
     localGameState,
     fullGameState,
     SURVIVOR_CARDS,

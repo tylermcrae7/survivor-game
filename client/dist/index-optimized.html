@@ -178,6 +178,10 @@
         <symbol id="i-menu" viewBox="0 0 24 24">
             <path d="M4.5 7h15M4.5 12h15M4.5 17h15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none"/>
         </symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.7" fill="none"/>
+            <path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.9 1.9M7.4 16.6l-1.9 1.9M18.5 18.5l-1.9-1.9M7.4 7.4L5.5 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+        </symbol>
         <symbol id="i-hourglass" viewBox="0 0 24 24">
             <path d="M6.5 3.5h11M6.5 20.5h11M7.5 3.5v3.2L12 12 7.5 17.3v3.2M16.5 3.5v3.2L12 12l4.5 5.3v3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
         </symbol>
@@ -211,6 +215,10 @@
                 <button class="chip chip-btn" id="storyBtn" data-action="openStory" hidden
                         aria-label="The story so far" title="The story so far">
                     <svg class="icon" aria-hidden="true"><use href="#i-scroll"></use></svg>
+                </button>
+                <button class="chip chip-btn" id="settingsBtn" data-action="openSettings"
+                        aria-label="Settings" title="Settings">
+                    <svg class="icon" aria-hidden="true"><use href="#i-gear"></use></svg>
                 </button>
                 <button class="chip chip-btn" id="campMenuBtn" data-action="openCampMenu"
                         aria-label="Camp menu" title="Camp menu">
@@ -258,6 +266,21 @@
                         <button class="btn btn-ghost btn-enhanced touch-target" id="hofEditBtn"
                                 data-action="toggleLeaderboardEdit">
                             Edit the record
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="settingsScreen" class="screen" role="region" aria-label="Settings">
+                <div class="screen-head">
+                    <p class="eyebrow">Your camp, your rules</p>
+                    <h2 class="screen-title">Settings</h2>
+                </div>
+                <div class="form-card">
+                    <div id="settingsBody"></div>
+                    <div class="hof-actions">
+                        <button class="btn btn-secondary btn-enhanced touch-target" data-action="leaveSettings">
+                            Back
                         </button>
                     </div>
                 </div>
@@ -616,11 +639,12 @@
     </div>
 
     <!-- JavaScript Modules (with defer for proper loading order) -->
-    <script src="game.js?v=torchlit-3.10.1" defer></script>
-    <script src="network.js?v=torchlit-3.10.1" defer></script>
-    <script src="ui.js?v=torchlit-3.10.1" defer></script>
-    <script src="state-manager.js?v=torchlit-3.10.1" defer></script>
-    <script src="narrator.js?v=torchlit-3.10.1" defer></script>
+    <script src="settings.js?v=torchlit-3.11.0" defer></script>
+    <script src="game.js?v=torchlit-3.11.0" defer></script>
+    <script src="network.js?v=torchlit-3.11.0" defer></script>
+    <script src="ui.js?v=torchlit-3.11.0" defer></script>
+    <script src="state-manager.js?v=torchlit-3.11.0" defer></script>
+    <script src="narrator.js?v=torchlit-3.11.0" defer></script>
 
     <!-- Slim Initialization Script -->
     <script>
@@ -684,6 +708,8 @@
         const _actionMap = {
             submitAccessCode: () => window.SurvivorGame?.submitAccessCode(),
             openCampMenu:     () => window.SurvivorUI?.openCampMenu(),
+            openSettings:     () => window.SurvivorUI?.openSettings(),
+            leaveSettings:    () => window.SurvivorUI?.leaveSettings(),
             openStory:        () => window.SurvivorUI?.openStory(),
             closeStory:       () => window.SurvivorUI?.closeStory(),
             showLeaderboard:  () => window.SurvivorUI?.showLeaderboard(),
@@ -777,6 +803,34 @@
                     if (deckSelect) deckSelect.value = this.dataset.deck;
                 });
             });
+
+            // Device defaults feed the forms: deck choice, Rocks toggle, identity.
+            // Changing the start-screen controls updates the defaults — they ARE
+            // the same setting.
+            const S = window.SurvivorSettings;
+            if (S) {
+                const deckDefault = S.get('defaultDeckMode');
+                const deckBtn = document.querySelector(`.segmented [data-deck="${deckDefault}"]`);
+                if (deckBtn && deckBtn.getAttribute('aria-pressed') !== 'true') deckBtn.click();
+                document.querySelectorAll('.segmented [data-deck]').forEach(btn => {
+                    btn.addEventListener('click', () => S.set('defaultDeckMode', btn.dataset.deck));
+                });
+
+                const expToggle = document.getElementById('expansionToggle');
+                if (expToggle) {
+                    expToggle.checked = !!S.get('defaultExpansion');
+                    expToggle.addEventListener('change', () => S.set('defaultExpansion', expToggle.checked));
+                }
+
+                const nameInput = document.getElementById('playerNameInput');
+                if (nameInput && !nameInput.value && S.get('identityName')) {
+                    nameInput.value = S.get('identityName');
+                }
+                const savedColor = S.get('identityColor');
+                if (savedColor) {
+                    document.querySelector(`.color-btn[data-color="${savedColor}"]`)?.click();
+                }
+            }
 
             // Code hero copied flash
             const codeHero = document.querySelector('.code-hero');

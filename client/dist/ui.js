@@ -43,6 +43,7 @@ const Haptics = {
      * @param {string} type - Type of haptic pattern
      */
     trigger(type = 'light') {
+        if (window.SurvivorSettings && !window.SurvivorSettings.hapticsOn()) return;
         if ('vibrate' in navigator) {
             const pattern = this.patterns[type] || this.patterns.light;
             navigator.vibrate(pattern);
@@ -236,6 +237,13 @@ function showScreen(screenId) {
 
             // Trigger screen-specific setup
             setupScreen(screenId);
+
+            // Hold the screen awake while the table is mid-game (device setting)
+            window.SurvivorSettings?.setWakeWanted([
+                'playingScreen', 'tribalAnnouncementScreen', 'tribalAdvantageScreen',
+                'tribalDiscussionScreen', 'votingScreen', 'immunityScreen',
+                'resultsScreen', 'finalTribalScreen'
+            ].includes(screenId));
 
             // Announce screen change for accessibility
             announce && announce(`Navigated to ${screenId.replace('Screen', ' screen')}`);
@@ -824,9 +832,16 @@ function renderLivesTracker(gameState) {
             const targetId = row.dataset.stealTarget;
             const gameId = window.SurvivorGame?.localGameState.gameId;
             const thiefId = window.SurvivorGame?.localGameState.playerId;
-            if (gameId && thiefId && targetId) {
+            if (!(gameId && thiefId && targetId)) return;
+            const doSteal = () => {
                 hapticFeedback('medium');
                 window.SurvivorNetwork?.GameAPI.stealCard(gameId, thiefId, targetId);
+            };
+            if (window.SurvivorSettings?.get('confirmSteals')) {
+                const name = window.SurvivorGame?.fullGameState?.players?.[targetId]?.name || 'them';
+                showConfirm(`Steal a random card from ${name}?`, doSteal);
+            } else {
+                doSteal();
             }
         };
         row.addEventListener('click', act);
@@ -1432,13 +1447,22 @@ async function playCard(cardIndex, params = {}) {
     }
 }
 
-async function castVote(targetId, totalVotes = null) {
+async function castVote(targetId, totalVotes = null, skipConfirm = false) {
     const gameId = window.SurvivorGame?.localGameState.gameId;
     const voterId = window.SurvivorGame?.localGameState.playerId;
 
     if (!gameId || !voterId || !targetId) {
         showToast('Vote error', 'error');
         Haptics.trigger('error');
+        return;
+    }
+
+    // Optional mistap guard (device setting). Runs after the extra-vote
+    // chooser, so the two dialogs never stack.
+    if (!skipConfirm && window.SurvivorSettings?.get('confirmVotes')) {
+        const name = window.SurvivorGame?.fullGameState?.players?.[targetId]?.name || 'this player';
+        showConfirm(`Write ${name} on your parchment? A vote can't be taken back.`,
+            () => castVote(targetId, totalVotes, true));
         return;
     }
 
@@ -1781,9 +1805,12 @@ function showToast(message, type = 'info', duration = null) {
         toastContainer = createToastContainer();
     }
 
-    // Long enough to read across the table — errors linger a little longer
+    // Reading pace is a device setting; errors linger ~30% longer.
+    // 0 (pinned) means the toast stays until tapped.
     if (duration == null) {
-        duration = (type === 'error' || type === 'warning') ? 6500 : 5000;
+        duration = window.SurvivorSettings
+            ? window.SurvivorSettings.toastMs(type)
+            : ((type === 'error' || type === 'warning') ? 6500 : 5000);
     }
     
     const toast = document.createElement('div');
@@ -1796,16 +1823,19 @@ function showToast(message, type = 'info', duration = null) {
     `;
     
     toastContainer.appendChild(toast);
-    
-    // Auto-remove after duration
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.classList.add('fade-out');
-            setTimeout(() => {
-                toast.remove();
-            }, 300);
-        }
-    }, duration);
+
+    // Every toast dismisses on tap; only a positive duration auto-removes,
+    // so the "pinned" pace waits for the reader.
+    const dismiss = () => {
+        if (!toast.parentNode) return;
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 300);
+    };
+    toast.addEventListener('click', dismiss);
+
+    if (duration > 0) {
+        setTimeout(dismiss, duration);
+    }
 }
 
 function getToastIcon(type) {
@@ -2102,8 +2132,10 @@ function renderPhaseGuidance(gameState) {
     }
 
     // The guidance strip earns its place only once a game exists — and never
-    // on the Hall of Fame, which is a detour outside the game.
-    if (!window.SurvivorGame?.localGameState?.gameId || currentScreen === 'leaderboardScreen') {
+    // on the Hall of Fame or Settings, which are detours outside the game.
+    if (!window.SurvivorGame?.localGameState?.gameId
+            || currentScreen === 'leaderboardScreen'
+            || currentScreen === 'settingsScreen') {
         guidanceEl.style.display = 'none';
         return;
     }
@@ -2407,9 +2439,9 @@ function renderGameOver(gameState) {
 function updateCurrentScreen(gameState) {
     if (!gameState) return;
 
-    // The Hall of Fame is a deliberate detour — a background state update must
-    // not drag the player back into the game screens.
-    if (currentScreen === 'leaderboardScreen') return;
+    // The Hall of Fame and Settings are deliberate detours — a background
+    // state update must not drag the player back into the game screens.
+    if (currentScreen === 'leaderboardScreen' || currentScreen === 'settingsScreen') return;
 
     // Atmosphere + navigation follow the game phase
     setBodyMode(gameState);
@@ -2833,7 +2865,10 @@ function closeStory() {
 function renderStoryList(gameState) {
     const list = document.getElementById('storyList');
     if (!list) return;
-    const events = gameState?.eventLog || [];
+    let events = gameState?.eventLog || [];
+    if (window.SurvivorSettings?.get('historyLength') === '30') {
+        events = events.slice(-30);
+    }
     if (!events.length) {
         list.innerHTML = `<div class="story-empty">${icon('hourglass')}<p>Nothing has happened yet.<br>The island is quiet.</p></div>`;
         return;
@@ -2855,6 +2890,10 @@ function openCampMenu() {
     const content = `
         <div class="camp-menu">
             ${inGame ? `<p class="picker-hint">Fire <strong>${escapeHtml(gameId)}</strong></p>` : ''}
+            <button class="camp-menu-item touch-target" data-camp="settings">
+                ${icon('gear')}
+                <span><strong>Settings</strong><em>Pacing, accessibility, your identity</em></span>
+            </button>
             <button class="camp-menu-item touch-target" data-camp="leaderboard">
                 ${icon('crown')}
                 <span><strong>Hall of Fame</strong><em>Every Sole Survivor so far</em></span>
@@ -2879,6 +2918,10 @@ function openCampMenu() {
     showModal(content, { title: 'Camp' });
 
     setTimeout(() => {
+        document.querySelector('[data-camp="settings"]')?.addEventListener('click', () => {
+            hideModal();
+            openSettings();
+        });
         document.querySelector('[data-camp="leaderboard"]')?.addEventListener('click', () => {
             hideModal();
             showLeaderboard();
@@ -3099,6 +3142,204 @@ function leaveLeaderboard() {
     if (gameId && gameState?.phase) {
         // Land somewhere real first — updateCurrentScreen ignores calls made from
         // the Hall of Fame on purpose — then let the phase router refine it.
+        showScreen(gameState.phase === 'lobby' ? 'lobbyScreen' : 'playingScreen');
+        updateCurrentScreen(gameState);
+    } else {
+        showScreen('startScreen');
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PLAYER_COLORS = [
+    ['#FF6B6B', 'Red'], ['#4ECDC4', 'Teal'], ['#45B7D1', 'Blue'], ['#96CEB4', 'Sage'],
+    ['#FFEAA7', 'Yellow'], ['#DDA0DD', 'Plum'], ['#98D8C8', 'Mint'], ['#F7DC6F', 'Gold'],
+];
+
+function settingsSpec() {
+    return [
+        { title: 'Reading & pacing', rows: [
+            { key: 'toastPace', label: 'Message speed', type: 'seg',
+              sub: 'How long announcements stay on screen',
+              options: [['quick', 'Quick'], ['normal', 'Normal'], ['relaxed', 'Relaxed'], ['pinned', 'Until tapped']],
+              onChange: () => showToast('Messages will stay on screen this long', 'info') },
+            { key: 'defaultBotPace', label: 'Computer player speed', type: 'seg',
+              sub: 'For games you create',
+              options: [['chill', 'Chill'], ['normal', 'Normal'], ['fast', 'Fast']] },
+            { key: 'defaultTribalPace', label: 'Tribal ceremony pace', type: 'seg',
+              sub: 'For games you create — slower leaves room to play advantage cards',
+              options: [['normal', 'Normal'], ['relaxed', 'Relaxed'], ['tv', 'TV drama']] },
+            { key: 'defaultBotStyle', label: 'Computer player style', type: 'seg',
+              sub: 'For games you create',
+              options: [['chill', 'Chill'], ['normal', 'Normal'], ['cutthroat', 'Cutthroat']] },
+        ]},
+        { title: 'Accessibility', rows: [
+            { key: 'textSize', label: 'Text size', type: 'seg',
+              options: [['normal', 'Normal'], ['large', 'Large'], ['xl', 'Extra large']] },
+            { key: 'reduceMotion', label: 'Reduce motion', type: 'seg',
+              options: [['auto', 'Match device'], ['on', 'On'], ['off', 'Off']] },
+            { key: 'haptics', label: 'Vibration', type: 'toggle' },
+            { key: 'sound', label: 'Sound', type: 'toggle',
+              sub: 'Master switch — the narrator has its own mute too' },
+        ]},
+        { title: 'Table rules', rows: [
+            { key: 'confirmVotes', label: 'Confirm before casting a vote', type: 'toggle' },
+            { key: 'confirmSteals', label: 'Confirm before stealing', type: 'toggle' },
+            { key: 'defaultDeckMode', label: 'Default deck', type: 'seg',
+              options: [['official', 'Official'], ['extended', 'Extended']] },
+            { key: 'defaultExpansion', label: 'Add Rocks challenges by default', type: 'toggle' },
+        ]},
+        { title: 'You', rows: [
+            { key: 'identityName', label: 'Your name', type: 'text',
+              sub: 'Prefills the join form on this device' },
+            { key: 'identityColor', label: 'Your buff', type: 'colors' },
+        ]},
+        { title: 'Device', rows: [
+            { key: 'keepAwake', label: 'Keep the screen awake during games', type: 'toggle' },
+            { key: 'turnNotifications', label: 'Notify me on my turn', type: 'toggle',
+              sub: 'On iPhone, add the app to your Home Screen first',
+              onChange: (value) => handleTurnNotificationsToggle(value) },
+            { key: 'historyLength', label: 'Story-so-far length', type: 'seg',
+              options: [['30', 'Last 30'], ['all', 'Everything']] },
+        ]},
+    ];
+}
+
+function renderSettingsRow(row) {
+    const S = window.SurvivorSettings;
+    const value = S.get(row.key);
+    const sub = row.sub ? `<span class="row-sub">${escapeHtml(row.sub)}</span>` : '';
+    let control = '';
+
+    if (row.type === 'seg') {
+        control = `<div class="seg-group" role="group" aria-label="${escapeHtml(row.label)}">` +
+            row.options.map(([v, label]) =>
+                `<button class="seg-btn touch-target" data-set-key="${row.key}" data-set-value="${v}"
+                         aria-pressed="${String(value) === v}">${escapeHtml(label)}</button>`).join('') +
+            `</div>`;
+    } else if (row.type === 'toggle') {
+        // .checkbox-row styles a bare checkbox as the app's pill switch
+        control = `<label class="checkbox-row" style="min-height:0">
+            <input type="checkbox" data-set-key="${row.key}" data-set-toggle="1" ${value ? 'checked' : ''}>
+        </label>`;
+    } else if (row.type === 'text') {
+        control = `<input type="text" class="form-input" data-set-key="${row.key}" data-set-text="1"
+                          value="${escapeHtml(value || '')}" autocomplete="off"
+                          placeholder="${escapeHtml(row.placeholder || '')}">`;
+    } else if (row.type === 'colors') {
+        control = `<div class="seg-group">` + PLAYER_COLORS.map(([hex, name]) =>
+            `<button class="color-btn touch-target" data-set-key="${row.key}" data-set-value="${hex}"
+                     style="background:${hex}" role="radio" aria-label="${name}"
+                     aria-checked="${value === hex}"></button>`).join('') +
+            `<button class="seg-btn touch-target" data-set-key="${row.key}" data-set-value=""
+                     aria-pressed="${!value}">Any</button></div>`;
+    }
+
+    return `<div class="settings-row"><label>${escapeHtml(row.label)}${sub}</label>${control}</div>`;
+}
+
+function renderSettingsScreen() {
+    const body = document.getElementById('settingsBody');
+    if (!body || !window.SurvivorSettings) return;
+    const inGame = !!window.SurvivorGame?.localGameState?.gameId;
+    const version = window.SurvivorGame?.APP_VERSION || '';
+
+    body.innerHTML = settingsSpec().map(section => `
+        <div class="settings-section">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${section.rows.map(renderSettingsRow).join('')}
+        </div>
+    `).join('') + `
+        <div class="settings-section">
+            <h3>Housekeeping</h3>
+            ${inGame ? `
+            <div class="settings-row"><label>Leave this game<span class="row-sub">Just you — the game keeps going</span></label>
+                <button class="seg-btn touch-target" data-housekeeping="leave">Leave</button></div>` : ''}
+            <div class="settings-row"><label>Forget this island<span class="row-sub">Clears the island code and any saved game on this device</span></label>
+                <button class="seg-btn settings-danger touch-target" data-housekeeping="forget">Forget</button></div>
+            <div class="settings-row"><label>Reset settings<span class="row-sub">Everything on this screen back to normal</span></label>
+                <button class="seg-btn touch-target" data-housekeeping="reset">Reset</button></div>
+            <p class="settings-about">Survivor: The Tribe Has Spoken — companion${version ? ` · v${version}` : ''}</p>
+        </div>
+    `;
+
+    bindSettingsControls(body);
+}
+
+function bindSettingsControls(body) {
+    const S = window.SurvivorSettings;
+
+    body.querySelectorAll('[data-set-value]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = btn.dataset.setKey;
+            S.set(key, btn.dataset.setValue);
+            findSettingsRowOnChange(key)?.(btn.dataset.setValue);
+            renderSettingsScreen();
+        });
+    });
+
+    body.querySelectorAll('[data-set-toggle]').forEach(input => {
+        input.addEventListener('change', () => {
+            const key = input.dataset.setKey;
+            S.set(key, input.checked);
+            findSettingsRowOnChange(key)?.(input.checked);
+        });
+    });
+
+    body.querySelectorAll('[data-set-text]').forEach(input => {
+        input.addEventListener('change', () => S.set(input.dataset.setKey, input.value.trim()));
+    });
+
+    body.querySelector('[data-housekeeping="leave"]')?.addEventListener('click', () => {
+        showConfirm('Leave this game? The tribe plays on without you.',
+            () => window.SurvivorGame?.leaveGame());
+    });
+    body.querySelector('[data-housekeeping="forget"]')?.addEventListener('click', () => {
+        showConfirm('Forget this island? The code and any saved game on this device are cleared.',
+            () => {
+                window.SurvivorGame?.wipeLocalGame?.();
+                try { localStorage.removeItem('survivorState'); } catch (e) {}
+                document.cookie = 'survivor_access=; Max-Age=0; path=/';
+                location.reload();
+            });
+    });
+    body.querySelector('[data-housekeeping="reset"]')?.addEventListener('click', () => {
+        S.reset();
+        renderSettingsScreen();
+        showToast('Settings are back to normal', 'success');
+    });
+}
+
+function findSettingsRowOnChange(key) {
+    for (const section of settingsSpec()) {
+        for (const row of section.rows) {
+            if (row.key === key) return row.onChange || null;
+        }
+    }
+    return null;
+}
+
+/** Placeholder until the notifications feature wires in (replaced by the push build). */
+function handleTurnNotificationsToggle(on) {
+    if (on) {
+        window.SurvivorSettings.set('turnNotifications', false);
+        showToast('Turn notifications are coming online shortly', 'info');
+        renderSettingsScreen();
+    }
+}
+
+function openSettings() {
+    showScreen('settingsScreen');
+    document.getElementById('phaseGuidance')?.style.setProperty('display', 'none');
+    renderSettingsScreen();
+}
+
+function leaveSettings() {
+    const gameState = window.SurvivorGame?.fullGameState;
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    if (gameId && gameState?.phase) {
         showScreen(gameState.phase === 'lobby' ? 'lobbyScreen' : 'playingScreen');
         updateCurrentScreen(gameState);
     } else {
@@ -3363,6 +3604,8 @@ window.SurvivorUI = {
     renderInteraction,
     beginCardPlay,
     openCampMenu,
+    openSettings,
+    leaveSettings,
     openStory,
     closeStory,
     showLeaderboard,
