@@ -36,6 +36,7 @@ struct LobbyScreen: View {
                     }
             } else {
                 ProgressView()
+                    .tint(Torch.Color.torch)
             }
         }
         .onAppear {
@@ -49,146 +50,225 @@ struct LobbyScreen: View {
 private struct LobbyContent: View {
     @Environment(GameClient.self) private var gameClient
     @Bindable var viewModel: LobbyViewModel
+    @State private var knownPlayerIds: Set<String> = []
+    @State private var newPlayerIds: Set<String> = []
 
     var body: some View {
-        VStack(spacing: 24) {
-            // Game code
-            VStack(spacing: 8) {
-                Text("Game Code")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 12) {
-                    Text(viewModel.gameId)
-                        .font(.system(.title, design: .monospaced).bold())
-                        .tracking(4)
-                        .accessibilityLabel("Game code: \(viewModel.gameId.map { String($0) }.joined(separator: " "))")
-                        .accessibilityIdentifier("lobby-game-code")
-                        .accessibilityValue(gameClient.connectionState.statusText)
-
-                    ShareLink(
-                        item: gameClient.baseURL.appending(queryItems: [
-                            URLQueryItem(name: "join", value: viewModel.gameId)
-                        ]),
-                        subject: Text("Join my Survivor game"),
-                        message: Text("Fire code: \(viewModel.gameId)")
-                    ) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.title3)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: Torch.Spacing.lg) {
+                    StaggeredRise(index: 0) { gameCodeCard }
+                    StaggeredRise(index: 1) { playersPanel }
+                    if viewModel.isHost {
+                        StaggeredRise(index: 2) { botPanel }
                     }
-                    .accessibilityLabel("Share game code")
-                    .accessibilityHint("Share the game code with other players")
                 }
+                .padding(Torch.Spacing.lg)
             }
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .scrollBounceBehavior(.basedOnSize)
 
-            // Players
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Players")
-                        .font(.headline)
-                    Spacer()
-                    Text("\(viewModel.playerCount)/6")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            StaggeredRise(index: 3) { startSection }
+                .padding(.horizontal, Torch.Spacing.lg)
+                .padding(.bottom, Torch.Spacing.lg)
+        }
+        .survivorScreen()
+        .errorAlert($viewModel.error)
+        .onAppear { knownPlayerIds = Set(viewModel.players.map(\.id)) }
+        .onChange(of: viewModel.players.map(\.id)) { _, ids in
+            let incoming = Set(ids)
+            newPlayerIds = incoming.subtracting(knownPlayerIds)
+            knownPlayerIds = incoming
+        }
+    }
+
+    // Game code — the hero element: Fraunces 900 on the lit panel.
+    private var gameCodeCard: some View {
+        VStack(spacing: Torch.Spacing.sm) {
+            Text("Game Code")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
+
+            HStack(spacing: 12) {
+                Text(viewModel.gameId)
+                    .font(Torch.Font.display(Torch.TextSize.displayXL, weight: 900,
+                                             soft: 50, wonk: 0, relativeTo: .largeTitle))
+                    .tracking(0.08 * Torch.TextSize.displayXL)
+                    .foregroundStyle(Torch.Color.flame)
+                    .shadow(color: Torch.Color.torch.opacity(0.5), radius: 20)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .accessibilityLabel("Game code: \(viewModel.gameId.map { String($0) }.joined(separator: " "))")
+                    .accessibilityIdentifier("lobby-game-code")
+                    .accessibilityValue(gameClient.connectionState.statusText)
+
+                ShareLink(
+                    item: gameClient.baseURL.appending(queryItems: [
+                        URLQueryItem(name: "join", value: viewModel.gameId)
+                    ]),
+                    subject: Text("Join my Survivor game"),
+                    message: Text("Fire code: \(viewModel.gameId)")
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.title3)
+                        .foregroundStyle(Torch.Color.torch)
                 }
+                .accessibilityLabel("Share game code")
+                .accessibilityHint("Share the game code with other players")
+            }
+        }
+        .padding(Torch.Spacing.md)
+        .padding(.vertical, Torch.Spacing.sm)
+        .frame(maxWidth: .infinity)
+        .torchCard()
+    }
 
-                if viewModel.players.isEmpty {
-                    Text("Waiting for players...")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
-                } else {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 16) {
-                        ForEach(viewModel.players) { player in
-                            PlayerAvatarView(
+    // Players
+    private var playersPanel: some View {
+        VStack(alignment: .leading, spacing: Torch.Spacing.md) {
+            HStack(spacing: Torch.Spacing.sm) {
+                Text("Players")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.torch)
+                LinearGradient(colors: [Torch.Color.torch.opacity(0.5), .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(height: 1) // eyebrow rule
+                Text("\(viewModel.playerCount)/6")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.textSecondary)
+            }
+
+            if viewModel.players.isEmpty {
+                Text("Waiting for players...")
+                    .font(Torch.Font.body())
+                    .foregroundStyle(Torch.Color.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+            } else {
+                VStack(spacing: Torch.Spacing.sm) {
+                    ForEach(Array(viewModel.players.enumerated()), id: \.element.id) { index, player in
+                        StaggeredRise(index: index) {
+                            LobbyPlayerRow(
                                 player: player,
-                                size: 56,
-                                isCurrentPlayer: player.id == viewModel.myPlayerId
+                                isMe: player.id == viewModel.myPlayerId,
+                                isNew: newPlayerIds.contains(player.id)
                             )
                         }
                     }
                 }
             }
-            .padding()
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            // Computer players: fill the tribe and play solo
-            if viewModel.isHost {
-                VStack(spacing: 8) {
-                    HStack {
-                        Label("Computer players", systemImage: "cpu")
-                            .font(.subheadline)
-                        Spacer()
-                        Button {
-                            Task { await viewModel.addBot() }
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3)
-                        }
-                        .disabled(viewModel.playerCount >= 6)
-                        .accessibilityLabel("Add a computer player")
-                    }
-                    ForEach(viewModel.players.filter(\.isBot)) { bot in
-                        HStack {
-                            Circle().fill(bot.swiftUIColor).frame(width: 10, height: 10)
-                            Text(bot.name).font(.caption)
-                            Spacer()
-                            Button {
-                                Task { await viewModel.removeBot(bot.id) }
-                            } label: {
-                                Image(systemName: "minus.circle")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .accessibilityLabel("Remove \(bot.name)")
-                        }
-                    }
-                }
-                .padding()
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-
-            Spacer()
-
-            // Start button
-            if viewModel.isHost {
-                VStack(spacing: 8) {
-                    Button {
-                        Task { await viewModel.startGame() }
-                    } label: {
-                        if viewModel.isStarting {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Text("Start Game")
-                        }
-                    }
-                    .buttonStyle(.survivor)
-                    .disabled(!viewModel.canStart || viewModel.isStarting)
-                    .accessibilityLabel(viewModel.isStarting ? "Starting game" : "Start game")
-                    .accessibilityHint(viewModel.canStart ? "Begins the game for all players" : "Need at least 3 players to start")
-
-                    if viewModel.playerCount < 3 {
-                        Text("Need at least 3 players to start")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                Text("Waiting for host to start...")
-                    .foregroundStyle(.secondary)
-            }
         }
-        .padding(24)
-        .errorAlert($viewModel.error)
+        .padding(Torch.Spacing.md)
+        .torchCard()
+    }
+
+    // Computer players: fill the tribe and play solo
+    private var botPanel: some View {
+        VStack(alignment: .leading, spacing: Torch.Spacing.sm) {
+            Label("Computer players", systemImage: "cpu")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
+
+            ForEach(viewModel.players.filter(\.isBot)) { bot in
+                HStack {
+                    Circle().fill(bot.swiftUIColor).frame(width: 10, height: 10)
+                    Text(bot.name)
+                        .font(Torch.Font.body(Torch.TextSize.sm))
+                        .foregroundStyle(Torch.Color.text)
+                    Spacer()
+                    Button {
+                        Task { await viewModel.removeBot(bot.id) }
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(Torch.Color.textSecondary)
+                    }
+                    .accessibilityLabel("Remove \(bot.name)")
+                }
+            }
+
+            Button {
+                Task { await viewModel.addBot() }
+            } label: {
+                Label("Add a computer player", systemImage: "plus")
+            }
+            .buttonStyle(.torchSecondary)
+            .disabled(viewModel.playerCount >= 6)
+            .accessibilityLabel("Add a computer player")
+        }
+        .padding(Torch.Spacing.md)
+        .torchCard()
+    }
+
+    // Start button
+    @ViewBuilder
+    private var startSection: some View {
+        if viewModel.isHost {
+            VStack(spacing: Torch.Spacing.sm) {
+                Button {
+                    Task { await viewModel.startGame() }
+                } label: {
+                    if viewModel.isStarting {
+                        ProgressView()
+                            .tint(Torch.Color.ink)
+                    } else {
+                        Text("Start Game")
+                    }
+                }
+                .buttonStyle(.torchGlow)
+                .disabled(!viewModel.canStart || viewModel.isStarting)
+                .accessibilityLabel(viewModel.isStarting ? "Starting game" : "Start game")
+                .accessibilityHint(viewModel.canStart ? "Begins the game for all players" : "Need at least 3 players to start")
+
+                if viewModel.playerCount < 3 {
+                    Text("Need at least 3 players to start")
+                        .font(Torch.Font.label(Torch.TextSize.xs, weight: .semibold))
+                        .tracking(Torch.Track.label * Torch.TextSize.xs)
+                        .foregroundStyle(Torch.Color.textSecondary)
+                }
+            }
+        } else {
+            Text("Waiting for host to start...")
+                .font(Torch.Font.display(Torch.TextSize.lg, weight: 500, soft: 40,
+                                         wonk: 0, italic: true, relativeTo: .body))
+                .foregroundStyle(Torch.Color.parchmentDim)
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// One tribe-member row (web `.player-card`): sunken well, hairline, 34pt
+/// avatar. A player who joins after the screen is up gets the amber
+/// pulse-ring ping.
+private struct LobbyPlayerRow: View {
+    let player: PlayerState
+    let isMe: Bool
+    let isNew: Bool
+    @State private var pulse = 0
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+        HStack(spacing: 12) {
+            PlayerAvatarView(player: player, size: 34, showName: false, isCurrentPlayer: isMe)
+            Text(player.name)
+                .font(Torch.Font.body(weight: .semibold))
+                .foregroundStyle(Torch.Color.parchment)
+                .lineLimit(1)
+                .accessibilityHidden(true) // the avatar element already speaks the row
+            Spacer()
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
+        .frame(minHeight: Torch.Spacing.touchTarget)
+        .background(shape.fill(isMe ? Torch.Color.surface : Torch.Color.surfaceSunken))
+        .overlay(shape.strokeBorder(isMe ? Torch.Color.lineStrong : Torch.Color.line,
+                                    lineWidth: 1))
+        .pulseHighlight(trigger: pulse, cornerRadius: Torch.Radius.lg)
+        .task(id: isNew) {
+            // Async so the animator always observes the trigger *change*.
+            if isNew { pulse += 1 }
+        }
     }
 }
