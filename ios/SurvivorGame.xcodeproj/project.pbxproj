@@ -68,6 +68,7 @@
 		B5C7A07069920F180EA34700 /* FinalTribalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11B9FE2927CB134124B9342 /* FinalTribalViewModel.swift */; };
 		B691CD023C8956BBF3B7D1E6 /* IslandAccessCookieStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE7B1E5B136B8F0A1B9A66A9 /* IslandAccessCookieStore.swift */; };
 		B84BACD6DBD1285101106F59 /* ChallengeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */; };
+		B918A86338CDCC406920D84B /* TorchTransitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CC6A2F1EDA6D37EEE5E171 /* TorchTransitions.swift */; };
 		BA4BFAD2E4AB100F4000BA48 /* ImmunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFFF11354FE9CAD6EAE725A /* ImmunityView.swift */; };
 		BAC2700472EA489F28B66E93 /* generate_fixtures.py in Resources */ = {isa = PBXBuildFile; fileRef = 7BB75BFC18653A3BCE2AD7D5 /* generate_fixtures.py */; };
 		BEB59F9940D82979C9153A2C /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9253DFC3E29C1CF800A5BDB8 /* ServerConfig.swift */; };
@@ -133,6 +134,7 @@
 		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorGameApp.swift; sourceTree = "<group>"; };
 		32C075937A0671D2605E1D40 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		44CC6A2F1EDA6D37EEE5E171 /* TorchTransitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchTransitions.swift; sourceTree = "<group>"; };
 		4AB0990923A310FD9070C0D2 /* InteractionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionState.swift; sourceTree = "<group>"; };
 		4C6C157EA402C9C0508A1015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4ECB78904519F6AC83C6B812 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -513,6 +515,7 @@
 				57A00B4F7F52DF16D539B5C8 /* FlameEffects.swift */,
 				32C075937A0671D2605E1D40 /* Theme.swift */,
 				68A766C981BE5C3792457D7D /* TorchComponents.swift */,
+				44CC6A2F1EDA6D37EEE5E171 /* TorchTransitions.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -762,6 +765,7 @@
 				E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */,
 				79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */,
 				A9337789DFF95D57581E077D /* TorchComponents.swift in Sources */,
+				B918A86338CDCC406920D84B /* TorchTransitions.swift in Sources */,
 				577D9E98A849DA3DFE397FD4 /* TribalScreen.swift in Sources */,
 				DA5CA61FD9E6B322609D4926 /* TribalViewModel.swift in Sources */,
 				34B108E89F1AC173438D7A93 /* TribalVoteState.swift in Sources */,
