@@ -178,7 +178,10 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 		card = hand.pop(idx)
 		thief.setdefault("hand", []).append(card)
 		return {"success": True,
-		        "message": f"{names(spec['thiefId'])} took {card.get('name', 'a card')} from {victim.get('name')}"}
+		        "message": f"{names(spec['thiefId'])} took {card.get('name', 'a card')} from {victim.get('name')}",
+		        # Thief and victim both know which card moved; the table only
+		        # sees that one did.
+		        "log_message": f"{names(spec['thiefId'])} took a card from {victim.get('name')}"}
 
 	if kind == "by_type":
 		thief = game["players"].get(spec.get("thiefId"))
@@ -248,6 +251,10 @@ def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
 		"success": True,
 		"reactive_window": True,
 		"message": f"{victim.get('name')} is holding Sorry For You — the raid hangs in the air",
+		# The actor learns why their take is paused; the table must not learn
+		# what the victim is holding from the shared history.
+		"log_message": f"The raid on {victim.get('name')}'s camp hangs in the air — "
+		               f"{victim.get('name')} may respond",
 	}
 
 
@@ -1483,7 +1490,9 @@ class SurvivorRulesEngine:
 			{"kind": "vote_card", "thiefId": player_id})
 		if pending:
 			return {"message": f"{player['name']} reaches for {target['name']}'s Vote Card — "
-			                   f"but {target['name']} is holding Sorry For You"}
+			                   f"but {target['name']} is holding Sorry For You",
+			        "log_message": f"{player['name']} reaches for {target['name']}'s "
+			                       f"Vote Card — {target['name']} may respond"}
 		self.sync_vote_counters(game)
 		return {"message": result.get("message", "The Vote Card changes hands")}
 
@@ -1614,9 +1623,12 @@ class SurvivorRulesEngine:
 			{"kind": "index", "thiefId": player_id, "index": take_index})
 		if pending:
 			return {"message": f"{player['name']} spied on {target['name']}'s camp — "
-			                   f"but {target['name']} is holding Sorry For You"}
+			                   f"but {target['name']} is holding Sorry For You",
+			        "log_message": f"{player['name']} spied on {target['name']}'s camp — "
+			                       f"{target['name']} may respond"}
 		self.sync_vote_counters(game)
 		return {"message": result.get("message", "The Spy Shack takes its prize"),
+		        "log_message": result.get("log_message"),
 		        "spied_hand": target_hand}
 		
 	def _effect_knowledge_is_power(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
@@ -1638,7 +1650,9 @@ class SurvivorRulesEngine:
 			{"kind": "by_type", "thiefId": player_id, "cardType": requested_card_type})
 		if pending:
 			return {"message": f"{player['name']} demands a {requested_card_type} — "
-			                   f"but {target['name']} is holding Sorry For You"}
+			                   f"but {target['name']} is holding Sorry For You",
+			        "log_message": f"{player['name']} demands a {requested_card_type} — "
+			                       f"{target['name']} may respond"}
 		self.sync_vote_counters(game)
 		return {"message": result.get("message", "The demand is made")}
 		
@@ -1702,7 +1716,9 @@ class SurvivorRulesEngine:
 			           {"thiefId": ally_id, "count": 1}]})
 		if pending:
 			return {"message": f"{player['name']} and {ally['name']} descend on "
-			                   f"{victim['name']}'s camp — but {victim['name']} is holding Sorry For You"}
+			                   f"{victim['name']}'s camp — but {victim['name']} is holding Sorry For You",
+			        "log_message": f"{player['name']} and {ally['name']} descend on "
+			                       f"{victim['name']}'s camp — {victim['name']} may respond"}
 		self.sync_vote_counters(game)
 		return {"message": f"Alliance formed! {result.get('message', 'The raid is done')}"}
 			
@@ -1987,8 +2003,9 @@ class SurvivorRulesEngine:
 				eliminated_player["hand"] = []
 				player["inheritanceTarget"] = None  # Use up the inheritance
 				
-				card_names = [card.get("name", card.get("type", "unknown")) for card in inheritor_cards]
-				message = f"{player.get('name', player_id)} inherited {len(inheritor_cards)} cards from {eliminated_player.get('name', eliminated_player_id)}: {', '.join(card_names)}"
+				# The inheritor sees the cards in their hand; the table only
+				# hears how many changed hands.
+				message = f"{player.get('name', player_id)} inherited {len(inheritor_cards)} cards from {eliminated_player.get('name', eliminated_player_id)}"
 				inheritance_messages.append(message)
 				logger.info(f"Inheritance: {player_id} inherited {len(inheritor_cards)} cards from {eliminated_player_id}")
 				break  # Only one inheritance per eliminated player

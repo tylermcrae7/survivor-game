@@ -607,6 +607,46 @@ class TestChallengeParticipation(RocksTestBase):
         self.assertIn("at least 2 players", result["message"])
 
 
+class TestPoisonedBudgetHeals(RocksTestBase):
+    def test_a_poisoned_action_count_is_healed_on_load(self):
+        """
+        Refused actions used to count against the Challenge budget, so one bot
+        retrying one illegal pull drove a live game to actionCount=6643 — and
+        fixing the counting wasn't enough: the poisoned counter outlived the
+        bug and the Challenge refused everything forever. Legitimate play can
+        no longer exceed the cap, so a counter above it is that old corruption
+        and loading gives the Challenge its budget back.
+        """
+        from challenges import MAX_CHALLENGE_ACTIONS
+
+        self.start_challenge("challenge_lowest_score_loses")
+        self.game["challenge"]["actionCount"] = 6643
+        self.gs._save()
+
+        reloaded = GameState()
+        challenge = reloaded.games[self.game_id]["challenge"]
+        self.assertEqual(challenge["actionCount"], 0)
+
+        # The revived Challenge accepts a legal move again
+        result = reloaded.challenge_action(
+            self.game_id, playerId=challenge["currentPlayerId"],
+            action="pull", value=1)
+        self.assertTrue(result["success"], result.get("message"))
+
+    def test_a_counter_at_the_cap_is_legitimate_and_stays(self):
+        """The cap itself can be reached by real play — only above it is corruption."""
+        from challenges import MAX_CHALLENGE_ACTIONS
+
+        self.start_challenge("challenge_lowest_score_loses")
+        self.game["challenge"]["actionCount"] = MAX_CHALLENGE_ACTIONS
+        self.gs._save()
+
+        reloaded = GameState()
+        self.assertEqual(
+            reloaded.games[self.game_id]["challenge"]["actionCount"],
+            MAX_CHALLENGE_ACTIONS)
+
+
 if __name__ == '__main__':
     print("🪨 Testing Survivor: Let's Go To Rocks (combined mode)")
     print("=" * 70)

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from functools import wraps
 from rules_engine import SurvivorRulesEngine, TribalPhase, takeable_indices
-from challenges import challenge_engine, CHALLENGE_DEFINITIONS
+from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 from interactions import interaction_engine
 import bots as bots_module
 from bots import BotRunner
@@ -233,6 +233,21 @@ class GameState:
 
             self.games = loaded
             logger.info(f"Loaded {len(self.games)} games from {self._FILE}")
+
+            # Heal challenge counters poisoned by the pre-3.10.2 bug that
+            # counted REFUSED actions against the budget (a bot retrying one
+            # illegal move drove a live game to actionCount=6643 and the
+            # Challenge refused everything forever). Legitimate play can never
+            # exceed the cap now, so anything above it is that old corruption —
+            # give the Challenge its budget back rather than leaving the game
+            # dead.
+            for gid, game in self.games.items():
+                ch = game.get("challenge")
+                if isinstance(ch, dict) and ch.get("actionCount", 0) > MAX_CHALLENGE_ACTIONS:
+                    logger.warning(
+                        f"Healing poisoned challenge actionCount in {gid} "
+                        f"({ch['actionCount']} -> 0)")
+                    ch["actionCount"] = 0
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading {self._FILE}: {e}")
             self._backup_and_reset()
@@ -2149,6 +2164,11 @@ class GameState:
             "card_effect": effect_result,
             "tribal_triggered": card.get("category") == "tribal_council"
         }
+        # An effect whose message reveals hidden cards ships a redacted twin for
+        # the shared history; carry it up only when the effect's message was used.
+        if not interaction_message and not challenge_message \
+                and effect_result.get("log_message"):
+            response["log_message"] = effect_result["log_message"]
         if effect_result.get("start_challenge"):
             response["challenge_started"] = challenge_started
         if effect_result.get("start_interaction"):
@@ -2375,7 +2395,9 @@ class GameState:
                 self.advance_turn(gid)
                 self._save()
                 return {"success": True,
-                        "message": "The Draw Pile is empty — your turn ends"}
+                        "message": "The Draw Pile is empty — your turn ends",
+                        "log_message": f"{player.get('name', 'A player')} found the "
+                                       "Draw Pile empty — their turn ends"}
 
         # Get number of cards to draw (including draw bonuses)
         draw_count = self.rules_engine.get_card_draw_count(player)
@@ -2445,9 +2467,13 @@ class GameState:
             else:
                 self.advance_turn(gid)
             card_names = [card.get("name", card.get("type", "unknown")) for card in drawn_cards]
+            n = len(drawn_cards)
             return {
                 "success": True,
-                "message": f"Drew {len(drawn_cards)} card(s): {', '.join(card_names)} — your turn is over",
+                "message": f"Drew {n} card(s): {', '.join(card_names)} — your turn is over",
+                # What you drew is yours alone — the shared history must not name it
+                "log_message": f"{player.get('name', 'A player')} drew "
+                               f"{'a card' if n == 1 else f'{n} cards'} — their turn is over",
                 "drawn_cards": drawn_cards,
                 "tribal_triggered": False
             }
@@ -2805,8 +2831,11 @@ class GameState:
             if end_turn_after and game.get("phase") == "playing":
                 self.advance_turn(gid)
             self._save()
-            return {"success": True,
-                    "message": take_result.get("message", "The cards change hands")}
+            result = {"success": True,
+                      "message": take_result.get("message", "The cards change hands")}
+            if take_result.get("log_message"):
+                result["log_message"] = take_result["log_message"]
+            return result
 
         # Legacy path: the turn-steal
         theft_result = self.rules_engine.execute_theft(game, thief_id, target_id)
@@ -3053,11 +3082,16 @@ def handle(action, required):
         except Exception as e:
             logger.error(f"Socket operation=state_update gameId={gid} error: {e}")
 
-        # The story so far: remember every visible outcome for the history panel
+        # The story so far: remember every visible outcome for the history panel.
+        # Refusals change nothing and stay between the server and the actor, and
+        # a result carrying a redacted log_message uses it — the full message may
+        # name hidden cards that only the actor should see.
         if isinstance(result, dict) and result.get("message") \
+                and result.get("success", True) \
                 and action not in ('add_bot', 'remove_bot', 'rename_player'):
             log_list = game_state.games.get(gid, {}).setdefault("eventLog", [])
-            log_list.append({"t": time.time(), "msg": str(result["message"])[:200]})
+            log_msg = result.get("log_message") or result["message"]
+            log_list.append({"t": time.time(), "msg": str(log_msg)[:200]})
             del log_list[:-120]
 
         # A state change may put a bot on the clock

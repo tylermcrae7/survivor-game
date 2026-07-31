@@ -14,6 +14,7 @@ import random
 import shutil
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -380,6 +381,85 @@ def test_full_game_extended_expansion():
     print("✅ extended+expansion bot games finish!\n")
 
 
+def test_refusal_circuit_breaker():
+    """A bot stuck on a permanently-refused action sits out instead of hammering.
+
+    The live wedge: one illegal move retried every ~2s for hours, spamming the
+    log long after the game was unrecoverable. After enough consecutive
+    refusals the runner cools the game down and stops even asking for a plan.
+    """
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing refusal circuit breaker ===")
+        gid = gs.create_game()
+        gs.add_player(gid, "Tyler", "red")
+        for _ in range(3):
+            assert gs.add_bot(gid)["success"]
+        gs.start_full_game(gid)
+
+        runner = BotRunner(gs, rng=random.Random(7))
+        bot_id = next(p for p, pl in gs.games[gid]["players"].items()
+                      if pl.get("isBot"))
+
+        # With no Challenge running this is refused every time — the shape of
+        # the live wedge.
+        plan = {"method": "challenge_action",
+                "kwargs": {"playerId": bot_id, "action": "pull", "value": 1}}
+        calls = {"n": 0}
+
+        def stuck(*args, **kwargs):
+            calls["n"] += 1
+            return plan
+
+        orig = bots.next_action
+        bots.next_action = stuck
+        try:
+            for _ in range(bots.REFUSAL_BREAKER_STRIKES):
+                assert runner.step(gid) is False
+            assert runner._cooldown.get(gid, 0) > time.time(), \
+                "breaker should have tripped"
+            before = calls["n"]
+            assert runner.step(gid) is False
+            assert calls["n"] == before, "a cooled-down game must not be planned"
+        finally:
+            bots.next_action = orig
+        print("✅ breaker trips and the game sits out the cooldown!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_bot_draw_logs_a_redacted_entry():
+    """The shared history says a bot drew — never what it drew."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing bot draws stay hidden in the history ===")
+        gid = gs.create_game()
+        gs.add_player(gid, "Tyler", "red")
+        for _ in range(3):
+            assert gs.add_bot(gid)["success"]
+        gs.start_full_game(gid)
+        game = gs.games[gid]
+
+        bot_id = next(p for p, pl in game["players"].items() if pl.get("isBot"))
+        game["currentTurnIndex"] = game["turnOrder"].index(bot_id)
+        bot = game["players"][bot_id]
+        bot["hasStolen"] = True
+        bot["hasPlayed"] = True          # forces the draw branch
+        game["deck"].insert(0, {"type": "the_spy_shack"})   # known, name-able
+
+        runner = BotRunner(gs, rng=random.Random(3))
+        assert runner.step(gid) is True
+        entry = (game.get("eventLog") or [])[-1]["msg"]
+        print(f"  log entry: {entry}")
+        assert "Spy Shack" not in entry, entry
+        assert "drew a card" in entry, entry
+        print("✅ bot draws are redacted in the story so far!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     print("🧪 Testing Computer Players")
     print("=" * 50)
@@ -388,6 +468,8 @@ if __name__ == "__main__":
         test_add_remove_bot()
         test_bot_games_never_reach_hall_of_fame()
         test_decision_basics()
+        test_refusal_circuit_breaker()
+        test_bot_draw_logs_a_redacted_entry()
         test_full_game_official()
         test_full_game_extended_expansion()
         print("🎉 All computer player tests passed!")

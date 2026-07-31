@@ -470,7 +470,9 @@ class ChallengeEngine:
                 break
             grabbed[rock] += 1
         ch["_secretPulls"][player_id] = grabbed
-        self._log(ch, f"{self._name(game, player_id)} secretly took {count} rock(s).")
+        # The pull is secret until the reveal — the shared log must not say how
+        # many rocks left the bag (an empty-bag "pretend" pull looks the same).
+        self._log(ch, f"{self._name(game, player_id)} has taken their rocks.")
 
         ch["pending"] = [p for p in ch["pending"] if p != player_id]
         if ch["pending"]:

@@ -517,6 +517,12 @@ def _windows(base):
 BASE_DELAY = _base_delay()
 WINDOWS = _windows(BASE_DELAY)
 
+# Refusal circuit breaker: transient refusals (a reactive window mid-close)
+# clear within a tick or two, so a long unbroken run means the bot is stuck on
+# something no retry will fix. Far past transient, well short of forever.
+REFUSAL_BREAKER_STRIKES = 30
+REFUSAL_BREAKER_COOLDOWN = 120.0  # seconds
+
 
 # ─────────────────────────────── the runner ──────────────────────────────────
 
@@ -537,6 +543,8 @@ class BotRunner:
         self._scheduled = set()
         self._phase_seen = {}   # (gid, key) -> first-seen timestamp
         self._turn_mem = {}     # gid -> per-bot turn progress
+        self._refusals = {}     # gid -> consecutive refused actions
+        self._cooldown = {}     # gid -> timestamp until which bots sit out
 
     def attach(self, spawn_later):
         """spawn_later(seconds, fn, *args) — e.g. a gevent spawn_later wrapper."""
@@ -597,6 +605,13 @@ class BotRunner:
             self._turn_mem.pop(gid, None)
             return False
 
+        # Circuit breaker: a bot whose action is refused over and over is stuck
+        # on something no retry will fix (a wedged Challenge burned a live game
+        # at ~1 refusal per 2s for hours). Sit the game out for a while instead
+        # of hammering; the next heartbeat after the cooldown tries again.
+        if self._cooldown.get(gid, 0) > time.time():
+            return False
+
         plan = next_action(
             game,
             phase_age=self._phase_age(gid),
@@ -621,11 +636,23 @@ class BotRunner:
         ok = result.get("success", True) if isinstance(result, dict) else bool(result)
         if ok and isinstance(result, dict) and result.get("message"):
             log_list = game.setdefault("eventLog", [])
-            log_list.append({"t": time.time(), "msg": str(result["message"])[:200]})
+            # Prefer the redacted twin — the full message may name hidden cards
+            log_msg = result.get("log_message") or result["message"]
+            log_list.append({"t": time.time(), "msg": str(log_msg)[:200]})
             del log_list[:-120]
-        if not ok:
+        if ok:
+            self._refusals.pop(gid, None)
+        else:
             message = result.get("message") if isinstance(result, dict) else result
             logger.warning(f"Bot action {method}({kwargs}) refused in {gid}: {message}")
+            strikes = self._refusals.get(gid, 0) + 1
+            self._refusals[gid] = strikes
+            if strikes >= REFUSAL_BREAKER_STRIKES:
+                self._refusals[gid] = 0
+                self._cooldown[gid] = time.time() + REFUSAL_BREAKER_COOLDOWN
+                logger.warning(
+                    f"Bots in {gid} refused {strikes} times in a row — "
+                    f"cooling down for {REFUSAL_BREAKER_COOLDOWN}s")
         try:
             self.broadcast(gid, method)
         except Exception:

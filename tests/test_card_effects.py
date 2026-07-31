@@ -732,6 +732,60 @@ class TestVoteCardIsNotStealable(CardEffectTestBase):
         self.assertEqual(self.hand_types(victim), [])
 
 
+class TestHiddenInfoStaysOutOfTheLog(CardEffectTestBase):
+    """
+    The story-so-far drawer shows eventLog on every phone, so a result whose
+    message names a hidden card must ship a redacted `log_message` twin — the
+    actor still reads the full message in their own toast.
+    """
+
+    def test_a_draw_names_the_card_only_to_the_drawer(self):
+        player = self.player_ids[0]
+        self.game["players"][player]["hasPlayed"] = True
+        # A known Action Card on top keeps the draw deterministic (no tribal)
+        self.game["deck"].insert(0, {"type": "the_spy_shack"})
+
+        result = self.gs.draw_card(self.game_id, player)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertIn("The Spy Shack", result["message"])
+        self.assertTrue(result.get("log_message"))
+        self.assertNotIn("Spy Shack", result["log_message"])
+        self.assertIn("drew a card", result["log_message"])
+
+    def test_an_empty_pile_draw_logs_who_it_was(self):
+        player = self.player_ids[0]
+        self.game["players"][player]["hasPlayed"] = True
+        self.game["deck"] = []
+        self.game["discard"] = []
+
+        result = self.gs.draw_card(self.game_id, player)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertIn("Player1", result.get("log_message", ""))
+
+    def test_a_spy_shack_pause_does_not_archive_what_the_victim_holds(self):
+        spy, victim = self.player_ids[0], self.player_ids[1]
+        self.game["players"][victim]["hand"] = [
+            {"type": "sorry_for_you"}, {"type": "camp_raid"}]
+        self.give(spy, "the_spy_shack")
+
+        result = self.play(spy, "the_spy_shack", targetId=victim, takeIndex=1)
+        self.assertTrue(result["success"], result.get("message"))
+        # The spy learns why their take is paused…
+        self.assertIn("Sorry For You", result["message"])
+        # …but the shared history must not
+        self.assertTrue(result.get("log_message"))
+        self.assertNotIn("Sorry For You", result["log_message"])
+
+        # The victim declines to answer — the take resolves; the spy's toast
+        # names the prize, the history only says a card moved
+        pass_result = self.gs.complete_pending_theft(self.game_id)
+        self.assertTrue(pass_result["success"], pass_result.get("message"))
+        self.assertIn("Camp Raid", pass_result["message"])
+        self.assertTrue(pass_result.get("log_message"))
+        self.assertNotIn("Camp Raid", pass_result["log_message"])
+        self.assertIn("took a card", pass_result["log_message"])
+
+
 if __name__ == '__main__':
     print("🧪 Testing Card Effects & Validation (Including Reactive Cards)")
     print("=" * 70)
