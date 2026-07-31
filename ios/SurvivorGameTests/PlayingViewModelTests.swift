@@ -63,6 +63,21 @@ struct PlayingViewModelTests {
         let newPhase = modifiedState.turnPhase(for: "p1")
         #expect(newPhase == .play)
     }
+
+    @Test func drawEndsTheTurnMachine() {
+        // Official turn: steal → play (optional) → draw ends it. The state
+        // machine must mirror the server exactly — there is no End Turn.
+        var state = MockGameClient.sampleGameState()
+        state.players["p1"] = PlayerState(
+            id: "p1", name: "Alice", color: "#FF6B6B",
+            hasStolen: true, hasPlayed: true)
+        #expect(state.turnPhase(for: "p1") == .draw)
+
+        state.players["p1"] = PlayerState(
+            id: "p1", name: "Alice", color: "#FF6B6B",
+            hasStolen: true, hasDrawn: true)
+        #expect(state.turnPhase(for: "p1") == .done)
+    }
     
     // MARK: - Action State
     
@@ -84,22 +99,5 @@ struct PlayingViewModelTests {
     }
 }
 
-// MARK: - Helper to create PlayerState
-
-extension PlayerState {
-    init(id: String, name: String, color: String, hand: [CardInstance], isEliminated: Bool, isActive: Bool, isCouncilLeader: Bool, hasStolen: Bool, hasVoted: Bool, extraVotes: Int, characterCards: Int, immunityPlayed: Bool, voteBanned: Bool?) {
-        self.id = id
-        self.name = name
-        self.color = color
-        self.hand = hand
-        self.isEliminated = isEliminated
-        self.isActive = isActive
-        self.isCouncilLeader = isCouncilLeader
-        self.hasStolen = hasStolen
-        self.hasVoted = hasVoted
-        self.extraVotes = extraVotes
-        self.characterCards = characterCards
-        self.immunityPlayed = immunityPlayed
-        self.voteBanned = voteBanned
-    }
-}
+// PlayerState's designated memberwise init (State/PlayerState.swift) serves the
+// tests now — a cross-file extension init can't assign `let` stored properties.

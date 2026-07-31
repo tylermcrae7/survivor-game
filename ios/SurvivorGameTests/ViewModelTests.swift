@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import SwiftUI
 @testable import SurvivorGame
 
 struct ViewModelTests {
@@ -16,7 +17,7 @@ struct ViewModelTests {
 
     // MARK: - GameState Computed
 
-    @Test func sortedPlayersFollowsTurnOrder() {
+    @MainActor @Test func sortedPlayersFollowsTurnOrder() {
         let state = MockGameClient.sampleGameState()
         let sorted = state.sortedPlayers
         #expect(sorted.count == 3)
@@ -25,7 +26,7 @@ struct ViewModelTests {
         #expect(sorted[2].id == "p3")
     }
 
-    @Test func activePlayersExcludesEliminated() throws {
+    @MainActor @Test func activePlayersExcludesEliminated() throws {
         var state = MockGameClient.sampleGameState()
         // Manually create an eliminated player
         let eliminatedJSON = """

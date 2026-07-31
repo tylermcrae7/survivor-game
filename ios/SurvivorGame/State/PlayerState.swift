@@ -10,11 +10,22 @@ struct PlayerState: Codable, Identifiable, Equatable {
     var isActive: Bool
     var isCouncilLeader: Bool
     var hasStolen: Bool
+    var hasPlayed: Bool
+    var hasDrawn: Bool
     var hasVoted: Bool
     var extraVotes: Int
     var characterCards: Int
     var immunityPlayed: Bool
     var voteBanned: Bool?
+    var isBot: Bool
+    var maxVotes: Int?
+    var mandatoryVotes: Int?
+    var goodwillVotes: Int?
+    var drawBonus: Int?
+    var stealBonus: Int?
+    var immunityIdolProtection: Bool
+    var campRaidedBy: String?
+    var inheritanceTarget: String?
 
     var swiftUIColor: Color {
         Color(hex: color) ?? .gray
@@ -24,9 +35,20 @@ struct PlayerState: Codable, Identifiable, Equatable {
 
     var isAlive: Bool { !isEliminated }
 
+    /// Where this player is in the official turn: steal → play → draw → done.
+    var turnPhase: TurnPhase {
+        if !hasStolen { return .steal }
+        if hasDrawn { return .done }
+        if hasPlayed { return .draw }
+        return .play
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, name, color, hand, isEliminated, isActive, isCouncilLeader
-        case hasStolen, hasVoted, extraVotes, characterCards, immunityPlayed, voteBanned
+        case hasStolen, hasPlayed, hasDrawn, hasVoted, extraVotes, characterCards
+        case immunityPlayed, voteBanned, isBot, maxVotes, mandatoryVotes
+        case goodwillVotes, drawBonus, stealBonus, immunityIdolProtection
+        case campRaidedBy, inheritanceTarget
     }
 
     init(from decoder: Decoder) throws {
@@ -39,11 +61,62 @@ struct PlayerState: Codable, Identifiable, Equatable {
         isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
         isCouncilLeader = try container.decodeIfPresent(Bool.self, forKey: .isCouncilLeader) ?? false
         hasStolen = try container.decodeIfPresent(Bool.self, forKey: .hasStolen) ?? false
+        hasPlayed = try container.decodeIfPresent(Bool.self, forKey: .hasPlayed) ?? false
+        hasDrawn = try container.decodeIfPresent(Bool.self, forKey: .hasDrawn) ?? false
         hasVoted = try container.decodeIfPresent(Bool.self, forKey: .hasVoted) ?? false
         extraVotes = try container.decodeIfPresent(Int.self, forKey: .extraVotes) ?? 0
         characterCards = try container.decodeIfPresent(Int.self, forKey: .characterCards) ?? 2
         immunityPlayed = try container.decodeIfPresent(Bool.self, forKey: .immunityPlayed) ?? false
         voteBanned = try container.decodeIfPresent(Bool.self, forKey: .voteBanned)
+        isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
+        maxVotes = try container.decodeIfPresent(Int.self, forKey: .maxVotes)
+        mandatoryVotes = try container.decodeIfPresent(Int.self, forKey: .mandatoryVotes)
+        goodwillVotes = try container.decodeIfPresent(Int.self, forKey: .goodwillVotes)
+        drawBonus = try container.decodeIfPresent(Int.self, forKey: .drawBonus)
+        stealBonus = try container.decodeIfPresent(Int.self, forKey: .stealBonus)
+        immunityIdolProtection = try container.decodeIfPresent(Bool.self, forKey: .immunityIdolProtection) ?? false
+        campRaidedBy = try container.decodeIfPresent(String.self, forKey: .campRaidedBy)
+        inheritanceTarget = try container.decodeIfPresent(String.self, forKey: .inheritanceTarget)
+    }
+
+    /// Designated memberwise init for tests and previews (extension inits in
+    /// other files can't assign `let` stored properties).
+    init(
+        id: String, name: String, color: String,
+        hand: [CardInstance] = [], isEliminated: Bool = false,
+        isActive: Bool = true, isCouncilLeader: Bool = false,
+        hasStolen: Bool = false, hasPlayed: Bool = false, hasDrawn: Bool = false,
+        hasVoted: Bool = false, extraVotes: Int = 0, characterCards: Int = 2,
+        immunityPlayed: Bool = false, voteBanned: Bool? = nil, isBot: Bool = false,
+        maxVotes: Int? = nil, mandatoryVotes: Int? = nil, goodwillVotes: Int? = nil,
+        drawBonus: Int? = nil, stealBonus: Int? = nil,
+        immunityIdolProtection: Bool = false, campRaidedBy: String? = nil,
+        inheritanceTarget: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.hand = hand
+        self.isEliminated = isEliminated
+        self.isActive = isActive
+        self.isCouncilLeader = isCouncilLeader
+        self.hasStolen = hasStolen
+        self.hasPlayed = hasPlayed
+        self.hasDrawn = hasDrawn
+        self.hasVoted = hasVoted
+        self.extraVotes = extraVotes
+        self.characterCards = characterCards
+        self.immunityPlayed = immunityPlayed
+        self.voteBanned = voteBanned
+        self.isBot = isBot
+        self.maxVotes = maxVotes
+        self.mandatoryVotes = mandatoryVotes
+        self.goodwillVotes = goodwillVotes
+        self.drawBonus = drawBonus
+        self.stealBonus = stealBonus
+        self.immunityIdolProtection = immunityIdolProtection
+        self.campRaidedBy = campRaidedBy
+        self.inheritanceTarget = inheritanceTarget
     }
 }
 
@@ -82,6 +155,8 @@ enum CardCategory: String, Codable {
     case tribalAdvantage = "tribal_advantage"
     case action
     case tribalCouncil = "tribal_council"
+    case challenge
+    case house
 
     var displayName: String {
         switch self {
@@ -89,6 +164,8 @@ enum CardCategory: String, Codable {
         case .tribalAdvantage: return "Tribal Advantage"
         case .action: return "Action"
         case .tribalCouncil: return "Tribal Council"
+        case .challenge: return "Challenge"
+        case .house: return "House"
         }
     }
 
@@ -98,6 +175,8 @@ enum CardCategory: String, Codable {
         case .tribalAdvantage: return .purple
         case .action: return .orange
         case .tribalCouncil: return .red
+        case .challenge: return Color(hex: "#e8862a") ?? .orange
+        case .house: return .teal
         }
     }
 }

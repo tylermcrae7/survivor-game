@@ -1,0 +1,302 @@
+{
+ "id": "3cab49f5",
+ "players": {
+  "6087b59c": {
+   "id": "6087b59c",
+   "name": "Ana",
+   "color": "#FF6B6B",
+   "hand": [
+    {
+     "type": "reward_challenge_do_or_die"
+    },
+    {
+     "type": "immunity_idol"
+    },
+    {
+     "type": "extra_vote"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": false,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 1,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": true,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 1,
+   "maxVotes": 2
+  },
+  "4932aa1f": {
+   "id": "4932aa1f",
+   "name": "Ben",
+   "color": "#4ECDC4",
+   "hand": [
+    {
+     "type": "reward_challenge_its_a_numbers_game"
+    },
+    {
+     "type": "extra_vote"
+    },
+    {
+     "type": "reward_challenge_its_a_numbers_game"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": true,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 1,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": false,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 1,
+   "maxVotes": 2
+  },
+  "1914bd18": {
+   "id": "1914bd18",
+   "name": "Cam",
+   "color": "#45B7D1",
+   "hand": [
+    {
+     "type": "reward_challenge_power_pair"
+    },
+    {
+     "type": "inheritance"
+    },
+    {
+     "type": "sorry_for_you"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": true,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 0,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": false,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 1,
+   "maxVotes": 1
+  }
+ },
+ "turnOrder": [
+  "6087b59c",
+  "4932aa1f",
+  "1914bd18"
+ ],
+ "currentTurnIndex": 0,
+ "phase": "finished",
+ "deck": [
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "im_the_leader_now"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "control_the_vote"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "control_the_vote"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "reward_challenge_its_a_numbers_game"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  }
+ ],
+ "createdAt": 1785471565.6312609,
+ "lastActivity": 1785471565.634905,
+ "deckMode": "official",
+ "expansion": false,
+ "settings": {
+  "botPace": "normal",
+  "tribalPace": "normal",
+  "botStyle": "normal"
+ },
+ "necklaceHolder": null,
+ "challenge": null,
+ "interaction": null,
+ "currentVote": {
+  "type": "single",
+  "votes": {},
+  "phase": "waiting",
+  "councilLeaderId": "6087b59c",
+  "immunityPlayed": [],
+  "tieBreakNeeded": false,
+  "tiedPlayers": [],
+  "eliminated": []
+ },
+ "gameHistory": [],
+ "jury": [],
+ "finalTribal": {
+  "phase": "waiting",
+  "finalists": [],
+  "voteCounts": {},
+  "tieBreakNeeded": false,
+  "tieBreakerLeader": null
+ },
+ "winner": "6087b59c"
+}

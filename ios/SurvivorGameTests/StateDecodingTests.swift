@@ -232,13 +232,13 @@ struct StateDecodingTests {
 
     // MARK: - Derived Properties
 
-    @Test func turnPhaseReflectsStealing() throws {
+    @MainActor @Test func turnPhaseReflectsStealing() throws {
         let state = MockGameClient.sampleGameState()
         // Player p1 at index 0 hasn't stolen yet (hasStolen: false)
         #expect(state.turnPhase(for: "p1") == .steal)
     }
 
-    @Test func isCurrentTurnWorks() throws {
+    @MainActor @Test func isCurrentTurnWorks() throws {
         let state = MockGameClient.sampleGameState()
         #expect(state.isCurrentTurn(for: "p1") == true)
         #expect(state.isCurrentTurn(for: "p2") == false)

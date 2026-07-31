@@ -1,0 +1,313 @@
+{
+ "id": "9e4d231d",
+ "players": {
+  "0d60e3ef": {
+   "id": "0d60e3ef",
+   "name": "Ana",
+   "color": "#FF6B6B",
+   "hand": [],
+   "isEliminated": false,
+   "hasStolen": true,
+   "hasPlayed": true,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 0,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": true,
+   "immunityPlayed": false,
+   "voteCards": 0,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 0,
+   "maxVotes": 0
+  },
+  "2d798be6": {
+   "id": "2d798be6",
+   "name": "Ben",
+   "color": "#4ECDC4",
+   "hand": [
+    {
+     "type": "goodwill_gamble"
+    },
+    {
+     "type": "reward_challenge_its_a_numbers_game"
+    },
+    {
+     "type": "lets_form_an_alliance"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": false,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 0,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": false,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 1,
+   "mandatoryVotes": 2,
+   "maxVotes": 2
+  },
+  "196645a3": {
+   "id": "196645a3",
+   "name": "Cam",
+   "color": "#45B7D1",
+   "hand": [
+    {
+     "type": "camp_raid"
+    },
+    {
+     "type": "reward_challenge_power_pair"
+    },
+    {
+     "type": "knowledge_is_power"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": false,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 0,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": false,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 1,
+   "maxVotes": 1
+  }
+ },
+ "turnOrder": [
+  "0d60e3ef",
+  "2d798be6",
+  "196645a3"
+ ],
+ "currentTurnIndex": 0,
+ "phase": "playing",
+ "deck": [
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "im_the_leader_now"
+  },
+  {
+   "type": "reward_challenge_its_a_numbers_game"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "control_the_vote"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "control_the_vote"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "reward_challenge_its_a_numbers_game"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  }
+ ],
+ "createdAt": 1785471565.613533,
+ "lastActivity": 1785471565.616454,
+ "deckMode": "official",
+ "expansion": false,
+ "settings": {
+  "botPace": "normal",
+  "tribalPace": "normal",
+  "botStyle": "normal"
+ },
+ "necklaceHolder": null,
+ "challenge": null,
+ "interaction": {
+  "type": "do_or_die",
+  "name": "Do Or Die",
+  "initiatorId": "0d60e3ef",
+  "round": 1,
+  "phase": "picking",
+  "awaiting": [
+   "2d798be6"
+  ],
+  "picks": {},
+  "lastRound": null,
+  "log": [
+   "Ana has made their throw.",
+   "Ana challenges Ben to Rock \u00b7 Paper \u00b7 Scissors!"
+  ],
+  "participants": [
+   "0d60e3ef",
+   "2d798be6"
+  ],
+  "prompt": "Ana challenges Ben to Rock \u00b7 Paper \u00b7 Scissors!"
+ },
+ "currentVote": {
+  "type": "single",
+  "votes": {},
+  "phase": "waiting",
+  "councilLeaderId": "0d60e3ef",
+  "immunityPlayed": [],
+  "tieBreakNeeded": false,
+  "tiedPlayers": [],
+  "eliminated": []
+ },
+ "gameHistory": [],
+ "jury": [],
+ "finalTribal": {
+  "phase": "waiting",
+  "finalists": [],
+  "voteCounts": {},
+  "tieBreakNeeded": false,
+  "tieBreakerLeader": null
+ },
+ "discard": [
+  {
+   "type": "reward_challenge_do_or_die"
+  }
+ ]
+}

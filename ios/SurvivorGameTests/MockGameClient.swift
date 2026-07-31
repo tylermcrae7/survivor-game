@@ -7,6 +7,8 @@ final class MockGameClient {
     var mockGameState: GameState?
     var lastAction: String?
     var shouldFail = false
+    var playerId: String?
+    var gameId: String?
 
     static func sampleGameState() -> GameState {
         let player1 = PlayerState.sample(id: "p1", name: "Alice", color: "#FF6B6B")

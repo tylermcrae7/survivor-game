@@ -1,0 +1,355 @@
+{
+ "id": "c6f60cdd",
+ "players": {
+  "912364b4": {
+   "id": "912364b4",
+   "name": "Ana",
+   "color": "#FF6B6B",
+   "hand": [
+    {
+     "type": "extra_vote"
+    },
+    {
+     "type": "inheritance"
+    },
+    {
+     "type": "knowledge_is_power"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": false,
+   "hasStolen": true,
+   "hasPlayed": true,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 1,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": true,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 1,
+   "maxVotes": 2
+  },
+  "a639151a": {
+   "id": "a639151a",
+   "name": "Ben",
+   "color": "#4ECDC4",
+   "hand": [
+    {
+     "type": "sorry_for_you"
+    },
+    {
+     "type": "reward_challenge_its_a_numbers_game"
+    },
+    {
+     "type": "immunity_idol"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": false,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 0,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": false,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 0,
+   "mandatoryVotes": 1,
+   "maxVotes": 1
+  },
+  "4e47a4c2": {
+   "id": "4e47a4c2",
+   "name": "Cam",
+   "color": "#45B7D1",
+   "hand": [
+    {
+     "type": "goodwill_gamble"
+    },
+    {
+     "type": "extra_vote"
+    },
+    {
+     "type": "challenge_lowest_score_loses"
+    },
+    {
+     "type": "vote"
+    }
+   ],
+   "isEliminated": false,
+   "hasStolen": false,
+   "hasPlayed": false,
+   "hasDrawn": false,
+   "hasVoted": false,
+   "extraVotes": 1,
+   "characterCards": 2,
+   "isActive": true,
+   "isCouncilLeader": false,
+   "immunityPlayed": false,
+   "voteCards": 1,
+   "goodwillVotes": 1,
+   "mandatoryVotes": 2,
+   "maxVotes": 3
+  }
+ },
+ "turnOrder": [
+  "912364b4",
+  "a639151a",
+  "4e47a4c2"
+ ],
+ "currentTurnIndex": 0,
+ "phase": "playing",
+ "deck": [
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "challenge_highest_bidder"
+  },
+  {
+   "type": "control_the_vote"
+  },
+  {
+   "type": "reward_challenge_its_a_numbers_game"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "challenge_pull_or_steal"
+  },
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "control_the_vote"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "challenge_1_now_or_2_later"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "reward_challenge_its_a_numbers_game"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "immunity_idol"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "camp_raid"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "goodwill_gamble"
+  },
+  {
+   "type": "lets_form_an_alliance"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  },
+  {
+   "type": "reward_challenge_power_pair"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "knowledge_is_power"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "inheritance"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "sorry_for_you"
+  },
+  {
+   "type": "reward_challenge_do_or_die"
+  },
+  {
+   "type": "extra_vote"
+  },
+  {
+   "type": "the_spy_shack"
+  },
+  {
+   "type": "im_the_leader_now"
+  },
+  {
+   "type": "tribal_council_single",
+   "category": "tribal_council",
+   "name": "Tribal Council - Single Elimination",
+   "description": "Tribal Council - Single Elimination",
+   "elimination_type": "single"
+  }
+ ],
+ "createdAt": 1785471565.6097128,
+ "lastActivity": 1785471565.612182,
+ "deckMode": "official",
+ "expansion": true,
+ "settings": {
+  "botPace": "normal",
+  "tribalPace": "normal",
+  "botStyle": "normal"
+ },
+ "necklaceHolder": null,
+ "challenge": {
+  "cardType": "challenge_lowest_score_loses",
+  "type": "lowest_score_loses",
+  "name": "Lowest Score Loses",
+  "goal": "Be the last player standing. Grey Rocks are +1, Purple Rocks are -2.",
+  "starterId": "912364b4",
+  "order": [
+   "912364b4",
+   "a639151a",
+   "4e47a4c2"
+  ],
+  "knockedOut": [],
+  "round": 1,
+  "actionCount": 0,
+  "winnerId": null,
+  "log": [
+   "Ana played Lowest Score Loses!"
+  ],
+  "bag": {
+   "grey": 5,
+   "purple": 3
+  },
+  "phase": "pulling",
+  "pending": [
+   "912364b4",
+   "a639151a",
+   "4e47a4c2"
+  ],
+  "pulls": {},
+  "scores": {},
+  "roundFirstId": "912364b4",
+  "currentPlayerId": "912364b4",
+  "actions": [
+   "pull"
+  ],
+  "maxPull": 8,
+  "prompt": "Ana: secretly pull 0\u20138 rocks from the bag (grey +1, purple -2)."
+ },
+ "interaction": null,
+ "currentVote": {
+  "type": "single",
+  "votes": {},
+  "phase": "waiting",
+  "councilLeaderId": "912364b4",
+  "immunityPlayed": [],
+  "tieBreakNeeded": false,
+  "tiedPlayers": [],
+  "eliminated": []
+ },
+ "gameHistory": [],
+ "jury": [],
+ "finalTribal": {
+  "phase": "waiting",
+  "finalists": [],
+  "voteCounts": {},
+  "tieBreakNeeded": false,
+  "tieBreakerLeader": null
+ },
+ "discard": [
+  {
+   "type": "challenge_lowest_score_loses"
+  }
+ ]
+}

@@ -52,6 +52,8 @@ struct TurnIndicatorView: View {
         case .steal: return "Steal"
         case .play: return "Play"
         case .draw: return "Draw"
+        case .done: return "Turn over"
+        case .waiting: return "Waiting"
         }
     }
 
@@ -60,6 +62,7 @@ struct TurnIndicatorView: View {
         case .steal: return .red
         case .play: return .orange
         case .draw: return .blue
+        case .done, .waiting: return .gray
         }
     }
 }

@@ -68,11 +68,14 @@ struct AdvantagePlayView: View {
                         .font(.subheadline.bold())
 
                     ForEach(Array(played.enumerated()), id: \.offset) { _, record in
-                        let playerName = viewModel.gameState?.players[record.playerId]?.name ?? "Unknown"
+                        let playerName = record.playerId
+                            .flatMap { viewModel.gameState?.players[$0]?.name } ?? "Unknown"
+                        let advantage = (record.advantageType ?? "an advantage")
+                            .replacingOccurrences(of: "_", with: " ")
                         HStack {
                             Text(playerName)
                                 .font(.caption.bold())
-                            Text("played \(record.advantageType.replacingOccurrences(of: "_", with: " "))")
+                            Text("played \(advantage)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
