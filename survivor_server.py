@@ -201,9 +201,15 @@ class GameState:
         except Exception as e:
             logger.warning(f"Error during orphaned temp file cleanup: {e}")
 
-    def _save(self):
+    def _save(self, touched_gid=None):
         """
         Atomically saves the current game state to a JSON file.
+
+        Only the game that actually changed gets its lastActivity refreshed —
+        stamping every game on every save (the old behavior) meant no game ever
+        aged, so garbage_collect never fired and games.json grew forever. Pass
+        the mutated game's id as touched_gid; bookkeeping saves (GC, shutdown)
+        pass nothing and stamp nothing.
 
         Returns True on success, False on failure. A save failure must not abort the
         game in progress — the in-memory state is still authoritative and the next
@@ -212,9 +218,8 @@ class GameState:
         """
         temp_file = f"{self._FILE}.tmp.{uuid.uuid4().hex[:8]}"
         try:
-            current_time = time.time()
-            for game in self.games.values():
-                game['lastActivity'] = current_time
+            if touched_gid is not None and touched_gid in self.games:
+                self.games[touched_gid]['lastActivity'] = time.time()
             with open(temp_file, 'w') as f:
                 json.dump(self.games, f, indent=2)
             os.rename(temp_file, self._FILE)
@@ -355,7 +360,7 @@ class GameState:
                 "tieBreakerLeader": None
             }
         }
-        self._save()
+        self._save(gid)
         logger.info(f"Created new game: {gid}")
         return gid
     
@@ -426,7 +431,7 @@ class GameState:
         if g.get('phase') == 'lobby':
             g['turnOrder'].append(player_id)
         
-        self._save()
+        self._save(gid)
         return player_id
     
     def reconnect_player(self, gid, pid):
@@ -440,7 +445,7 @@ class GameState:
         
         # Mark the player as active
         g['players'][pid]['isActive'] = True
-        self._save()
+        self._save(gid)
         return True
     
     def start_full_game(self, gid, **kwargs):
@@ -480,7 +485,7 @@ class GameState:
         g["phase"] = "playing"
         g["necklaceHolder"] = None
         g["challenge"] = None
-        self._save()
+        self._save(gid)
         return {"success": True, "message": "Game started!"}
 
     def update_game_settings(self, gid, playerId=None, settings=None, **kwargs):
@@ -512,7 +517,7 @@ class GameState:
                         "message": f"'{value}' is not a valid {key} "
                                    f"(one of: {', '.join(allowed)})"}
         game["settings"] = sanitize_game_settings(settings, base=game.get("settings"))
-        self._save()
+        self._save(gid)
         changed = ", ".join(f"{k}: {v}" for k, v in settings.items())
         name = game["players"][playerId].get("name", "The Leader")
         return {"success": True, "message": f"{name} set the game's pace — {changed}"}
@@ -592,7 +597,7 @@ class GameState:
         current_vote["tiedPlayers"] = []
         current_vote["eliminated"] = []
         
-        self._save()
+        self._save(gid)
         logger.info(f"Started {voteType} voting in game {gid}")
         
         return {"success": True, "message": f"Voting started for {voteType}"}
@@ -681,7 +686,7 @@ class GameState:
             # Passing the Voting Box along with no Vote Card is legal.
             current_vote["votes"][voterId] = {}
             voter["hasVoted"] = True
-            self._save()
+            self._save(gid)
             logger.info(f"Player {voterId} had no vote cards and passed in game {gid}")
             return {"success": True, "message": "You have no Vote Card — the Voting Box passes you by"}
 
@@ -710,7 +715,7 @@ class GameState:
         current_vote.setdefault("cardsSpent", []).extend(c.get("type") for c in spent)
         self.rules_engine.sync_vote_counters(game)
 
-        self._save()
+        self._save(gid)
         logger.info(f"Player {voterId} cast {total_votes_cast} votes in game {gid} (spent {len(spent)} cards)")
 
         return {"success": True, "message": f"Vote cast successfully - {total_votes_cast} votes recorded"}
@@ -783,7 +788,7 @@ class GameState:
             "timestamp": time.time()
         })
         
-        self._save()
+        self._save(gid)
         logger.info(f"Player {playerId} played immunity idol for {target_id} in game {gid}")
         
         return {
@@ -864,7 +869,7 @@ class GameState:
             "timestamp": time.time()
         })
         
-        self._save()
+        self._save(gid)
         logger.info(f"Player {playerId} nullified {targetId}'s immunity in game {gid}")
         
         return {
@@ -965,7 +970,7 @@ class GameState:
         current_vote["rawVoteResults"] = raw_vote_counts
         current_vote["protectedPlayers"] = list(protected_players)
 
-        self._save()
+        self._save(gid)
         logger.info(
             f"Vote reveal completed in game {gid} - {len(current_vote['eliminated'])} voted out, "
             f"tie-break needed: {current_vote['tieBreakNeeded']} ({outcome['reason']})"
@@ -1069,7 +1074,7 @@ class GameState:
         picks_left = eliminations_needed - len(eliminated)
         if picks_left > 0 and tied_players:
             current_vote["tieBreakNeeded"] = True
-            self._save()
+            self._save(gid)
             return {
                 "success": True,
                 "message": f"Tie-break in progress - Council Leader must choose {picks_left} more player(s)",
@@ -1077,7 +1082,7 @@ class GameState:
             }
 
         current_vote["tieBreakNeeded"] = False
-        self._save()
+        self._save(gid)
         logger.info(f"Tie-break resolved by {leaderId} in game {gid} - voted out: {eliminated}")
 
         return {"success": True, "message": f"Tie-break resolved - {len(eliminated)} players voted out"}
@@ -1291,7 +1296,7 @@ class GameState:
 
         game["gameHistory"].append(elimination_record)
 
-        self._save()
+        self._save(gid)
         logger.info(
             f"Tribal council completed in game {gid} - {len(voted_out_players)} voted out, "
             f"{len(eliminated_players)} eliminated, {len(active_players)} remaining"
@@ -1446,7 +1451,7 @@ class GameState:
             player["hasVoted"] = False
             player["immunityPlayed"] = False
 
-        self._save()
+        self._save(gid)
         logger.info(f"Reset tribal council in game {gid}")
         
         return {
@@ -1497,7 +1502,7 @@ class GameState:
         success, message = self.rules_engine.advance_tribal_phase(game, target_phase)
         
         if success:
-            self._save()
+            self._save(gid)
             logger.info(f"Advanced tribal phase to {target_phase} in game {gid}")
             
         return success
@@ -1531,7 +1536,7 @@ class GameState:
         result = self.rules_engine.play_tribal_advantage(game, playerId, advantageType, targetId)
 
         if result.get("success"):
-            self._save()
+            self._save(gid)
             logger.info(f"Tribal advantage {advantageType} played by {playerId} in game {gid}")
 
         return result
@@ -1681,7 +1686,7 @@ class GameState:
             # Tally votes and determine winner
             self._determine_final_winner(game, final_tribal)
 
-        self._save()
+        self._save(gid)
         logger.info(f"Advanced final tribal phase to {target_phase} in game {gid}")
         return True
 
@@ -1748,7 +1753,7 @@ class GameState:
             final_tribal["phase"] = "reveal"
             self._determine_final_winner(game, final_tribal)
 
-        self._save()
+        self._save(gid)
         return True
 
     def break_final_tie(self, gid, leaderId=None, winnerId=None, chosenWinner=None, **kwargs):
@@ -1810,7 +1815,7 @@ class GameState:
         game["phase"] = "finished"
         game["winner"] = winnerId
 
-        self._save()
+        self._save(gid)
         logger.info(f"Final tie broken in game {gid}: leader {leaderId} chose {winnerId} as winner")
         return True
 
@@ -1869,7 +1874,7 @@ class GameState:
             final_tribal["phase"] = "voting"
             final_tribal["votes"] = {}
 
-        self._save()
+        self._save(gid)
         return True
 
     # ═══════════════════════════ Game Management Methods ═══════════════════════════
@@ -1906,7 +1911,7 @@ class GameState:
         if "councilLeaderId" in game:
             game["councilLeaderId"] = newLeaderId
         
-        self._save()
+        self._save(gid)
         logger.info(f"Changed leader to {newLeaderId} in game {gid}")
         
         return {
@@ -1942,7 +1947,7 @@ class GameState:
         if not pid:
             return {"success": False, "message": "Could not add the computer player"}
         g["players"][pid]["isBot"] = True
-        self._save()
+        self._save(gid)
         logger.info(f"Bot {name} ({pid}) added to game {gid}")
         return {"success": True, "message": f"{name} wanders into camp",
                 "playerId": pid, "name": name}
@@ -1971,7 +1976,7 @@ class GameState:
             g["players"][first]["isCouncilLeader"] = True
             if "currentVote" in g:
                 g["currentVote"]["councilLeaderId"] = first
-        self._save()
+        self._save(gid)
         logger.info(f"Bot {name} ({playerId}) removed from game {gid}")
         return {"success": True, "message": f"{name} walks back into the jungle"}
 
@@ -2002,7 +2007,7 @@ class GameState:
 
         old_name = game["players"][playerId].get("name", "?")
         game["players"][playerId]["name"] = clean_name
-        self._save()
+        self._save(gid)
         logger.info(f"Player {playerId} renamed '{old_name}' -> '{clean_name}' in game {gid}")
         return {"success": True, "message": f"{old_name} is now {clean_name}", "newName": clean_name}
 
@@ -2071,7 +2076,7 @@ class GameState:
         # A hand of nothing but the Vote Card is out of a raider's reach
         if not takeable_indices(target.get("hand")):
             thief["hasStolen"] = True
-            self._save()
+            self._save(gid)
             return {"success": True,
                     "message": f"{target.get('name', 'Player')} holds only their Vote Card — "
                                "there is nothing to take"}
@@ -2092,7 +2097,7 @@ class GameState:
                 "source": "steal",
                 "reactive_window_open": True
             }
-            self._save()
+            self._save(gid)
             return {
                 "success": True, 
                 "message": "Theft initiated - target can play reactive cards",
@@ -2104,7 +2109,7 @@ class GameState:
         theft_result = self.rules_engine.execute_theft(game, thief_id, target_id)
         if theft_result.get("success"):
             stolen_cards = theft_result.get("stolen_cards", [])
-            self._save()
+            self._save(gid)
             return {
                 "success": True, 
                 "message": f"Stole {len(stolen_cards)} card(s) from {target.get('name', 'player')}",
@@ -2229,7 +2234,7 @@ class GameState:
             interaction_message = start_result.get("message")
 
         self.rules_engine.sync_vote_counters(game)
-        self._save()
+        self._save(gid)
         response = {
             "success": True,
             "message": interaction_message or challenge_message
@@ -2275,7 +2280,7 @@ class GameState:
 
         if result.get("success"):
             self.rules_engine.sync_vote_counters(game)
-            self._save()
+            self._save(gid)
 
         return result
 
@@ -2366,7 +2371,7 @@ class GameState:
             if challenge.get("phase") != "complete":
                 return {"success": False, "message": "The Challenge is still in progress"}
             game["challenge"] = None
-            self._save()
+            self._save(gid)
             return {"success": True, "message": "Challenge cleared"}
 
         result = challenge_engine.action(game, playerId, action, value)
@@ -2378,7 +2383,7 @@ class GameState:
             challenge_engine._log(game["challenge"], reward_message)
 
         if result.get("success"):
-            self._save()
+            self._save(gid)
 
         return result
 
@@ -2477,7 +2482,7 @@ class GameState:
                 # Nothing anywhere to draw — the draw step still ends the turn
                 player["hasDrawn"] = True
                 self.advance_turn(gid)
-                self._save()
+                self._save(gid)
                 return {"success": True,
                         "message": "The Draw Pile is empty — your turn ends",
                         "log_message": f"{player.get('name', 'A player')} found the "
@@ -2530,7 +2535,7 @@ class GameState:
         self.rules_engine.sync_vote_counters(game)
 
 
-        self._save()
+        self._save(gid)
         
         if tribal_triggered:
             return {
@@ -2547,7 +2552,7 @@ class GameState:
             theft_now = game.get("pending_theft")
             if theft_now and theft_now.get("reactive_window_open"):
                 theft_now["_end_turn_after"] = True
-                self._save()
+                self._save(gid)
             else:
                 self.advance_turn(gid)
             card_names = [card.get("name", card.get("type", "unknown")) for card in drawn_cards]
@@ -2623,7 +2628,7 @@ class GameState:
                 "tieBreakNeeded": False,
                 "tieBreakerLeader": None
             }
-            self._save()
+            self._save(gid)
             return {
                 "success": True,
                 "message": "Final Tribal Council triggered!",
@@ -2631,7 +2636,7 @@ class GameState:
                 "finalists": [p.get("name", p["id"]) for p in active_players]
             }
         
-        self._save()
+        self._save(gid)
 
         # A subscribed human gets a nudge when their torch lights. Never let a
         # push hiccup break the turn.
@@ -2721,7 +2726,7 @@ class GameState:
             "date": current_date
         }
         
-        self._save()
+        self._save(gid)
         
         return {
             "success": True, 
@@ -2747,7 +2752,7 @@ class GameState:
         names = [p.get("name", "?") for p in game.get("players", {}).values()]
 
         del self.games[gid]
-        self._save()
+        self._save(gid)
         logger.info(f"Game {gid} wiped ({player_count} players: {', '.join(names)})")
 
         return {
@@ -2829,7 +2834,7 @@ class GameState:
             for player_id, player in game["players"].items():
                 player["isCouncilLeader"] = (player_id == first_player_id)
         
-        self._save()
+        self._save(gid)
         logger.info(f"Reset game {gid} to lobby state")
         
         active_players = [p.get("name", "Player") for p in game["players"].values() if p.get("isActive", True)]
@@ -2888,7 +2893,7 @@ class GameState:
             # A draw ended this turn while the window was open — advance now
             if end_turn_after and game.get("phase") == "playing":
                 self.advance_turn(gid)
-            self._save()
+            self._save(gid)
             return {
                 "success": True,
                 "message": interrupt_result.get("message", "Theft blocked by reactive card"),
@@ -2925,7 +2930,7 @@ class GameState:
             # A draw ended this turn while the window was open — advance now
             if end_turn_after and game.get("phase") == "playing":
                 self.advance_turn(gid)
-            self._save()
+            self._save(gid)
             result = {"success": True,
                       "message": take_result.get("message", "The cards change hands")}
             if take_result.get("log_message"):
@@ -2944,14 +2949,14 @@ class GameState:
         if theft_result.get("success"):
             stolen_cards = theft_result.get("stolen_cards", [])
             target_name = game["players"][target_id].get("name", "player")
-            self._save()
+            self._save(gid)
             return {
                 "success": True,
                 "message": f"Stole {len(stolen_cards)} card(s) from {target_name}",
                 "stolen_cards": stolen_cards
             }
         else:
-            self._save()
+            self._save(gid)
             return {"success": False, "message": theft_result.get("message", "Theft failed")}
 
 # ──────────────── route helper ────────────────
@@ -3199,6 +3204,16 @@ def handle(action, required):
         response_data = {"success": True}
         if isinstance(result, dict):
             response_data.update(result)
+
+        # Hand the acting client the authoritative state on the HTTP await —
+        # the socket broadcast above still serves the rest of the room, but the
+        # actor shouldn't have to wait on (or trust) socket health to see the
+        # result of its own action. Skipped for delete/reset/record_winner:
+        # those games are gone or wiped and clients get dedicated events.
+        if action not in ('delete_game', 'reset_game', 'record_winner'):
+            fresh_state = game_state.get_game_state(gid)
+            if fresh_state is not None:
+                response_data["gameState"] = fresh_state
         return jsonify(response_data)
         
     except Exception as e:
@@ -3568,7 +3583,7 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
             return jsonify(success=False, message="bad test hook call"), 400
         game["players"][pid]["hand"] = [{"type": c} if isinstance(c, str) else c for c in hand]
         game_state.rules_engine.sync_vote_counters(game)
-        game_state._save()
+        game_state._save(gid)
         socketio.emit('state_update', game_state.get_game_state(gid) or {}, to=gid)
         return jsonify(success=True)
 
@@ -3582,7 +3597,7 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
             return jsonify(success=False, message="bad test hook call"), 400
         cards = [{"type": c} if isinstance(c, str) else c for c in top]
         game["deck"] = cards + (game.get("deck") or [])
-        game_state._save()
+        game_state._save(gid)
         return jsonify(success=True)
 
     @app.route('/api/test/set_flags', methods=['POST'])
@@ -3595,7 +3610,7 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
         for key in ("hasStolen", "hasPlayed", "hasDrawn", "characterCards", "campRaidedBy"):
             if key in data:
                 game["players"][pid][key] = data[key]
-        game_state._save()
+        game_state._save(gid)
         socketio.emit('state_update', game_state.get_game_state(gid) or {}, to=gid)
         return jsonify(success=True)
 
