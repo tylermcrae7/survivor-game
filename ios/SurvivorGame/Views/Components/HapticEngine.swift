@@ -81,9 +81,13 @@ enum HapticEngine {
         guard let engine = try? CHHapticEngine() else { return nil }
         engine.playsHapticsOnly = true      // never touches TorchSound's AVAudioSession
         engine.isAutoShutdownEnabled = true // powers down idle, restarts on demand
-        engine.resetHandler = { try? engine.start() }
-        engine.stoppedHandler = { _ in
-            Task { @MainActor in patternEngine = nil }
+        engine.resetHandler = { [weak engine] in try? engine?.start() }
+        engine.stoppedHandler = { [weak engine] _ in
+            Task { @MainActor in
+                // Only clear our own registration — a late stop from a
+                // superseded engine must not kill its replacement.
+                if patternEngine === engine { patternEngine = nil }
+            }
         }
         try? engine.start()
         patternEngine = engine

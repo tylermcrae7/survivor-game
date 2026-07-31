@@ -32,6 +32,8 @@ enum TorchCue: String, CaseIterable, Sendable {
 actor TorchSound {
     static let shared = TorchSound()
 
+    private init() {}
+
     // MARK: - Public API
 
     /// Both of the web's gates: the sound setting and the narrator mute.

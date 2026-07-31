@@ -78,7 +78,9 @@ struct EmberFieldView: View {
     }
 
     let style: Style
-    private let start = Date()
+    // @State so the clock survives parent body re-evaluation — a plain
+    // `let` would re-init and snap confetti back to the top mid-drop.
+    @State private var start = Date()
     @State private var particles: [Particle]
     @State private var finished = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -133,11 +135,13 @@ struct EmberFieldView: View {
     }
 
     /// emberFloat: rise 46% of the field, drift 6% sideways, shrink to 0.4×.
+    /// Bottom-anchored origin (research-doc erratum): particles spawn at 92%
+    /// of the field height and rise through the visible canvas.
     private func drawEmbers(_ context: GraphicsContext, size: CGSize, date: Date) {
         let now = date.timeIntervalSinceReferenceDate
         for p in particles {
             let t = ((now / p.duration) + p.phase).truncatingRemainder(dividingBy: 1)
-            let y = size.height * 0.08 - CGFloat(t) * size.height * 0.46
+            let y = size.height * 0.92 - CGFloat(t) * size.height * 0.46
             let x = p.x * size.width + CGFloat(t) * size.width * 0.06
             let k = 1 - 0.6 * CGFloat(t)
             var layer = context

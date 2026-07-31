@@ -238,12 +238,17 @@ struct StepGlowModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
+        // Ambient loop is removed under reduced motion — without the
+        // animation, toggling `dim` would freeze the view at 55% opacity.
         content
-            .opacity(dim ? 0.55 : 1.0)
+            .opacity(dim && !reduceMotion ? 0.55 : 1.0)
             .animation(reduceMotion ? nil
                 : .easeInOut(duration: period / 2).repeatForever(autoreverses: true),
                 value: dim)
-            .onAppear { dim = true }
+            .onAppear {
+                guard !reduceMotion else { return }
+                dim = true
+            }
     }
 }
 
@@ -312,12 +317,13 @@ struct VoteSlamOverlay: View {
                     CubicKeyframe(0, duration: 0.90 * f)
                 }
             }
-            .onAppear {
-                go = true
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    onFinished()
-                }
+            .onAppear { go = true }
+            .task {
+                // Structured so early removal cancels the finish callback.
+                // Reduced motion skips the linger and dismisses promptly.
+                try? await Task.sleep(for: .seconds(reduceMotion ? 0.05 : 1.5))
+                guard !Task.isCancelled else { return }
+                onFinished()
             }
             .allowsHitTesting(false)
     }
