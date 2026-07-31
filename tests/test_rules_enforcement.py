@@ -267,6 +267,34 @@ def test_reward_challenge_steals_go_through_the_gate():
         os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_the_block_reason_does_not_confirm_the_answer():
+    """
+    While the reactive window is open, blocked turn actions explain the wait —
+    but the refusal reaches whoever tried to act, so it must not confirm that
+    the victim is holding Sorry For You. The window itself is what tells the
+    HOLDER they may respond.
+    """
+    gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
+    try:
+        print("=== The block reason keeps the secret ===")
+        set_turn(game, ana)
+        game["players"][ana]["hand"] = [{"type": "the_spy_shack"}]
+        game["players"][ben]["hand"] = [{"type": "immunity_idol"}, {"type": "sorry_for_you"}]
+        r = gs.play_card(gid, playerId=ana, cardIdx=0, params={"targetId": ben, "takeIndex": 0})
+        assert r["success"] is True, r.get("message")
+        assert (game.get("pending_theft") or {}).get("reactive_window_open")
+
+        for blocked in (gs.draw_card(gid, playerId=ana), gs.advance_turn(gid)):
+            assert blocked["success"] is False
+            assert "Sorry For You" not in blocked["message"], blocked["message"]
+            assert "may respond to the raid" in blocked["message"], blocked["message"]
+            assert "Ben" in blocked["message"], blocked["message"]
+
+        print("✅ block reason keeps the secret\n")
+    finally:
+        os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_three_players_left_rule():
     """
     Rulebook: "If there are only 3 players left and 2 players would be
@@ -464,6 +492,7 @@ if __name__ == "__main__":
         test_camp_raid_is_a_trap()
         test_sorry_for_you_gates_every_taking()
         test_reward_challenge_steals_go_through_the_gate()
+        test_the_block_reason_does_not_confirm_the_answer()
         test_three_players_left_rule()
         test_deck_math_never_strands()
         test_spent_vote_cards_leave_the_game_not_the_discard()

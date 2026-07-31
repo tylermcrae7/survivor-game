@@ -2288,7 +2288,9 @@ class GameState:
         theft = game.get("pending_theft")
         if theft and theft.get("reactive_window_open"):
             victim = game["players"].get(theft.get("targetId"), {}).get("name", "someone")
-            return f"Waiting on {victim} - they may play Sorry For You"
+            # Non-confirming: the block reason reaches whoever tried to act,
+            # so it must not reveal what the victim is holding.
+            return f"Waiting on {victim} - they may respond to the raid"
         challenge = game.get("challenge")
         if challenge and challenge.get("phase") not in (None, "complete"):
             return f"Resolve the active Challenge ({challenge.get('name')}) before continuing your turn"
