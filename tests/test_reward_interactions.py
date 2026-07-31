@@ -366,6 +366,67 @@ class TestSpyShack(InteractionTestBase):
         self.assertIn("vote", [c["type"] for c in self.hand(victim)])
 
 
+class TestRewardOutcomeRedaction(InteractionTestBase):
+    """
+    A Reward Challenge outcome becomes the shared prompt, the interaction log,
+    and the event log on every phone. When the take is held at the Sorry For
+    You gate, that shared copy must not confirm what the target is holding —
+    the table learns only that the raid is hanging; the holder's own device
+    gets the reactive choice from the pending_theft window itself.
+    """
+
+    def assert_outcome_stays_silent(self, result, holder_name):
+        it = self.game["interaction"]
+        self.assertEqual(it["phase"], "complete")
+        self.assertNotIn("Sorry For You", it["prompt"])
+        for line in it["log"]:
+            self.assertNotIn("Sorry For You", line)
+        self.assertNotIn("Sorry For You", result.get("message", ""))
+        self.assertNotIn("Sorry For You", result.get("log_message") or "")
+        # The table still learns who everyone is waiting on…
+        self.assertIn(holder_name, it["prompt"])
+        self.assertIn("hangs in the air", it["prompt"])
+        # …and the reactive window really did open for the holder
+        pending = self.game.get("pending_theft") or {}
+        self.assertTrue(pending.get("reactive_window_open"))
+
+    def test_do_or_die_does_not_announce_the_losers_answer(self):
+        opponent = self.pids[1]
+        self.hand(opponent).append({"type": "sorry_for_you"})
+        self.give_card(self.me, "reward_challenge_do_or_die")
+        self.play(self.me, "reward_challenge_do_or_die",
+                  targetId=opponent, choice="rock")
+
+        result = self.act(opponent, "pick", "scissors")   # rock wins, take gated
+        self.assertTrue(result["success"], result.get("message"))
+        self.assert_outcome_stays_silent(result, "Player2")
+
+    def test_power_pair_does_not_announce_the_odd_ones_answer(self):
+        a, b = self.pids[1], self.pids[2]
+        self.hand(b).append({"type": "sorry_for_you"})
+        self.give_card(self.me, "reward_challenge_power_pair")
+        self.play(self.me, "reward_challenge_power_pair", targetIds=[a, b])
+
+        self.act(self.me, "pick", 2)
+        self.act(a, "pick", 2)
+        result = self.act(b, "pick", 3)                   # b is the odd one out
+        self.assertTrue(result["success"], result.get("message"))
+        self.assert_outcome_stays_silent(result, "Player3")
+
+    def test_numbers_game_does_not_announce_the_victims_answer(self):
+        victim = self.pids[0]
+        self.hand(victim).append({"type": "sorry_for_you"})
+        self.give_card(self.me, "reward_challenge_its_a_numbers_game")
+        self.play(self.me, "reward_challenge_its_a_numbers_game")
+
+        picks = {self.pids[0]: 2, self.pids[1]: 2, self.pids[2]: 3, self.pids[3]: 5}
+        for pid, n in picks.items():
+            self.act(pid, "pick", n)                      # pids[2] wins with 3
+        result = self.act(self.pids[2], "steal_from", victim)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assert_outcome_stays_silent(result, "Player1")
+
+
 class TestInteractionHygiene(InteractionTestBase):
     def test_only_one_interaction_at_a_time(self):
         self.give_card(self.me, "reward_challenge_do_or_die")
@@ -410,7 +471,8 @@ if __name__ == '__main__':
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     for test_class in (TestDoOrDie, TestPowerPair, TestNumbersGame,
-                       TestSpyShack, TestInteractionHygiene):
+                       TestSpyShack, TestRewardOutcomeRedaction,
+                       TestInteractionHygiene):
         suite.addTests(loader.loadTestsFromTestCase(test_class))
 
     result = unittest.TextTestRunner(verbosity=2, buffer=True).run(suite)

@@ -440,8 +440,11 @@ class ChallengeEngine:
         ch["currentPlayerId"] = ch["pending"][0]
         ch["actions"] = ["pull"]
         ch["maxPull"] = self._bag_size(ch)
+        # The current player's stepper reads the maxPull FIELD; the shared copy
+        # must not name the ceiling — it shrinks with every secret pull, so
+        # consecutive prompts would count everyone's pulls out loud.
         ch["prompt"] = (
-            f"{self._name(game, ch['pending'][0])}: secretly pull 0–{ch['maxPull']} rocks "
+            f"{self._name(game, ch['pending'][0])}: secretly pull rocks "
             "from the bag (grey +1, purple -2)."
         )
 
@@ -479,8 +482,9 @@ class ChallengeEngine:
             nxt = ch["pending"][0]
             ch["currentPlayerId"] = nxt
             ch["maxPull"] = self._bag_size(ch)
+            # Ceiling stays out of the shared copy — see _begin_lowest_score_round.
             ch["prompt"] = (
-                f"{self._name(game, nxt)}: secretly pull 0–{ch['maxPull']} rocks from the bag."
+                f"{self._name(game, nxt)}: secretly pull rocks from the bag."
             )
             return {"success": True, "message": f"{self._name(game, player_id)} has taken their rocks."}
 

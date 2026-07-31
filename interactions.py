@@ -264,7 +264,10 @@ class InteractionEngine:
         pending, take = request_take(
             game, [winner], loser, "Do Or Die",
             {"kind": "random_each", "takes": [{"thiefId": winner, "count": 2}]})
-        outcome = (f"{self._name(game, loser)} is holding Sorry For You!"
+        # The summary becomes the shared prompt AND the shared log — it must not
+        # confirm what the loser is holding. The holder's own phone gets the
+        # Sorry For You choice from the reactive window itself.
+        outcome = (f"the raid hangs in the air — {self._name(game, loser)} may have an answer"
                    if pending else take.get("message", ""))
         return self._finish(
             game, it,
@@ -309,7 +312,11 @@ class InteractionEngine:
         it["lastRound"] = {"round": it["round"], "picks": picks, "outcome": "pair"}
         pair_names = " and ".join(self._name(game, p) for p in pair)
         if pending:
-            outcome = f"{pair_names} matched on {pair_value} — but {self._name(game, odd_one)} is holding Sorry For You!"
+            # Shared copy must not confirm the odd one out is holding Sorry For
+            # You — the reactive window tells THEM; the table only learns the
+            # raid is hanging.
+            outcome = (f"{pair_names} matched on {pair_value} — but the raid hangs "
+                       f"in the air; {self._name(game, odd_one)} may have an answer")
         elif taken:
             outcome = (f"{pair_names} matched on {pair_value} — they each steal a card from "
                        f"{self._name(game, odd_one)}!")
@@ -362,7 +369,8 @@ class InteractionEngine:
         pending, take = request_take(
             game, [player_id], victim_id, "It's A Numbers Game",
             {"kind": "random_each", "takes": [{"thiefId": player_id, "count": 2}]})
-        outcome = (f"{self._name(game, victim_id)} is holding Sorry For You!"
+        # Non-confirming shared copy — see _resolve_do_or_die.
+        outcome = (f"the raid hangs in the air — {self._name(game, victim_id)} may have an answer"
                    if pending else take.get("message", ""))
         return self._finish(game, it, outcome)
 

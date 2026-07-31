@@ -365,6 +365,25 @@ class TestLowestScoreLoses(RocksTestBase):
         self.assertEqual(challenge["bag"], {"grey": 5, "purple": 3})
         self.assertEqual(challenge["maxPull"], 8)
 
+    def test_the_prompt_does_not_count_the_bag_out_loud(self):
+        """
+        maxPull shrinks with every secret pull, so a shared prompt that names
+        the ceiling ("pull 0–5 rocks") would tell the whole table how many
+        rocks earlier players took. The current player's stepper reads the
+        maxPull FIELD; the copy itself stays silent about the number.
+        """
+        self.start_challenge("challenge_lowest_score_loses")
+        challenge = self.game["challenge"]
+        self.assertEqual(challenge["maxPull"], 8, "the stepper still gets its ceiling")
+        self.assertNotIn("8", challenge["prompt"])
+        self.assertNotIn("0–", challenge["prompt"])
+
+        self.act("pull", 3)
+        challenge = self.game["challenge"]
+        self.assertEqual(challenge["maxPull"], 5, "field keeps tracking the bag")
+        self.assertNotIn("5", challenge["prompt"])
+        self.assertNotIn("0–", challenge["prompt"])
+
     def test_pulls_are_secret_until_the_reveal(self):
         self.start_challenge("challenge_lowest_score_loses")
         self.act("pull", 2)
