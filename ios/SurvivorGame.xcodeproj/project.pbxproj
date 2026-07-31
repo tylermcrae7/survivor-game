@@ -13,6 +13,7 @@
 		15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */; };
 		16DECEE2859C1DA86B58EFDF /* challenge_active.json in Resources */ = {isa = PBXBuildFile; fileRef = 622716FC89794F75AFD7283A /* challenge_active.json */; };
 		17B3E69CDDBB66087B4A5957 /* SurvivorGameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */; };
+		20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */; };
 		270F3BDFB4C49636A5453C66 /* SurvivorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */; };
 		29FAA0B0EA01182029E97275 /* NetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */; };
 		2B479F1D3809B3EB62E06F44 /* CardDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503E35CDBCFBE25AB9D87771 /* CardDefinition.swift */; };
@@ -171,6 +172,7 @@
 		AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkingTests.swift; sourceTree = "<group>"; };
 		ACEAA0AF59E6324AA323F21F /* VotingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VotingView.swift; sourceTree = "<group>"; };
 		AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorTheme.swift; sourceTree = "<group>"; };
+		B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfigTests.swift; sourceTree = "<group>"; };
 		BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyViewModel.swift; sourceTree = "<group>"; };
 		BE7B1E5B136B8F0A1B9A66A9 /* IslandAccessCookieStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandAccessCookieStore.swift; sourceTree = "<group>"; };
 		BF71C61DAA3A57852843D2F0 /* AccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTests.swift; sourceTree = "<group>"; };
@@ -449,6 +451,7 @@
 				EB96FC8285F596A14C699518 /* MockGameClient.swift */,
 				AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */,
 				DBC87F57450786729E8E86B2 /* PlayingViewModelTests.swift */,
+				B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */,
 				1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */,
 				8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */,
 				2AB850D039D484EDAE79F431 /* Fixtures */,
@@ -644,6 +647,7 @@
 				6588210FEAEEB4108AD7AFC7 /* MockGameClient.swift in Sources */,
 				29FAA0B0EA01182029E97275 /* NetworkingTests.swift in Sources */,
 				DB4C1453CD6BBB7FE4C3E5F9 /* PlayingViewModelTests.swift in Sources */,
+				20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */,
 				15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */,
 				C85B70696006F49D5A87DB82 /* ViewModelTests.swift in Sources */,
 			);

@@ -32,12 +32,16 @@ final class ServerConfig {
         )
         if let existing = try? context.fetch(descriptor).first {
             // The first native builds shipped one machine's LAN address as the
-            // default. Move only that exact legacy value to the stable public
-            // island; user-entered servers remain untouched.
-            if existing.baseURL == legacyLANURL {
+            // default. Move that exact legacy value to the stable public island
+            // exactly once; user-entered servers — even that same LAN address,
+            // re-entered deliberately — remain untouched.
+            let migrationKey = "didMigrateLegacyLANDefault"
+            if existing.baseURL == legacyLANURL,
+               !UserDefaults.standard.bool(forKey: migrationKey) {
                 existing.baseURL = publicIslandURL
                 try? context.save()
             }
+            UserDefaults.standard.set(true, forKey: migrationKey)
             return existing
         }
         let config = ServerConfig()
