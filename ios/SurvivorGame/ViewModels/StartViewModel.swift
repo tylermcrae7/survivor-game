@@ -7,37 +7,37 @@ import SwiftData
 final class StartViewModel {
     var playerName = ""
     var preferredColor: String?
-    var serverURL = "http://localhost:8080"
     var joinCode = ""
     var loadingState: LoadingState = .idle
     var error: ViewModelError?
 
     private let gameClient: GameClient
+    private var modelContext: ModelContext?
+    private var savedGameId: String?
+    private var savedPlayerId: String?
+    private var attemptedRestore = false
 
     init(gameClient: GameClient) {
         self.gameClient = gameClient
     }
 
     func loadSavedConfig(from context: ModelContext) {
+        modelContext = context
         let config = ServerConfig.loadDefault(from: context)
         playerName = config.playerName
         preferredColor = config.preferredColor
-        serverURL = config.baseURL.absoluteString
         if let lastGameId = config.lastGameId, let lastPlayerId = config.lastPlayerId {
             joinCode = lastGameId
-            // Attempt rejoin
-            Task { await tryRejoin(gameId: lastGameId, playerId: lastPlayerId) }
+            savedGameId = lastGameId
+            savedPlayerId = lastPlayerId
         }
-    }
 
-    func saveConfig(to context: ModelContext) {
-        let config = ServerConfig.loadDefault(from: context)
-        config.playerName = playerName
-        config.preferredColor = preferredColor
-        config.baseURL = URL(string: serverURL) ?? URL(string: "http://localhost:8080")!
-        config.lastGameId = gameClient.gameId
-        config.lastPlayerId = gameClient.playerId
-        try? context.save()
+        let defaults = UserDefaults.standard
+        deckMode = defaults.string(forKey: "defaultDeckMode") ?? "official"
+        expansion = defaults.bool(forKey: "defaultExpansion")
+        botPace = defaults.string(forKey: "defaultBotPace") ?? "normal"
+        tribalPace = defaults.string(forKey: "defaultTribalPace") ?? "normal"
+        botStyle = defaults.string(forKey: "defaultBotStyle") ?? "normal"
     }
 
     var deckMode = "official"
@@ -62,6 +62,7 @@ final class StartViewModel {
                 name: playerName.trimmingCharacters(in: .whitespaces),
                 color: preferredColor
             )
+            saveSession()
             loadingState = .loaded
         } catch {
             loadingState = .error(.from(error))
@@ -70,18 +71,25 @@ final class StartViewModel {
     }
 
     func joinGame() async {
-        guard validateInputs(), !joinCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let normalizedCode = Self.normalizedGameCode(joinCode)
+        guard validateInputs(), !normalizedCode.isEmpty else {
             error = .gameError("Please enter a game code")
+            return
+        }
+        guard normalizedCode.range(of: "^[a-f0-9]{8}$", options: .regularExpression) != nil else {
+            error = .gameError("Game codes are eight letters or numbers")
             return
         }
         loadingState = .loading
 
         do {
             try await gameClient.joinGame(
-                gameId: joinCode.trimmingCharacters(in: .whitespaces),
+                gameId: normalizedCode,
                 name: playerName.trimmingCharacters(in: .whitespaces),
                 color: preferredColor
             )
+            joinCode = normalizedCode
+            saveSession()
             loadingState = .loaded
         } catch {
             loadingState = .error(.from(error))
@@ -89,14 +97,16 @@ final class StartViewModel {
         }
     }
 
-    func testConnection() async -> Bool {
-        do {
-            _ = try await gameClient.apiClient.ping()
-            return true
-        } catch {
-            self.error = .networkError("Cannot reach server at \(serverURL)")
-            return false
-        }
+    func restoreSavedGameIfNeeded() async {
+        guard !attemptedRestore, gameClient.accessState == .unlocked,
+              let gameId = savedGameId, let playerId = savedPlayerId
+        else { return }
+        attemptedRestore = true
+        await tryRejoin(gameId: gameId, playerId: playerId)
+    }
+
+    static func normalizedGameCode(_ code: String) -> String {
+        code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // MARK: - Private
@@ -105,11 +115,22 @@ final class StartViewModel {
         loadingState = .loading
         do {
             try await gameClient.rejoinGame(gameId: gameId, playerId: playerId)
+            saveSession()
             loadingState = .loaded
         } catch {
             // Rejoin failed — that's fine, just stay on start screen
             loadingState = .idle
         }
+    }
+
+    private func saveSession() {
+        guard let modelContext else { return }
+        let config = ServerConfig.loadDefault(from: modelContext)
+        config.playerName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.preferredColor = preferredColor
+        config.lastGameId = gameClient.gameId
+        config.lastPlayerId = gameClient.playerId
+        try? modelContext.save()
     }
 
     private func validateInputs() -> Bool {
@@ -132,18 +153,22 @@ enum PlayerColor: String, CaseIterable {
     case coral = "#FF6B6B"
     case teal = "#4ECDC4"
     case sky = "#45B7D1"
-    case orange = "#F9844A"
-    case green = "#90BE6D"
-    case yellow = "#F9C74F"
+    case sage = "#96CEB4"
+    case yellow = "#FFEAA7"
+    case plum = "#DDA0DD"
+    case mint = "#98D8C8"
+    case gold = "#F7DC6F"
 
     var displayName: String {
         switch self {
         case .coral: return "Coral"
         case .teal: return "Teal"
-        case .sky: return "Sky"
-        case .orange: return "Orange"
-        case .green: return "Green"
+        case .sky: return "Blue"
+        case .sage: return "Sage"
         case .yellow: return "Yellow"
+        case .plum: return "Plum"
+        case .mint: return "Mint"
+        case .gold: return "Gold"
         }
     }
 

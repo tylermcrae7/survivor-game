@@ -84,8 +84,9 @@ struct ViewModelTests {
     // MARK: - PlayerColor
 
     @Test func playerColorValues() {
-        #expect(PlayerColor.allCases.count == 6)
+        #expect(PlayerColor.allCases.count == 8)
         #expect(PlayerColor.coral.rawValue == "#FF6B6B")
         #expect(PlayerColor.teal.displayName == "Teal")
+        #expect(PlayerColor.sky.displayName == "Blue")
     }
 }

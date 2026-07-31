@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		05554D711C3F74C7AEBB00CB /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F438FC100DE10D7EA2EF6416 /* APIClient.swift */; };
 		0881E7EE9556263D0213232A /* GamePhase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94828426CF60FB58932E318C /* GamePhase.swift */; };
+		08FFFDC00953A1BC3B3DDEED /* AppSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E7B73810847FA907FA26FD4 /* AppSettingsSheet.swift */; };
 		15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */; };
 		16DECEE2859C1DA86B58EFDF /* challenge_active.json in Resources */ = {isa = PBXBuildFile; fileRef = 622716FC89794F75AFD7283A /* challenge_active.json */; };
 		17B3E69CDDBB66087B4A5957 /* SurvivorGameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */; };
@@ -21,8 +22,10 @@
 		322C1630628F6ED6F828E5A1 /* FinalTribalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80401B5A14A1EEC4197ADD45 /* FinalTribalScreen.swift */; };
 		3312584CA42387F6971DD8A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6C157EA402C9C0508A1015 /* Assets.xcassets */; };
 		34B108E89F1AC173438D7A93 /* TribalVoteState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92456205F3671193A6B2CBB5 /* TribalVoteState.swift */; };
+		352A09ECE723366151C7DD04 /* IslandAccessScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0045BA401656BFAA514B6D63 /* IslandAccessScreen.swift */; };
 		363E486B92D0F8ED41213292 /* PlayingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0C398C7CA94DAB86E5CED0 /* PlayingScreen.swift */; };
 		3748CEDB54ECF264ABC4743A /* lobby.json in Resources */ = {isa = PBXBuildFile; fileRef = 9E24B36808ACBE3C8AC5E22A /* lobby.json */; };
+		39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */; };
 		3FB7989815C9A7AFE7F7AF00 /* GameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6CB5AAE841ACA3F75052A81 /* GameRecord.swift */; };
 		41E5F07EB8990425AF7B7EEF /* StartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */; };
 		43CA90BC5E4FBACEF5B53D48 /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D6A9B48AC1F6B010C3DC27 /* ConnectionBanner.swift */; };
@@ -58,6 +61,7 @@
 		ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */; };
 		B1E4E38E15E1EAA91EA2497A /* TurnIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */; };
 		B5C7A07069920F180EA34700 /* FinalTribalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11B9FE2927CB134124B9342 /* FinalTribalViewModel.swift */; };
+		B691CD023C8956BBF3B7D1E6 /* IslandAccessCookieStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE7B1E5B136B8F0A1B9A66A9 /* IslandAccessCookieStore.swift */; };
 		B84BACD6DBD1285101106F59 /* ChallengeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */; };
 		BA4BFAD2E4AB100F4000BA48 /* ImmunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFFF11354FE9CAD6EAE725A /* ImmunityView.swift */; };
 		BAC2700472EA489F28B66E93 /* generate_fixtures.py in Resources */ = {isa = PBXBuildFile; fileRef = 7BB75BFC18653A3BCE2AD7D5 /* generate_fixtures.py */; };
@@ -90,6 +94,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		ABF6A610FEF676E3E68B65CB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B99960D0E7F67FB615F94D3B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E48DEC4251A0862B8DB82D7F;
+			remoteInfo = SurvivorGame;
+		};
 		F0C8431944DE8CED397B513C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B99960D0E7F67FB615F94D3B /* Project object */;
@@ -100,12 +111,14 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0045BA401656BFAA514B6D63 /* IslandAccessScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandAccessScreen.swift; sourceTree = "<group>"; };
 		083E4829752E7D45735E2195 /* LobbyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyScreen.swift; sourceTree = "<group>"; };
 		0DC5D2C9DAB382995407D3F5 /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
 		0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeState.swift; sourceTree = "<group>"; };
 		14E083D4215CD09F2236FE12 /* AdvantagePlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvantagePlayView.swift; sourceTree = "<group>"; };
 		1517A7372D1302738C30068E /* CardHandViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardHandViewModel.swift; sourceTree = "<group>"; };
 		17367F3603D03F66FA9D0E5E /* ViewModelState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelState.swift; sourceTree = "<group>"; };
+		19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationUITests.swift; sourceTree = "<group>"; };
 		1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDecodingTests.swift; sourceTree = "<group>"; };
 		22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartViewModel.swift; sourceTree = "<group>"; };
 		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -137,9 +150,11 @@
 		7BB75BFC18653A3BCE2AD7D5 /* generate_fixtures.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = generate_fixtures.py; sourceTree = "<group>"; };
 		80401B5A14A1EEC4197ADD45 /* FinalTribalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinalTribalScreen.swift; sourceTree = "<group>"; };
 		835B2847716E322179470F0C /* playing_midturn.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = playing_midturn.json; sourceTree = "<group>"; };
+		83D622DB77EF0845785DBEA0 /* SurvivorGameUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SurvivorGameUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84F96BD40E277FCDEDDA6955 /* PlayerSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSetupView.swift; sourceTree = "<group>"; };
 		853B0306B3185B9F7644BD64 /* SocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketClient.swift; sourceTree = "<group>"; };
 		8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
+		8E7B73810847FA907FA26FD4 /* AppSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsSheet.swift; sourceTree = "<group>"; };
 		8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnIndicatorView.swift; sourceTree = "<group>"; };
 		8FBD5FAB075FC347AA744261 /* GameClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameClient.swift; sourceTree = "<group>"; };
 		916EE9262A4CE799AD4AE108 /* ChallengeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeScreen.swift; sourceTree = "<group>"; };
@@ -157,6 +172,7 @@
 		ACEAA0AF59E6324AA323F21F /* VotingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VotingView.swift; sourceTree = "<group>"; };
 		AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorTheme.swift; sourceTree = "<group>"; };
 		BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyViewModel.swift; sourceTree = "<group>"; };
+		BE7B1E5B136B8F0A1B9A66A9 /* IslandAccessCookieStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandAccessCookieStore.swift; sourceTree = "<group>"; };
 		BF71C61DAA3A57852843D2F0 /* AccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTests.swift; sourceTree = "<group>"; };
 		C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionScreen.swift; sourceTree = "<group>"; };
 		C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StealTargetPicker.swift; sourceTree = "<group>"; };
@@ -210,6 +226,7 @@
 			children = (
 				CBB3B72B008E17B093CFE002 /* SurvivorGame */,
 				DBBBDA67E37B1CEDF8498B81 /* SurvivorGameTests */,
+				671E995C30FE37D4BA67BED3 /* SurvivorGameUITests */,
 				127B35A989EF31591D5E9EEE /* Products */,
 			);
 			sourceTree = "<group>";
@@ -220,6 +237,7 @@
 				F438FC100DE10D7EA2EF6416 /* APIClient.swift */,
 				C62E87D253D9ED2756DC0392 /* ConnectionState.swift */,
 				8FBD5FAB075FC347AA744261 /* GameClient.swift */,
+				BE7B1E5B136B8F0A1B9A66A9 /* IslandAccessCookieStore.swift */,
 				853B0306B3185B9F7644BD64 /* SocketClient.swift */,
 			);
 			path = Networking;
@@ -236,6 +254,7 @@
 				A6F64C348A49BFDFA04FC827 /* Interaction */,
 				028E19211D9AE59E23B519E9 /* Lobby */,
 				8C418A763DB09A8896276750 /* Playing */,
+				510170A7BCC05F821A34B467 /* Settings */,
 				A10BDFAC913A0935DA284E9B /* Start */,
 				408026A989032D431F1711B4 /* Tribal */,
 			);
@@ -247,6 +266,7 @@
 			children = (
 				2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */,
 				79A85A7271CC67973B736F22 /* SurvivorGameTests.xctest */,
+				83D622DB77EF0845785DBEA0 /* SurvivorGameUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -303,6 +323,22 @@
 			path = Tribal;
 			sourceTree = "<group>";
 		};
+		510170A7BCC05F821A34B467 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				8E7B73810847FA907FA26FD4 /* AppSettingsSheet.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		671E995C30FE37D4BA67BED3 /* SurvivorGameUITests */ = {
+			isa = PBXGroup;
+			children = (
+				19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */,
+			);
+			path = SurvivorGameUITests;
+			sourceTree = "<group>";
+		};
 		683DC624062BB2D07896B0C2 /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -327,6 +363,7 @@
 		A10BDFAC913A0935DA284E9B /* Start */ = {
 			isa = PBXGroup;
 			children = (
+				0045BA401656BFAA514B6D63 /* IslandAccessScreen.swift */,
 				84F96BD40E277FCDEDDA6955 /* PlayerSetupView.swift */,
 				ECE14A68AE3FEDAD4CC62A30 /* StartScreen.swift */,
 			);
@@ -463,6 +500,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D1DB9E1E3A084F8777A0BF0B /* SurvivorGameUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9FE00632CA719B0EAAA40AA1 /* Build configuration list for PBXNativeTarget "SurvivorGameUITests" */;
+			buildPhases = (
+				B2C671B00131343E0545BA46 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0774F813D354CB6E94DA5806 /* PBXTargetDependency */,
+			);
+			name = SurvivorGameUITests;
+			packageProductDependencies = (
+			);
+			productName = SurvivorGameUITests;
+			productReference = 83D622DB77EF0845785DBEA0 /* SurvivorGameUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		E48DEC4251A0862B8DB82D7F /* SurvivorGame */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DC9A1583F45E8CC256E2FB16 /* Build configuration list for PBXNativeTarget "SurvivorGame" */;
@@ -511,6 +566,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					D1DB9E1E3A084F8777A0BF0B = {
+						DevelopmentTeam = M5H3893R7A;
+						TestTargetID = E48DEC4251A0862B8DB82D7F;
+					};
 					E48DEC4251A0862B8DB82D7F = {
 						DevelopmentTeam = M5H3893R7A;
 						ProvisioningStyle = Automatic;
@@ -539,6 +598,7 @@
 			targets = (
 				E48DEC4251A0862B8DB82D7F /* SurvivorGame */,
 				E538E4770D0583E69F5344DF /* SurvivorGameTests */,
+				D1DB9E1E3A084F8777A0BF0B /* SurvivorGameUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -595,6 +655,7 @@
 			files = (
 				05554D711C3F74C7AEBB00CB /* APIClient.swift in Sources */,
 				44AEA26C4E1C3310E5070CF2 /* AdvantagePlayView.swift in Sources */,
+				08FFFDC00953A1BC3B3DDEED /* AppSettingsSheet.swift in Sources */,
 				61E0CE8C1DEBEE8D2402A0CF /* CardAnimations.swift in Sources */,
 				E6D6E0CF7829EEEEFAEAB3FA /* CardCatalog.swift in Sources */,
 				2B479F1D3809B3EB62E06F44 /* CardDefinition.swift in Sources */,
@@ -621,6 +682,8 @@
 				BA4BFAD2E4AB100F4000BA48 /* ImmunityView.swift in Sources */,
 				A838EE2CB80C1A2F2C8E5B0C /* InteractionScreen.swift in Sources */,
 				8E02DA709040646E6F0D1C2B /* InteractionState.swift in Sources */,
+				B691CD023C8956BBF3B7D1E6 /* IslandAccessCookieStore.swift in Sources */,
+				352A09ECE723366151C7DD04 /* IslandAccessScreen.swift in Sources */,
 				DDD85C98F787B379FB3AC283 /* JuryVotingView.swift in Sources */,
 				C576C0F88C387E636B7C4F7B /* LobbyScreen.swift in Sources */,
 				8FA127114072649DF7470C51 /* LobbyViewModel.swift in Sources */,
@@ -654,9 +717,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B2C671B00131343E0545BA46 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		0774F813D354CB6E94DA5806 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E48DEC4251A0862B8DB82D7F /* SurvivorGame */;
+			targetProxy = ABF6A610FEF676E3E68B65CB /* PBXContainerItemProxy */;
+		};
 		D0C00A10DE86D698E1462543 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = E48DEC4251A0862B8DB82D7F /* SurvivorGame */;
@@ -684,6 +760,44 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7F1D245878E6A2273B7E507E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = M5H3893R7A;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = mctech.SurvivorGameUITests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SurvivorGame;
+			};
+			name = Debug;
+		};
+		883DF53005C3D6A1FB0882CF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = M5H3893R7A;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = mctech.SurvivorGameUITests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SurvivorGame;
 			};
 			name = Release;
 		};
@@ -883,6 +997,15 @@
 			buildConfigurations = (
 				EFA30B4F905E84CFEDA00BB2 /* Debug */,
 				9EA29F6CB328C03B9B5E863E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9FE00632CA719B0EAAA40AA1 /* Build configuration list for PBXNativeTarget "SurvivorGameUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F1D245878E6A2273B7E507E /* Debug */,
+				883DF53005C3D6A1FB0882CF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

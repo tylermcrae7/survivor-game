@@ -47,6 +47,7 @@ struct LobbyScreen: View {
 }
 
 private struct LobbyContent: View {
+    @Environment(GameClient.self) private var gameClient
     @Bindable var viewModel: LobbyViewModel
 
     var body: some View {
@@ -62,8 +63,14 @@ private struct LobbyContent: View {
                         .font(.system(.title, design: .monospaced).bold())
                         .tracking(4)
                         .accessibilityLabel("Game code: \(viewModel.gameId.map { String($0) }.joined(separator: " "))")
+                        .accessibilityIdentifier("lobby-game-code")
+                        .accessibilityValue(gameClient.connectionState.statusText)
 
-                    ShareLink(item: "Join my Survivor game! Code: \(viewModel.gameId)") {
+                    ShareLink(
+                        item: URL(string: "https://survivor.mctech.biz/?join=\(viewModel.gameId)")!,
+                        subject: Text("Join my Survivor game"),
+                        message: Text("Fire code: \(viewModel.gameId)")
+                    ) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title3)
                     }

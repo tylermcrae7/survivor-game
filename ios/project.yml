@@ -72,6 +72,21 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: mctech.SurvivorGameTests
         GENERATE_INFOPLIST_FILE: YES
 
+  SurvivorGameUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - SurvivorGameUITests
+    dependencies:
+      - target: SurvivorGame
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        DEVELOPMENT_TEAM: M5H3893R7A
+        PRODUCT_BUNDLE_IDENTIFIER: mctech.SurvivorGameUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SurvivorGame
+
 schemes:
   SurvivorGame:
     build:
@@ -83,5 +98,6 @@ schemes:
       config: Debug
       targets:
         - SurvivorGameTests
+        - SurvivorGameUITests
     archive:
       config: Release

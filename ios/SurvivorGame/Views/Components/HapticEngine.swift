@@ -8,6 +8,8 @@ enum HapticEngine {
     private static let impactLight = UIImpactFeedbackGenerator(style: .light)
     private static let impactMedium = UIImpactFeedbackGenerator(style: .medium)
     private static let impactHeavy = UIImpactFeedbackGenerator(style: .heavy)
+    private static let impactSoft = UIImpactFeedbackGenerator(style: .soft)
+    private static let impactRigid = UIImpactFeedbackGenerator(style: .rigid)
     private static let notificationGenerator = UINotificationFeedbackGenerator()
     private static let selectionGenerator = UISelectionFeedbackGenerator()
     
@@ -18,6 +20,8 @@ enum HapticEngine {
             impactLight.prepare()
             impactMedium.prepare()
             impactHeavy.prepare()
+            impactSoft.prepare()
+            impactRigid.prepare()
             notificationGenerator.prepare()
             selectionGenerator.prepare()
         }
@@ -36,6 +40,10 @@ enum HapticEngine {
             impactMedium.impactOccurred()
         case .heavy:
             impactHeavy.impactOccurred()
+        case .soft:
+            impactSoft.impactOccurred()
+        case .rigid:
+            impactRigid.impactOccurred()
         @unknown default:
             impactMedium.impactOccurred()
         }

@@ -43,7 +43,7 @@ final class SocketClient {
 
         connectionState = .connecting
 
-        manager = SocketManager(socketURL: url, config: [
+        var configuration: SocketIOClientConfiguration = [
             .log(false),
             .compress,
             .forceWebsockets(true),
@@ -51,12 +51,29 @@ final class SocketClient {
             .reconnectAttempts(maxReconnectAttempts),
             .reconnectWait(1),
             .reconnectWaitMax(30)
-        ])
+        ]
+
+        // Socket.IO owns its own URLSession and doesn't automatically inherit
+        // the REST client's cookies. Without this option, a code-locked island
+        // accepts REST calls but rejects the realtime handshake.
+        let cookies = Self.connectionCookies(for: url)
+        if !cookies.isEmpty {
+            configuration.insert(.cookies(cookies))
+        }
+
+        manager = SocketManager(socketURL: url, config: configuration)
 
         socket = manager?.defaultSocket
 
         setupEventHandlers()
         socket?.connect()
+    }
+
+    static func connectionCookies(
+        for url: URL,
+        storage: HTTPCookieStorage = .shared
+    ) -> [HTTPCookie] {
+        storage.cookies(for: url) ?? []
     }
 
     func disconnect() {

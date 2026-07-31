@@ -20,6 +20,7 @@ private struct PlayingContent: View {
     @Environment(GameClient.self) private var gameClient
     @State private var showStory = false
     @State private var showPace = false
+    @State private var showSettings = false
     @State private var showHallOfFame = false
     @State private var confirmBurn = false
     @State private var pendingStealTarget: String?
@@ -44,6 +45,11 @@ private struct PlayingContent: View {
                 .accessibilityLabel("The story so far")
 
                 Menu {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
                     Button {
                         showPace = true
                     } label: {
@@ -124,6 +130,9 @@ private struct PlayingContent: View {
         .sheet(isPresented: $showPace) {
             GameSettingsSheet()
         }
+        .sheet(isPresented: $showSettings) {
+            AppSettingsSheet()
+        }
         .sheet(isPresented: $showHallOfFame) {
             HallOfFameView()
         }
@@ -133,7 +142,7 @@ private struct PlayingContent: View {
         ) {
             Button("Burn it down", role: .destructive) {
                 Task {
-                    try? await gameClient.apiClient.deleteGame(gameId: gameClient.gameId ?? "")
+                    _ = try? await gameClient.apiClient.deleteGame(gameId: gameClient.gameId ?? "")
                     gameClient.leaveGame()
                 }
             }

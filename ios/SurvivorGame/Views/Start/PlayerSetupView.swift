@@ -12,13 +12,17 @@ struct PlayerSetupView: View {
             TextField("Your Name", text: $playerName)
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.words)
+                .accessibilityIdentifier("player-name")
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Choose Color")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 12) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5),
+                    spacing: 12
+                ) {
                     // "Auto" option
                     ColorCircle(
                         color: .gray,

@@ -6,7 +6,6 @@ struct StartScreen: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: StartViewModel?
     @State private var showSettings = false
-    @State private var showCreateOptions = false
 
     var body: some View {
         NavigationStack {
@@ -25,7 +24,7 @@ struct StartScreen: View {
                         }
                     }
                     .sheet(isPresented: $showSettings) {
-                        ServerSettingsSheet(viewModel: vm)
+                        AppSettingsSheet()
                     }
             } else {
                 ProgressView()
@@ -36,6 +35,9 @@ struct StartScreen: View {
                 let vm = StartViewModel(gameClient: gameClient)
                 vm.loadSavedConfig(from: modelContext)
                 viewModel = vm
+                if gameClient.accessState == .unlocked {
+                    Task { await vm.restoreSavedGameIfNeeded() }
+                }
             }
             if let code = gameClient.pendingJoinCode {
                 viewModel?.joinCode = code
@@ -46,6 +48,11 @@ struct StartScreen: View {
             if let code {
                 viewModel?.joinCode = code
                 gameClient.pendingJoinCode = nil
+            }
+        }
+        .onChange(of: gameClient.accessState) { _, state in
+            if state == .unlocked {
+                Task { await viewModel?.restoreSavedGameIfNeeded() }
             }
         }
     }
@@ -76,6 +83,7 @@ private struct StartContent: View {
                     .disabled(viewModel.loadingState.isLoading)
                     .accessibilityLabel("Create new game")
                     .accessibilityHint("Choose the deck, then create a game with a code others can join")
+                    .accessibilityIdentifier("create-game-button")
 
                     HStack {
                         Rectangle()
@@ -92,7 +100,7 @@ private struct StartContent: View {
                     HStack(spacing: 12) {
                         TextField("Game Code", text: $viewModel.joinCode)
                             .textFieldStyle(.roundedBorder)
-                            .textInputAutocapitalization(.characters)
+                            .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .accessibilityLabel("Game code")
                             .accessibilityHint("Enter the game code provided by the host")
@@ -105,6 +113,14 @@ private struct StartContent: View {
                         .accessibilityLabel("Join game")
                         .accessibilityHint("Join an existing game using the code above")
                     }
+
+                    Button {
+                        showHallOfFame = true
+                    } label: {
+                        Label("Hall of Fame", systemImage: "crown")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.survivorSecondary)
                 }
 
                 if viewModel.loadingState.isLoading {
@@ -119,9 +135,13 @@ private struct StartContent: View {
             CreateGameSheet(viewModel: viewModel)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showHallOfFame) {
+            HallOfFameView()
+        }
     }
 
     @State private var showCreateOptions = false
+    @State private var showHallOfFame = false
 }
 
 /// Choose your deck — the create-time options from the web start screen:
@@ -171,96 +191,11 @@ private struct CreateGameSheet: View {
                     }
                     .buttonStyle(.survivor)
                     .listRowBackground(Color.clear)
+                    .accessibilityIdentifier("create-game-submit")
                 }
             }
             .navigationTitle("New Game")
             .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-private struct ServerSettingsSheet: View {
-    @Bindable var viewModel: StartViewModel
-    @Environment(GameClient.self) private var gameClient
-    @Environment(\.dismiss) private var dismiss
-    @State private var connectionOk: Bool?
-    @State private var islandCode = ""
-    @State private var accessResult: String?
-    @AppStorage("confirmVotes") private var confirmVotes = false
-    @AppStorage("confirmSteals") private var confirmSteals = false
-    @AppStorage("hapticsEnabled") private var hapticsEnabled = true
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Server") {
-                    TextField("Server URL", text: $viewModel.serverURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-
-                    Button("Test Connection") {
-                        Task {
-                            connectionOk = await viewModel.testConnection()
-                        }
-                    }
-
-                    if let ok = connectionOk {
-                        Label(
-                            ok ? "Connected" : "Failed",
-                            systemImage: ok ? "checkmark.circle.fill" : "xmark.circle.fill"
-                        )
-                        .foregroundStyle(ok ? .green : .red)
-                    }
-                }
-
-                Section {
-                    TextField("Island code", text: $islandCode)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                    Button("Unlock the island") {
-                        Task {
-                            do {
-                                let response = try await gameClient.apiClient.submitAccess(code: islandCode)
-                                accessResult = response.success
-                                    ? "The island knows you now"
-                                    : (response.message ?? "That code was refused")
-                            } catch {
-                                accessResult = error.localizedDescription
-                            }
-                        }
-                    }
-                    .disabled(islandCode.isEmpty)
-
-                    if let accessResult {
-                        Text(accessResult)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("Access")
-                } footer: {
-                    Text("The public island is code-locked. Enter the shared code once; this phone keeps the key.")
-                }
-
-                Section {
-                    Toggle("Confirm before casting a vote", isOn: $confirmVotes)
-                    Toggle("Confirm before stealing", isOn: $confirmSteals)
-                    Toggle("Vibration", isOn: $hapticsEnabled)
-                } header: {
-                    Text("Table manners")
-                } footer: {
-                    Text("Mistap guards for party tables. A vote can't be taken back once the parchment is in the box.")
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
         }
     }
 }

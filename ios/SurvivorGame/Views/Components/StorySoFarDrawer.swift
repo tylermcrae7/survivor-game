@@ -6,9 +6,11 @@ import SwiftUI
 struct StorySoFarDrawer: View {
     @Environment(GameClient.self) private var gameClient
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("historyLength") private var historyLength = "30"
 
     private var events: [EventLogEntry] {
-        (gameClient.gameState?.eventLog ?? []).reversed()
+        let all = Array((gameClient.gameState?.eventLog ?? []).reversed())
+        return historyLength == "all" ? all : Array(all.prefix(30))
     }
 
     var body: some View {

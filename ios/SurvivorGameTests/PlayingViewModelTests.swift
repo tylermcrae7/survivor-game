@@ -13,7 +13,7 @@ struct PlayingViewModelTests {
         mockClient.playerId = "p1"
         
         let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
-        let vm = PlayingViewModel(gameClient: gameClient)
+        _ = PlayingViewModel(gameClient: gameClient)
         
         // Note: This test validates the pattern, but requires actual GameClient integration
         // In a real scenario, we'd inject a protocol-based client
@@ -41,7 +41,7 @@ struct PlayingViewModelTests {
         
         // After stealing, phase should change
         var modifiedState = state
-        if var player = modifiedState.players["p1"] {
+        if let player = modifiedState.players["p1"] {
             let updatedPlayer = PlayerState(
                 id: player.id,
                 name: player.name,

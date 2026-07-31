@@ -9,6 +9,12 @@ actor APIClient {
         self.baseURL = baseURL
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
+        // The island gate returns an HttpOnly cookie. Use the app's shared
+        // cookie jar explicitly so it survives APIClient recreation and can
+        // also be handed to the Socket.IO handshake.
+        config.httpCookieStorage = .shared
+        config.httpCookieAcceptPolicy = .always
+        config.httpShouldSetCookies = true
         self.session = URLSession(configuration: config)
         self.decoder = JSONDecoder()
     }
@@ -33,6 +39,18 @@ actor APIClient {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
+        }
+
+        // Foundation normally imports Set-Cookie into the configured jar, but
+        // an immediate follow-up request can race that propagation on device.
+        // Import response cookies synchronously before callers continue.
+        let headerFields = httpResponse.allHeaderFields.reduce(into: [String: String]()) {
+            guard let key = $1.key as? String else { return }
+            $0[key] = String(describing: $1.value)
+        }
+        for cookie in HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url) {
+            HTTPCookieStorage.shared.setCookie(cookie)
+            IslandAccessCookieStore.persist(cookie, for: url)
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
@@ -270,8 +288,28 @@ actor APIClient {
 
     // MARK: - Hall of Fame & Access
 
-    func winners() async throws -> [WinnerRecord] {
+    func winners() async throws -> [WinnerSummary] {
         try await get(path: "/api/winners")
+    }
+
+    func winnerRecords() async throws -> [WinnerRecord] {
+        try await get(path: "/api/winners/records")
+    }
+
+    func addWinner(name: String, date: String) async throws -> ActionResponse {
+        try await post(path: "/api/winners/add", body: [
+            "winner_name": name, "date": date,
+        ])
+    }
+
+    func updateWinner(id: String, name: String, date: String) async throws -> ActionResponse {
+        try await post(path: "/api/winners/update", body: [
+            "id": id, "winner_name": name, "date": date,
+        ])
+    }
+
+    func deleteWinner(id: String) async throws -> ActionResponse {
+        try await post(path: "/api/winners/delete", body: ["id": id])
     }
 
     func accessCheck() async throws -> AccessCheckResponse {
@@ -353,10 +391,25 @@ struct PingResponse: Codable {
     let timestamp: Double?
 }
 
+/// Aggregated response from GET /api/winners.
+struct WinnerSummary: Codable, Equatable, Identifiable {
+    let winnerName: String
+    let victories: Int
+    let dates: [String]
+
+    var id: String { winnerName }
+
+    enum CodingKeys: String, CodingKey {
+        case victories, dates
+        case winnerName = "winner_name"
+    }
+}
+
+/// One editable row from GET /api/winners/records.
 struct WinnerRecord: Codable, Equatable, Identifiable {
-    let id: String?
-    let winnerName: String?
-    let date: String?
+    let id: String
+    let winnerName: String
+    let date: String
     let gameId: String?
 
     enum CodingKeys: String, CodingKey {
@@ -390,5 +443,10 @@ enum APIError: LocalizedError {
         case .decodingFailed(let error):
             return "Failed to decode response: \(error.localizedDescription)"
         }
+    }
+
+    var requiresIslandAccess: Bool {
+        if case .serverError(statusCode: 401, _) = self { return true }
+        return false
     }
 }

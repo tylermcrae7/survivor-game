@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 @main
 struct SurvivorGameApp: App {
@@ -7,6 +8,7 @@ struct SurvivorGameApp: App {
     
     @State private var gameClient: GameClient
     @State private var modelContainerError: Error?
+    @AppStorage("keepAwake") private var keepAwake = false
 
     init() {
         let schema = Schema([
@@ -50,6 +52,21 @@ struct SurvivorGameApp: App {
            !name.isEmpty {
             serverConfig.playerName = name
         }
+#if DEBUG
+        // UI tests request a clean first launch, then remove this flag before
+        // relaunching to verify that the server-issued access cookie persists.
+        if let resetToken = ProcessInfo.processInfo.environment["SURVIVOR_RESET_ACCESS"],
+           !resetToken.isEmpty,
+           UserDefaults.standard.string(forKey: "lastAccessResetToken") != resetToken {
+            // XCUI may carry launch environment across an in-test relaunch.
+            // A per-run token makes this destructive test hook strictly once.
+            UserDefaults.standard.set(resetToken, forKey: "lastAccessResetToken")
+            serverConfig.lastGameId = nil
+            serverConfig.lastPlayerId = nil
+            try? modelContainer.mainContext.save()
+            IslandAccessCookieStore.forget(for: baseURL)
+        }
+#endif
         _gameClient = State(initialValue: GameClient(baseURL: baseURL))
         
         // Prepare haptic generators for optimal performance
@@ -74,8 +91,15 @@ struct SurvivorGameApp: App {
             }
             .preferredColorScheme(.dark)
             .tint(SurvivorTheme.ember)
+            .onAppear { updateIdleTimer() }
+            .onChange(of: keepAwake) { _, _ in updateIdleTimer() }
+            .onChange(of: gameClient.gameId) { _, _ in updateIdleTimer() }
         }
         .modelContainer(modelContainer)
+    }
+
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = keepAwake && gameClient.gameId != nil
     }
 }
 

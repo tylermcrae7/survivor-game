@@ -50,6 +50,17 @@
                ReferencedContainer = "container:SurvivorGame.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "D1DB9E1E3A084F8777A0BF0B"
+               BuildableName = "SurvivorGameUITests.xctest"
+               BlueprintName = "SurvivorGameUITests"
+               ReferencedContainer = "container:SurvivorGame.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

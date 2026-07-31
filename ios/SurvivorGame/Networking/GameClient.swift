@@ -11,6 +11,7 @@ final class GameClient {
     private(set) var navigationState: NavigationState = .start
     private(set) var lastError: String?
     private(set) var isLoading = false
+    private(set) var accessState: IslandAccessState = .checking
 
     var gameId: String?
     var playerId: String?
@@ -21,16 +22,19 @@ final class GameClient {
 
     // MARK: - Private
 
-    let apiClient: APIClient
+    private(set) var apiClient: APIClient
     private let socketClient = SocketClient()
     private var stateListenerTask: Task<Void, Never>?
     private var eventListenerTask: Task<Void, Never>?
     private var connectionListenerTask: Task<Void, Never>?
 
     init(baseURL: URL) {
+        IslandAccessCookieStore.restore(for: baseURL)
         self.apiClient = APIClient(baseURL: baseURL)
         startListening()
     }
+
+    var baseURL: URL { apiClient.baseURL }
 
     nonisolated deinit {
         MainActor.assumeIsolated {
@@ -44,6 +48,7 @@ final class GameClient {
     // MARK: - Connection
 
     func connect() {
+        guard accessState == .unlocked else { return }
         socketClient.connect(to: apiClient.baseURL)
     }
 
@@ -52,8 +57,54 @@ final class GameClient {
         connectionState = .disconnected
     }
 
-    // Note: To change server URL, create a new GameClient via SurvivorGameApp
-    // and pass it through the environment. The URL is set at init time.
+    // MARK: - Island Access
+
+    @discardableResult
+    func checkIslandAccess() async -> IslandAccessState {
+        accessState = .checking
+        do {
+            let result = try await apiClient.accessCheck()
+            accessState = result.gated && !result.ok ? .requiresCode : .unlocked
+        } catch {
+            accessState = .unavailable(error.localizedDescription)
+        }
+        return accessState
+    }
+
+    func unlockIsland(with code: String) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw GameClientError.operationFailed("Enter the island code first")
+        }
+
+        let response = try await apiClient.submitAccess(code: trimmed)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "That code was refused")
+        }
+
+        let status = try await apiClient.accessCheck()
+        guard !status.gated || status.ok else {
+            throw GameClientError.operationFailed("The island did not remember that code")
+        }
+        IslandAccessCookieStore.persist(for: apiClient.baseURL)
+        accessState = .unlocked
+    }
+
+    func useServer(_ url: URL) async {
+        leaveGame()
+        IslandAccessCookieStore.restore(for: url)
+        apiClient = APIClient(baseURL: url)
+        await checkIslandAccess()
+    }
+
+    func forgetIslandAccess() async {
+        IslandAccessCookieStore.forget(for: apiClient.baseURL)
+        leaveGame()
+        await checkIslandAccess()
+    }
 
     // MARK: - Game Lifecycle
 
@@ -445,6 +496,10 @@ final class GameClient {
             self.gameState = state
             updateNavigationState()
         } catch {
+            if let apiError = error as? APIError, apiError.requiresIslandAccess {
+                accessState = .requiresCode
+                disconnect()
+            }
             print("[GameClient] Sync failed: \(error)")
         }
     }
@@ -529,6 +584,13 @@ final class GameClient {
             navigationState = .finished
         }
     }
+}
+
+enum IslandAccessState: Equatable, Hashable {
+    case checking
+    case unlocked
+    case requiresCode
+    case unavailable(String)
 }
 
 // MARK: - Computed helpers

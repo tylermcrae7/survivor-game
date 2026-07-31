@@ -385,6 +385,10 @@ def test_the_reshuffle_filters_vote_cards_out_of_the_deck():
     try:
         print("=== The reshuffle never returns vote cards ===")
         set_turn(game, ana, played=True)
+        # Keep this assertion about the reshuffle itself. The normal initial
+        # deal is randomized and can legitimately give Ana an Extra Vote before
+        # the polluted discard is installed, which made this test flaky.
+        game["players"][ana]["hand"] = [{"type": "vote"}]
         game["deck"] = []
         game["discard"] = [{"type": "vote"}, {"type": "extra_vote"},
                            {"type": "goodwill_gamble"}, {"type": "camp_raid"}]
