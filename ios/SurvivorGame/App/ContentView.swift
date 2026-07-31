@@ -29,7 +29,8 @@ struct ContentView: View {
                 // raid freezes the game for the whole table until it's answered.
                 ReactiveTheftOverlay()
 
-                if gameClient.connectionState == .reconnecting {
+                if gameClient.connectionState == .reconnecting
+                    || (gameClient.connectionState == .disconnected && gameClient.gameId != nil) {
                     ConnectionBanner()
                 }
             }
