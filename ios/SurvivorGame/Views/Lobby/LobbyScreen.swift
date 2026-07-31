@@ -67,7 +67,9 @@ private struct LobbyContent: View {
                         .accessibilityValue(gameClient.connectionState.statusText)
 
                     ShareLink(
-                        item: URL(string: "https://survivor.mctech.biz/?join=\(viewModel.gameId)")!,
+                        item: gameClient.baseURL.appending(queryItems: [
+                            URLQueryItem(name: "join", value: viewModel.gameId)
+                        ]),
                         subject: Text("Join my Survivor game"),
                         message: Text("Fire code: \(viewModel.gameId)")
                     ) {

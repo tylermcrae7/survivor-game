@@ -91,6 +91,12 @@ final class GameClient {
         }
         IslandAccessCookieStore.persist(for: apiClient.baseURL)
         accessState = .unlocked
+        // A mid-game 401 tore the socket down; a successful re-unlock must
+        // revive it, or the table goes silent until relaunch.
+        if gameId != nil {
+            connect()
+            await syncState()
+        }
     }
 
     func useServer(_ url: URL) async {

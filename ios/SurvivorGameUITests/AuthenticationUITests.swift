@@ -1,10 +1,32 @@
 import XCTest
 
 final class AuthenticationUITests: XCTestCase {
-    private let serverURL = "http://127.0.0.1:8099"
+    private static let serverURL = "http://127.0.0.1:8099"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try Self.requireScratchServer()
+    }
+
+    /// UI tests drive a real island. Without it, skip loudly instead of
+    /// failing the whole default test action on a clean checkout.
+    private static func requireScratchServer() throws {
+        var request = URLRequest(url: URL(string: serverURL + "/api/access/check")!)
+        request.timeoutInterval = 2
+        let semaphore = DispatchSemaphore(value: 0)
+        // The semaphore orders the write before the read.
+        nonisolated(unsafe) var reachable = false
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            reachable = (response as? HTTPURLResponse) != nil
+            semaphore.signal()
+        }.resume()
+        _ = semaphore.wait(timeout: .now() + 3)
+        if !reachable {
+            throw XCTSkip("""
+                Scratch server not running. Start it from the repo root:
+                SURVIVOR_ACCESS_CODE=torchtest2468 PORT=8099 .venv/bin/python survivor_server.py
+                """)
+        }
     }
 
     @MainActor
@@ -12,7 +34,7 @@ final class AuthenticationUITests: XCTestCase {
         let app = XCUIApplication()
         let resetToken = UUID().uuidString
         app.launchEnvironment = [
-            "SURVIVOR_SERVER_URL": serverURL,
+            "SURVIVOR_SERVER_URL": Self.serverURL,
             "SURVIVOR_PLAYER_NAME": "Simulator Tyler",
             "SURVIVOR_RESET_ACCESS": resetToken,
         ]
@@ -52,7 +74,7 @@ final class AuthenticationUITests: XCTestCase {
         app.terminate()
         let relaunchedApp = XCUIApplication()
         relaunchedApp.launchEnvironment = [
-            "SURVIVOR_SERVER_URL": serverURL,
+            "SURVIVOR_SERVER_URL": Self.serverURL,
             "SURVIVOR_PLAYER_NAME": "Simulator Tyler",
         ]
         relaunchedApp.launch()

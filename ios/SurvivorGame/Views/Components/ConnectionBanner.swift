@@ -3,12 +3,20 @@ import SwiftUI
 struct ConnectionBanner: View {
     @Environment(GameClient.self) private var gameClient
 
+    // The 3s REST poll keeps the table breathing while the socket is down,
+    // so a lost connection lags — it doesn't stop the game.
+    private var bannerText: String {
+        gameClient.connectionState == .disconnected
+            ? "Connection lost — updates may lag"
+            : gameClient.connectionState.statusText
+    }
+
     var body: some View {
         VStack {
             HStack(spacing: 8) {
                 ProgressView()
                     .tint(.white)
-                Text(gameClient.connectionState.statusText)
+                Text(bannerText)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white)
             }

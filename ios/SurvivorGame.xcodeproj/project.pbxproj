@@ -13,6 +13,7 @@
 		15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */; };
 		16DECEE2859C1DA86B58EFDF /* challenge_active.json in Resources */ = {isa = PBXBuildFile; fileRef = 622716FC89794F75AFD7283A /* challenge_active.json */; };
 		17B3E69CDDBB66087B4A5957 /* SurvivorGameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */; };
+		20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */; };
 		270F3BDFB4C49636A5453C66 /* SurvivorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */; };
 		29FAA0B0EA01182029E97275 /* NetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */; };
 		2B479F1D3809B3EB62E06F44 /* CardDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503E35CDBCFBE25AB9D87771 /* CardDefinition.swift */; };
@@ -47,6 +48,7 @@
 		7E6866EED3C5AD6C0C1B1D0C /* playing_midturn.json in Resources */ = {isa = PBXBuildFile; fileRef = 835B2847716E322179470F0C /* playing_midturn.json */; };
 		7F51E26189039550DBA6B666 /* ViewModelState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17367F3603D03F66FA9D0E5E /* ViewModelState.swift */; };
 		7F92E4D565697CFBD7131AE2 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68644E98FB21432FA5656F26 /* HapticEngine.swift */; };
+		8165E32A1A1ECE759FE7CF6D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1AE837EA8BBB0B435CEFD146 /* README.md */; };
 		83EAAFA8BE7FE7FA7797BED6 /* StartScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE14A68AE3FEDAD4CC62A30 /* StartScreen.swift */; };
 		8E02DA709040646E6F0D1C2B /* InteractionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB0990923A310FD9070C0D2 /* InteractionState.swift */; };
 		8FA127114072649DF7470C51 /* LobbyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */; };
@@ -119,6 +121,7 @@
 		1517A7372D1302738C30068E /* CardHandViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardHandViewModel.swift; sourceTree = "<group>"; };
 		17367F3603D03F66FA9D0E5E /* ViewModelState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelState.swift; sourceTree = "<group>"; };
 		19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationUITests.swift; sourceTree = "<group>"; };
+		1AE837EA8BBB0B435CEFD146 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDecodingTests.swift; sourceTree = "<group>"; };
 		22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartViewModel.swift; sourceTree = "<group>"; };
 		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -171,6 +174,7 @@
 		AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkingTests.swift; sourceTree = "<group>"; };
 		ACEAA0AF59E6324AA323F21F /* VotingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VotingView.swift; sourceTree = "<group>"; };
 		AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorTheme.swift; sourceTree = "<group>"; };
+		B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfigTests.swift; sourceTree = "<group>"; };
 		BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyViewModel.swift; sourceTree = "<group>"; };
 		BE7B1E5B136B8F0A1B9A66A9 /* IslandAccessCookieStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandAccessCookieStore.swift; sourceTree = "<group>"; };
 		BF71C61DAA3A57852843D2F0 /* AccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTests.swift; sourceTree = "<group>"; };
@@ -335,6 +339,7 @@
 			isa = PBXGroup;
 			children = (
 				19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */,
+				1AE837EA8BBB0B435CEFD146 /* README.md */,
 			);
 			path = SurvivorGameUITests;
 			sourceTree = "<group>";
@@ -449,6 +454,7 @@
 				EB96FC8285F596A14C699518 /* MockGameClient.swift */,
 				AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */,
 				DBC87F57450786729E8E86B2 /* PlayingViewModelTests.swift */,
+				B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */,
 				1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */,
 				8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */,
 				2AB850D039D484EDAE79F431 /* Fixtures */,
@@ -505,6 +511,7 @@
 			buildConfigurationList = 9FE00632CA719B0EAAA40AA1 /* Build configuration list for PBXNativeTarget "SurvivorGameUITests" */;
 			buildPhases = (
 				B2C671B00131343E0545BA46 /* Sources */,
+				13C73AB8E1C8E1F8DCE7A02D /* Resources */,
 			);
 			buildRules = (
 			);
@@ -604,6 +611,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		13C73AB8E1C8E1F8DCE7A02D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8165E32A1A1ECE759FE7CF6D /* README.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CC88A3F2F8840C1C11272BD2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -644,6 +659,7 @@
 				6588210FEAEEB4108AD7AFC7 /* MockGameClient.swift in Sources */,
 				29FAA0B0EA01182029E97275 /* NetworkingTests.swift in Sources */,
 				DB4C1453CD6BBB7FE4C3E5F9 /* PlayingViewModelTests.swift in Sources */,
+				20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */,
 				15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */,
 				C85B70696006F49D5A87DB82 /* ViewModelTests.swift in Sources */,
 			);
