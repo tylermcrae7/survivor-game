@@ -37,8 +37,12 @@ private struct CardHandContent: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                // Two-column hand, like the web's card grid; scrolls when the
+                // hand outgrows two rows so the bottom slot stays bounded.
+                ScrollView(showsIndicators: false) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8),
+                                        GridItem(.flexible(), spacing: 8)],
+                              spacing: 8) {
                         ForEach(Array(viewModel.hand.enumerated()), id: \.offset) { index, card in
                             Button {
                                 viewModel.selectCard(at: index)
@@ -54,6 +58,7 @@ private struct CardHandContent: View {
                     }
                     .padding(.horizontal)
                 }
+                .frame(maxHeight: 296) // two full rows; more cards scroll
             }
         }
         .sheet(isPresented: $viewModel.showCardDetail) {

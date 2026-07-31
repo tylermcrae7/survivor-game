@@ -33,7 +33,10 @@ struct CardView: View {
             }
         }
         .padding(isCompact ? 8 : 12)
-        .frame(width: isCompact ? 80 : 120, height: isCompact ? 70 : 140)
+        // Full cards flex to their grid column; compact stays fixed for the
+        // advantage picker's horizontal row.
+        .frame(maxWidth: isCompact ? 80 : .infinity, alignment: .topLeading)
+        .frame(width: isCompact ? 80 : nil, height: isCompact ? 70 : 140)
         .background(isPlayable ? card.cardCategory.color.opacity(0.15) : Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
