@@ -30,6 +30,22 @@ final class LobbyViewModel {
         }
     }
 
+    func renameSelf(to name: String) async {
+        do {
+            try await gameClient.renameSelf(to: name)
+        } catch {
+            self.error = .from(error)
+        }
+    }
+
+    func removeBot(_ botId: String) async {
+        do {
+            try await gameClient.removeBot(playerId: botId)
+        } catch {
+            self.error = .from(error)
+        }
+    }
+
     func addBot() async {
         do {
             try await gameClient.addBot()

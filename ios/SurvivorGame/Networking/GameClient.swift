@@ -15,6 +15,9 @@ final class GameClient {
     var gameId: String?
     var playerId: String?
     var playerName: String?
+    /// A join code that arrived via survivorgame://join?code=… before the
+    /// start screen was ready to consume it.
+    var pendingJoinCode: String?
 
     // MARK: - Private
 
@@ -397,19 +400,25 @@ final class GameClient {
         }
     }
 
-    func challengeAction(_ action: String, value: Int? = nil) async throws {
+    nonisolated func challengeAction(_ action: String, value: (any Sendable)? = nil) async throws {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
+        nonisolated(unsafe) let valueCopy: Any? = value
         let response = try await apiClient.challengeAction(
-            gameId: gameId, playerId: playerId, action: action, value: value)
+            gameId: gameId, playerId: playerId, action: action, value: valueCopy)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Challenge refused that")
         }
     }
 
-    func interactionAct(_ action: String, value: Int? = nil) async throws {
+    nonisolated func interactionAct(_ action: String, value: (any Sendable)? = nil) async throws {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
+        nonisolated(unsafe) let valueCopy: Any? = value
         let response = try await apiClient.interactionAct(
-            gameId: gameId, playerId: playerId, action: action, value: value)
+            gameId: gameId, playerId: playerId, action: action, value: valueCopy)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "That move was refused")
         }

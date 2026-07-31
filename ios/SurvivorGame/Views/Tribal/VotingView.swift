@@ -8,6 +8,8 @@ struct VotingView: View {
     @Bindable var viewModel: TribalViewModel
     @State private var chooserTarget: PlayerState?
     @State private var showSplitBuilder = false
+    @State private var confirmTarget: PlayerState?
+    @AppStorage("confirmVotes") private var confirmVotes = false
 
     private var me: PlayerState? { viewModel.gameState?.players[viewModel.myPlayerId ?? ""] }
     private var mandatoryVotes: Int { me?.mandatoryVotes ?? 1 }
@@ -64,6 +66,23 @@ struct VotingView: View {
                 } : nil
             )
             .presentationDetents([.medium])
+        }
+        .confirmationDialog(
+            "Write \(confirmTarget?.name ?? "their name") on your parchment?",
+            isPresented: Binding(
+                get: { confirmTarget != nil },
+                set: { if !$0 { confirmTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Cast the vote", role: .destructive) {
+                if let target = confirmTarget {
+                    HapticEngine.vote()
+                    Task { await viewModel.castVote(targetId: target.id, count: mandatoryVotes) }
+                }
+                confirmTarget = nil
+            }
+        } message: {
+            Text("A vote can't be taken back.")
         }
         .sheet(isPresented: $showSplitBuilder) {
             SplitBallotBuilder(
@@ -125,6 +144,8 @@ struct VotingView: View {
                 Button {
                     if extraVotes > 0 {
                         chooserTarget = player
+                    } else if confirmVotes {
+                        confirmTarget = player
                     } else {
                         HapticEngine.vote()
                         Task { await viewModel.castVote(targetId: player.id, count: mandatoryVotes) }

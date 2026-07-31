@@ -40,6 +40,8 @@ private struct PlayerStatusCard: View {
                 .foregroundStyle(isMe ? .orange : .primary)
                 .lineLimit(1)
 
+            TorchLivesView(lives: player.characterCards)
+
             HStack(spacing: 2) {
                 Image(systemName: "rectangle.stack")
                     .font(.system(size: 8))

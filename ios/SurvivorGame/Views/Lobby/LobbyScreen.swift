@@ -3,6 +3,8 @@ import SwiftUI
 struct LobbyScreen: View {
     @Environment(GameClient.self) private var gameClient
     @State private var viewModel: LobbyViewModel?
+    @State private var showRename = false
+    @State private var newName = ""
 
     var body: some View {
         NavigationStack {
@@ -15,6 +17,22 @@ struct LobbyScreen: View {
                                 vm.leaveGame()
                             }
                         }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                newName = gameClient.playerName ?? ""
+                                showRename = true
+                            } label: {
+                                Image(systemName: "pencil")
+                            }
+                            .accessibilityLabel("Change your name")
+                        }
+                    }
+                    .alert("What does the tribe call you?", isPresented: $showRename) {
+                        TextField("Your name", text: $newName)
+                        Button("Rename") {
+                            Task { await vm.renameSelf(to: newName) }
+                        }
+                        Button("Cancel", role: .cancel) {}
                     }
             } else {
                 ProgressView()
@@ -96,18 +114,34 @@ private struct LobbyContent: View {
 
             // Computer players: fill the tribe and play solo
             if viewModel.isHost {
-                HStack {
-                    Label("Computer players", systemImage: "cpu")
-                        .font(.subheadline)
-                    Spacer()
-                    Button {
-                        Task { await viewModel.addBot() }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
+                VStack(spacing: 8) {
+                    HStack {
+                        Label("Computer players", systemImage: "cpu")
+                            .font(.subheadline)
+                        Spacer()
+                        Button {
+                            Task { await viewModel.addBot() }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                        }
+                        .disabled(viewModel.playerCount >= 6)
+                        .accessibilityLabel("Add a computer player")
                     }
-                    .disabled(viewModel.playerCount >= 6)
-                    .accessibilityLabel("Add a computer player")
+                    ForEach(viewModel.players.filter(\.isBot)) { bot in
+                        HStack {
+                            Circle().fill(bot.swiftUIColor).frame(width: 10, height: 10)
+                            Text(bot.name).font(.caption)
+                            Spacer()
+                            Button {
+                                Task { await viewModel.removeBot(bot.id) }
+                            } label: {
+                                Image(systemName: "minus.circle")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityLabel("Remove \(bot.name)")
+                        }
+                    }
                 }
                 .padding()
                 .background(.regularMaterial)

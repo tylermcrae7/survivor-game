@@ -15,6 +15,7 @@
 		270F3BDFB4C49636A5453C66 /* SurvivorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */; };
 		29FAA0B0EA01182029E97275 /* NetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */; };
 		2B479F1D3809B3EB62E06F44 /* CardDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503E35CDBCFBE25AB9D87771 /* CardDefinition.swift */; };
+		2DF321BF796FE6C7E5361888 /* ChallengeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 916EE9262A4CE799AD4AE108 /* ChallengeScreen.swift */; };
 		3120A09C199ED66D932E882C /* GameState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEB936E963F73666532373 /* GameState.swift */; };
 		3177AF8B866EB61DE708A021 /* PlayerSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F96BD40E277FCDEDDA6955 /* PlayerSetupView.swift */; };
 		322C1630628F6ED6F828E5A1 /* FinalTribalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80401B5A14A1EEC4197ADD45 /* FinalTribalScreen.swift */; };
@@ -51,6 +52,7 @@
 		9BD8D4B3208CEB5FEC078A00 /* interaction_active.json in Resources */ = {isa = PBXBuildFile; fileRef = 5D3F46EFB9F7ED22BAB45256 /* interaction_active.json */; };
 		9C9B02BD119CE0A0AEA9186B /* ConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62E87D253D9ED2756DC0392 /* ConnectionState.swift */; };
 		9F0FB44D1289128C78EF57BE /* tribal_immunity.json in Resources */ = {isa = PBXBuildFile; fileRef = C8F4EFC64C011461248D2CEB /* tribal_immunity.json */; };
+		A838EE2CB80C1A2F2C8E5B0C /* InteractionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */; };
 		A8D88EDDD19265E64E1BF7EC /* tribal_announcement.json in Resources */ = {isa = PBXBuildFile; fileRef = 67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */; };
 		AC36887BE6C5E1F847FCAE13 /* ReactiveTheftOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */; };
 		ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */; };
@@ -83,6 +85,7 @@
 		ECB10D498CD44DEA3A3894DA /* PlayerStatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */; };
 		F30C219F782CDB1413CB8D9D /* SocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853B0306B3185B9F7644BD64 /* SocketClient.swift */; };
 		F4339C498EB09F44618E2802 /* CardDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FA1D6F26BC0F94002F4A81 /* CardDetailSheet.swift */; };
+		F46B39415372AF4A412FA05E /* HallOfFameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */; };
 		FD312F51894BB9E628FF785A /* StealTargetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */; };
 /* End PBXBuildFile section */
 
@@ -115,6 +118,7 @@
 		5618ECF801683DD6C8DBA6BE /* tribal_voting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_voting.json; sourceTree = "<group>"; };
 		5CC4C7FEBB7493F02747CE34 /* VoteRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoteRevealView.swift; sourceTree = "<group>"; };
 		5D3F46EFB9F7ED22BAB45256 /* interaction_active.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = interaction_active.json; sourceTree = "<group>"; };
+		601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFameView.swift; sourceTree = "<group>"; };
 		622716FC89794F75AFD7283A /* challenge_active.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = challenge_active.json; sourceTree = "<group>"; };
 		67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_announcement.json; sourceTree = "<group>"; };
 		68644E98FB21432FA5656F26 /* HapticEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticEngine.swift; sourceTree = "<group>"; };
@@ -138,6 +142,7 @@
 		8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
 		8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnIndicatorView.swift; sourceTree = "<group>"; };
 		8FBD5FAB075FC347AA744261 /* GameClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameClient.swift; sourceTree = "<group>"; };
+		916EE9262A4CE799AD4AE108 /* ChallengeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeScreen.swift; sourceTree = "<group>"; };
 		92456205F3671193A6B2CBB5 /* TribalVoteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TribalVoteState.swift; sourceTree = "<group>"; };
 		9253DFC3E29C1CF800A5BDB8 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		93FA3B0AE23656E308ED353E /* PlayingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingViewModel.swift; sourceTree = "<group>"; };
@@ -153,6 +158,7 @@
 		AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorTheme.swift; sourceTree = "<group>"; };
 		BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyViewModel.swift; sourceTree = "<group>"; };
 		BF71C61DAA3A57852843D2F0 /* AccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTests.swift; sourceTree = "<group>"; };
+		C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionScreen.swift; sourceTree = "<group>"; };
 		C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StealTargetPicker.swift; sourceTree = "<group>"; };
 		C62E87D253D9ED2756DC0392 /* ConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionState.swift; sourceTree = "<group>"; };
 		C8F4EFC64C011461248D2CEB /* tribal_immunity.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_immunity.json; sourceTree = "<group>"; };
@@ -223,9 +229,11 @@
 			isa = PBXGroup;
 			children = (
 				148AAE59BF84C07B1EC835F2 /* Cards */,
+				3E4A132B9B02E04A275F88CB /* Challenge */,
 				AEA8AEEE287E7A315202FB88 /* Components */,
 				F8884C2CC69234F0CF0ADEF9 /* FinalTribal */,
 				BAFBCA83DBF56341F59C69B2 /* History */,
+				A6F64C348A49BFDFA04FC827 /* Interaction */,
 				028E19211D9AE59E23B519E9 /* Lobby */,
 				8C418A763DB09A8896276750 /* Playing */,
 				A10BDFAC913A0935DA284E9B /* Start */,
@@ -273,6 +281,14 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
+		3E4A132B9B02E04A275F88CB /* Challenge */ = {
+			isa = PBXGroup;
+			children = (
+				916EE9262A4CE799AD4AE108 /* ChallengeScreen.swift */,
+			);
+			path = Challenge;
+			sourceTree = "<group>";
+		};
 		408026A989032D431F1711B4 /* Tribal */ = {
 			isa = PBXGroup;
 			children = (
@@ -317,6 +333,14 @@
 			path = Start;
 			sourceTree = "<group>";
 		};
+		A6F64C348A49BFDFA04FC827 /* Interaction */ = {
+			isa = PBXGroup;
+			children = (
+				C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */,
+			);
+			path = Interaction;
+			sourceTree = "<group>";
+		};
 		AEA8AEEE287E7A315202FB88 /* Components */ = {
 			isa = PBXGroup;
 			children = (
@@ -336,6 +360,7 @@
 			isa = PBXGroup;
 			children = (
 				A25ADB5FD87C59CD9CAD2CCE /* GameHistoryView.swift */,
+				601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */,
 			);
 			path = History;
 			sourceTree = "<group>";
@@ -577,6 +602,7 @@
 				D3BAA67D02D882C81736470C /* CardHandView.swift in Sources */,
 				C1E2FA6B3951FEDDC7D37147 /* CardHandViewModel.swift in Sources */,
 				E09735FE39F74855129DBFE5 /* CardView.swift in Sources */,
+				2DF321BF796FE6C7E5361888 /* ChallengeScreen.swift in Sources */,
 				B84BACD6DBD1285101106F59 /* ChallengeState.swift in Sources */,
 				43CA90BC5E4FBACEF5B53D48 /* ConnectionBanner.swift in Sources */,
 				9C9B02BD119CE0A0AEA9186B /* ConnectionState.swift in Sources */,
@@ -590,8 +616,10 @@
 				0881E7EE9556263D0213232A /* GamePhase.swift in Sources */,
 				3FB7989815C9A7AFE7F7AF00 /* GameRecord.swift in Sources */,
 				3120A09C199ED66D932E882C /* GameState.swift in Sources */,
+				F46B39415372AF4A412FA05E /* HallOfFameView.swift in Sources */,
 				7F92E4D565697CFBD7131AE2 /* HapticEngine.swift in Sources */,
 				BA4BFAD2E4AB100F4000BA48 /* ImmunityView.swift in Sources */,
+				A838EE2CB80C1A2F2C8E5B0C /* InteractionScreen.swift in Sources */,
 				8E02DA709040646E6F0D1C2B /* InteractionState.swift in Sources */,
 				DDD85C98F787B379FB3AC283 /* JuryVotingView.swift in Sources */,
 				C576C0F88C387E636B7C4F7B /* LobbyScreen.swift in Sources */,

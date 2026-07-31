@@ -3,6 +3,7 @@ import SwiftUI
 struct TribalScreen: View {
     @Environment(GameClient.self) private var gameClient
     @State private var viewModel: TribalViewModel?
+    @State private var showStory = false
 
     var body: some View {
         NavigationStack {
@@ -10,6 +11,19 @@ struct TribalScreen: View {
                 TribalContent(viewModel: vm)
                     .navigationTitle("Tribal Council")
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showStory = true
+                            } label: {
+                                Image(systemName: "scroll")
+                            }
+                            .accessibilityLabel("The story so far")
+                        }
+                    }
+                    .sheet(isPresented: $showStory) {
+                        StorySoFarDrawer()
+                    }
             } else {
                 ProgressView().onAppear {
                     viewModel = TribalViewModel(gameClient: gameClient)

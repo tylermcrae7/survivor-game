@@ -40,12 +40,23 @@ final class StartViewModel {
         try? context.save()
     }
 
+    var deckMode = "official"
+    var expansion = false
+    var botPace = "normal"
+    var tribalPace = "normal"
+    var botStyle = "normal"
+
     func createGame() async {
         guard validateInputs() else { return }
         loadingState = .loading
 
         do {
-            let gameId = try await gameClient.createGame()
+            var settings: [String: String]? = nil
+            if botPace != "normal" || tribalPace != "normal" || botStyle != "normal" {
+                settings = ["botPace": botPace, "tribalPace": tribalPace, "botStyle": botStyle]
+            }
+            let gameId = try await gameClient.createGame(
+                deckMode: deckMode, expansion: expansion, settings: settings)
             try await gameClient.joinGame(
                 gameId: gameId,
                 name: playerName.trimmingCharacters(in: .whitespaces),

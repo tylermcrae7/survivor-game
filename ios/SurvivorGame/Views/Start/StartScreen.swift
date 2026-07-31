@@ -6,6 +6,7 @@ struct StartScreen: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: StartViewModel?
     @State private var showSettings = false
+    @State private var showCreateOptions = false
 
     var body: some View {
         NavigationStack {
@@ -36,6 +37,16 @@ struct StartScreen: View {
                 vm.loadSavedConfig(from: modelContext)
                 viewModel = vm
             }
+            if let code = gameClient.pendingJoinCode {
+                viewModel?.joinCode = code
+                gameClient.pendingJoinCode = nil
+            }
+        }
+        .onChange(of: gameClient.pendingJoinCode) { _, code in
+            if let code {
+                viewModel?.joinCode = code
+                gameClient.pendingJoinCode = nil
+            }
         }
     }
 }
@@ -58,13 +69,13 @@ private struct StartContent: View {
 
                 // Actions
                 VStack(spacing: 12) {
-                    Button("Create Game") {
-                        Task { await viewModel.createGame() }
+                    Button("Light the Fire") {
+                        showCreateOptions = true
                     }
                     .buttonStyle(.survivor)
                     .disabled(viewModel.loadingState.isLoading)
                     .accessibilityLabel("Create new game")
-                    .accessibilityHint("Creates a new game and generates a code for other players to join")
+                    .accessibilityHint("Choose the deck, then create a game with a code others can join")
 
                     HStack {
                         Rectangle()
@@ -104,6 +115,67 @@ private struct StartContent: View {
             .padding(.bottom, 40)
         }
         .errorAlert($viewModel.error)
+        .sheet(isPresented: $showCreateOptions) {
+            CreateGameSheet(viewModel: viewModel)
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    @State private var showCreateOptions = false
+}
+
+/// Choose your deck — the create-time options from the web start screen:
+/// Official vs Extended house deck, the Rocks expansion, and the pace this
+/// device prefers for its games.
+private struct CreateGameSheet: View {
+    @Bindable var viewModel: StartViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Deck", selection: $viewModel.deckMode) {
+                        Text("Official — the 67-card box").tag("official")
+                        Text("Extended — +7 house cards").tag("extended")
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+
+                    Toggle("Add Let's Go To Rocks Challenges", isOn: $viewModel.expansion)
+                } header: {
+                    Text("Choose your deck")
+                } footer: {
+                    Text("Extended adds Idol Nullifier, Steal A Vote, Block A Vote and Grant Immunity. Rocks adds the 5 Orange Challenge Cards.")
+                }
+
+                Section("Pace") {
+                    Picker("Computer player speed", selection: $viewModel.botPace) {
+                        Text("Chill").tag("chill"); Text("Normal").tag("normal"); Text("Fast").tag("fast")
+                    }
+                    Picker("Tribal ceremony pace", selection: $viewModel.tribalPace) {
+                        Text("Normal").tag("normal"); Text("Relaxed").tag("relaxed"); Text("TV drama").tag("tv")
+                    }
+                    Picker("Computer player style", selection: $viewModel.botStyle) {
+                        Text("Chill").tag("chill"); Text("Normal").tag("normal"); Text("Cutthroat").tag("cutthroat")
+                    }
+                }
+
+                Section {
+                    Button {
+                        dismiss()
+                        Task { await viewModel.createGame() }
+                    } label: {
+                        Label("Light the Fire", systemImage: "flame.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.survivor)
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle("New Game")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 
@@ -114,6 +186,9 @@ private struct ServerSettingsSheet: View {
     @State private var connectionOk: Bool?
     @State private var islandCode = ""
     @State private var accessResult: String?
+    @AppStorage("confirmVotes") private var confirmVotes = false
+    @AppStorage("confirmSteals") private var confirmSteals = false
+    @AppStorage("hapticsEnabled") private var hapticsEnabled = true
 
     var body: some View {
         NavigationStack {
@@ -167,6 +242,16 @@ private struct ServerSettingsSheet: View {
                     Text("Access")
                 } footer: {
                     Text("The public island is code-locked. Enter the shared code once; this phone keeps the key.")
+                }
+
+                Section {
+                    Toggle("Confirm before casting a vote", isOn: $confirmVotes)
+                    Toggle("Confirm before stealing", isOn: $confirmSteals)
+                    Toggle("Vibration", isOn: $hapticsEnabled)
+                } header: {
+                    Text("Table manners")
+                } footer: {
+                    Text("Mistap guards for party tables. A vote can't be taken back once the parchment is in the box.")
                 }
             }
             .navigationTitle("Settings")
