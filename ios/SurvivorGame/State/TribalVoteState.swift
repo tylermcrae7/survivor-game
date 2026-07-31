@@ -21,6 +21,13 @@ struct TribalVoteState: Codable, Equatable {
         let playerId: String?
         let advantageType: String?
         let targetId: String?
+
+        // The server writes short keys (rules_engine.py advantageCardsPlayed).
+        enum CodingKeys: String, CodingKey {
+            case playerId = "player"
+            case advantageType = "type"
+            case targetId = "target"
+        }
     }
 
     enum CodingKeys: String, CodingKey {
