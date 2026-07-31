@@ -143,8 +143,7 @@ final class GameClient {
         self.gameId = gameId
         self.playerId = response.playerId
         self.playerName = name
-        self.gameState = response.gameState
-        updateNavigationState()
+        applyState(response.gameState)
 
         // Connect socket and join room
         connect()
@@ -163,8 +162,7 @@ final class GameClient {
         self.gameId = gameId
         self.playerId = playerId
         self.playerName = response.playerName
-        self.gameState = response.gameState
-        updateNavigationState()
+        applyState(response.gameState)
 
         connect()
         socketClient.joinGame(gameId)
@@ -179,6 +177,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Failed to start game")
         }
+        applyState(response.gameState)
     }
 
     func resetGame() async throws {
@@ -197,11 +196,14 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Steal failed")
         }
+        applyState(response.gameState)
     }
 
     func playCard(at index: Int) async throws -> PlayCardResponse {
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        return try await apiClient.playCard(gameId: gameId, playerId: playerId, cardIdx: index)
+        let response = try await apiClient.playCard(gameId: gameId, playerId: playerId, cardIdx: index)
+        applyState(response.gameState)
+        return response
     }
 
     /// Targeted card play — params carry targetId/allyId/victimId/cardType/
@@ -211,13 +213,20 @@ final class GameClient {
         let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
         nonisolated(unsafe) let paramsCopy = params
-        return try await apiClient.playCard(
+        let response = try await apiClient.playCard(
             gameId: gameId, playerId: playerId, cardIdx: index, params: paramsCopy)
+        await applyState(response.gameState)
+        return response
     }
 
     func drawCard() async throws -> DrawResponse {
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        return try await apiClient.draw(gameId: gameId, playerId: playerId)
+        let response = try await apiClient.draw(gameId: gameId, playerId: playerId)
+        // Applying the returned state BEFORE returning matters: the view models
+        // clear isPerformingAction on return, and hasDrawn must already be
+        // fresh by then or a fast double-tap slips a second draw through.
+        applyState(response.gameState)
+        return response
     }
 
     func advanceTurn() async throws {
@@ -226,6 +235,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Advance failed")
         }
+        applyState(response.gameState)
     }
 
     // MARK: - Reactive
@@ -244,6 +254,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Reactive play failed")
         }
+        await applyState(response.gameState)
     }
 
     func completeTheft() async throws {
@@ -252,6 +263,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Complete theft failed")
         }
+        applyState(response.gameState)
     }
 
     // MARK: - Tribal Council
@@ -262,6 +274,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Start voting failed")
         }
+        applyState(response.gameState)
     }
 
     func castVote(targetId: String, count: Int = 1) async throws {
@@ -272,6 +285,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Cast vote failed")
         }
+        applyState(response.gameState)
     }
 
     /// A split ballot: your Vote (and any Extra Votes) across several players.
@@ -287,6 +301,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Cast votes failed")
         }
+        await applyState(response.gameState)
     }
 
     /// Passing the box with no Vote Card is legal — an explicitly empty ballot.
@@ -299,6 +314,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Pass failed")
         }
+        await applyState(response.gameState)
     }
 
     nonisolated func castVotes(votesData: [[String: Any]]) async throws {
@@ -313,6 +329,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Cast votes failed")
         }
+        await applyState(response.gameState)
     }
 
     func revealVotes() async throws {
@@ -321,6 +338,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Reveal votes failed")
         }
+        applyState(response.gameState)
     }
 
     func resolveTieBreak(chosenId: String) async throws {
@@ -329,6 +347,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Tie break failed")
         }
+        applyState(response.gameState)
     }
 
     func completeTribal() async throws {
@@ -337,6 +356,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Complete tribal failed")
         }
+        applyState(response.gameState)
     }
 
     func advanceTribal(to phase: String) async throws {
@@ -345,6 +365,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Advance tribal failed")
         }
+        applyState(response.gameState)
     }
 
     func playAdvantage(type: String, targetId: String? = nil) async throws {
@@ -355,6 +376,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Play advantage failed")
         }
+        applyState(response.gameState)
     }
 
     func playImmunity(targetId: String? = nil) async throws {
@@ -364,6 +386,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Play immunity failed")
         }
+        applyState(response.gameState)
     }
 
     func blockImmunity(targetId: String) async throws {
@@ -372,6 +395,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Block immunity failed")
         }
+        applyState(response.gameState)
     }
 
     func changeLeader(newLeaderId: String) async throws {
@@ -380,6 +404,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Change leader failed")
         }
+        applyState(response.gameState)
     }
 
     // MARK: - Final Tribal
@@ -390,6 +415,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Advance final failed")
         }
+        applyState(response.gameState)
     }
 
     func castFinalVote(finalistId: String) async throws {
@@ -400,6 +426,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Cast final vote failed")
         }
+        applyState(response.gameState)
     }
 
     func signalReady() async throws {
@@ -408,6 +435,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Signal ready failed")
         }
+        applyState(response.gameState)
     }
 
     func finalTieBreak(chosenWinner: String) async throws {
@@ -418,6 +446,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Final tie break failed")
         }
+        applyState(response.gameState)
     }
 
     // MARK: - Lobby, Settings, Rocks
@@ -428,6 +457,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Add bot failed")
         }
+        applyState(response.gameState)
     }
 
     func removeBot(playerId botId: String) async throws {
@@ -436,6 +466,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Remove bot failed")
         }
+        applyState(response.gameState)
     }
 
     func renameSelf(to newName: String) async throws {
@@ -445,6 +476,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Rename failed")
         }
+        applyState(response.gameState)
         playerName = newName
     }
 
@@ -455,6 +487,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Settings change refused")
         }
+        applyState(response.gameState)
     }
 
     nonisolated func challengeAction(_ action: String, value: (any Sendable)? = nil) async throws {
@@ -467,6 +500,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Challenge refused that")
         }
+        await applyState(response.gameState)
     }
 
     nonisolated func interactionAct(_ action: String, value: (any Sendable)? = nil) async throws {
@@ -479,6 +513,7 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "That move was refused")
         }
+        await applyState(response.gameState)
     }
 
     // MARK: - Session Management
@@ -495,12 +530,21 @@ final class GameClient {
 
     // MARK: - Sync
 
+    /// Single funnel for every fresh-state arrival — HTTP action responses,
+    /// socket pushes, and poll syncs. Equality-guarded: an identical snapshot
+    /// must not re-render the whole view tree, and since navigation derives
+    /// purely from the state, an equal state can't change navigation either.
+    func applyState(_ state: GameState?) {
+        guard let state, state != gameState else { return }
+        gameState = state
+        updateNavigationState()
+    }
+
     func syncState() async {
         guard let gameId else { return }
         do {
             let state = try await apiClient.getGameState(gameId: gameId)
-            self.gameState = state
-            updateNavigationState()
+            applyState(state)
         } catch {
             if let apiError = error as? APIError, apiError.requiresIslandAccess {
                 accessState = .requiresCode
@@ -518,8 +562,7 @@ final class GameClient {
         stateListenerTask = Task { [weak self] in
             guard let self else { return }
             for await state in self.socketClient.gameStateStream {
-                self.gameState = state
-                self.updateNavigationState()
+                self.applyState(state)
             }
         }
 

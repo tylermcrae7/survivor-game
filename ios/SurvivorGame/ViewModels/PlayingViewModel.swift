@@ -71,6 +71,10 @@ final class PlayingViewModel {
 
     func drawCard() async {
         isPerformingAction = true
+        // The defer-clear is only safe because GameClient.drawCard applies the
+        // response's fresh state (hasDrawn flipped) before it returns — the
+        // draw button re-enables against fresh flags, not the pre-draw ones,
+        // so a fast double-tap can't slip a second draw through.
         defer { isPerformingAction = false }
 
         do {

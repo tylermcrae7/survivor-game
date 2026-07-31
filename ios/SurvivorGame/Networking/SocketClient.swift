@@ -28,6 +28,20 @@ final class SocketClient {
     private var connectionContinuation: AsyncStream<ConnectionState>.Continuation?
     private(set) var connectionStream: AsyncStream<ConnectionState>!
 
+    // Raw state payloads flow through one serial pipeline: the socket callback
+    // yields the parsed dict here, and a single background task re-serializes
+    // and decodes it off the main actor. One consumer means decoded states can
+    // never overtake each other, so ordering is preserved end to end.
+    private var rawStateContinuation: AsyncStream<RawStatePayload>.Continuation?
+    private var stateDecodeTask: Task<Void, Never>?
+
+    /// The socket hands us already-parsed Foundation JSON objects. Each one
+    /// crosses to the decode pipeline exactly once and is never touched by the
+    /// producer again, so the transfer is safe despite [Any] being non-Sendable.
+    private struct RawStatePayload: @unchecked Sendable {
+        let data: [Any]
+    }
+
     init() {
         gameStateStream = AsyncStream { continuation in
             self.gameStateContinuation = continuation
@@ -37,6 +51,30 @@ final class SocketClient {
         }
         connectionStream = AsyncStream { continuation in
             self.connectionContinuation = continuation
+        }
+
+        let (rawStream, rawContinuation) = AsyncStream.makeStream(of: RawStatePayload.self)
+        rawStateContinuation = rawContinuation
+        let stateContinuation = gameStateContinuation
+        stateDecodeTask = Task.detached(priority: .userInitiated) {
+            // One decoder for the life of the pipeline — building a fresh
+            // JSONDecoder per event was pure waste.
+            let decoder = JSONDecoder()
+            for await payload in rawStream {
+                guard let dict = payload.data.first else { continue }
+                do {
+                    let jsonData: Data
+                    if let d = dict as? Data {
+                        jsonData = d
+                    } else {
+                        jsonData = try JSONSerialization.data(withJSONObject: dict)
+                    }
+                    let state = try decoder.decode(GameState.self, from: jsonData)
+                    stateContinuation?.yield(state)
+                } catch {
+                    print("[SocketClient] Failed to decode game state: \(error)")
+                }
+            }
         }
     }
 
@@ -151,17 +189,16 @@ final class SocketClient {
             }
         }
 
-        // Game state updates
-        socket.on("state_update") { [weak self] data, _ in
-            Task { @MainActor in
-                self?.handleStateUpdate(data)
-            }
+        // Game state updates go straight into the serial decode pipeline —
+        // no main-actor hop, no main-actor JSON work. The continuation is
+        // Sendable, so it can be captured here and fed from the socket queue.
+        let rawStateContinuation = rawStateContinuation
+        socket.on("state_update") { data, _ in
+            rawStateContinuation?.yield(RawStatePayload(data: data))
         }
 
-        socket.on("game_updated") { [weak self] data, _ in
-            Task { @MainActor in
-                self?.handleStateUpdate(data)
-            }
+        socket.on("game_updated") { data, _ in
+            rawStateContinuation?.yield(RawStatePayload(data: data))
         }
 
         // Game events
@@ -188,23 +225,6 @@ final class SocketClient {
                 let msg = (data.first as? [String: Any])?["message"] as? String ?? "Server error"
                 self?.gameEventContinuation?.yield(.error(msg))
             }
-        }
-    }
-
-    private func handleStateUpdate(_ data: [Any]) {
-        guard let dict = data.first else { return }
-
-        do {
-            let jsonData: Data
-            if let d = dict as? Data {
-                jsonData = d
-            } else {
-                jsonData = try JSONSerialization.data(withJSONObject: dict)
-            }
-            let state = try JSONDecoder().decode(GameState.self, from: jsonData)
-            gameStateContinuation?.yield(state)
-        } catch {
-            print("[SocketClient] Failed to decode game state: \(error)")
         }
     }
 

@@ -355,33 +355,70 @@ struct RejoinGameResponse: Codable {
     let playerName: String?
 }
 
-struct ActionResponse: Codable {
+struct ActionResponse: Decodable {
     let success: Bool
     let message: String?
+    /// Fresh authoritative state the server includes on mutating actions, so
+    /// the actor sees the result on the HTTP await without waiting on the
+    /// socket. Decoded leniently — a missing or malformed state payload must
+    /// never fail an otherwise-successful action.
+    let gameState: GameState?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = try container.decode(Bool.self, forKey: .success)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        gameState = try? container.decode(GameState.self, forKey: .gameState)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case success, message, gameState
+    }
 }
 
-struct PlayCardResponse: Codable {
+struct PlayCardResponse: Decodable {
     let success: Bool
     let message: String?
     let tribalTriggered: Bool?
     /// The Spy Shack's first call (no takeIndex) answers with the target's
     /// hand so the spy can choose which card to take.
     let spiedHand: [CardInstance]?
+    /// Fresh authoritative state — lenient decode, see ActionResponse.
+    let gameState: GameState?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = try container.decode(Bool.self, forKey: .success)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        tribalTriggered = try container.decodeIfPresent(Bool.self, forKey: .tribalTriggered)
+        spiedHand = try container.decodeIfPresent([CardInstance].self, forKey: .spiedHand)
+        gameState = try? container.decode(GameState.self, forKey: .gameState)
+    }
 
     enum CodingKeys: String, CodingKey {
-        case success, message
+        case success, message, gameState
         case tribalTriggered = "tribal_triggered"
         case spiedHand = "spied_hand"
     }
 }
 
-struct DrawResponse: Codable {
+struct DrawResponse: Decodable {
     let success: Bool
     let message: String?
     let tribalTriggered: Bool?
+    /// Fresh authoritative state — lenient decode, see ActionResponse.
+    let gameState: GameState?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = try container.decode(Bool.self, forKey: .success)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        tribalTriggered = try container.decodeIfPresent(Bool.self, forKey: .tribalTriggered)
+        gameState = try? container.decode(GameState.self, forKey: .gameState)
+    }
 
     enum CodingKeys: String, CodingKey {
-        case success, message
+        case success, message, gameState
         case tribalTriggered = "tribal_triggered"
     }
 }

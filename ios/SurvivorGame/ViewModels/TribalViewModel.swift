@@ -92,6 +92,9 @@ final class TribalViewModel {
 
     func castVote(targetId: String, count: Int = 1) async {
         isPerformingAction = true
+        // Safe to defer-clear: GameClient.castVote applies the response's
+        // fresh state (hasVoted flipped) before it returns, so the ballot UI
+        // re-enables against fresh flags and a double-tap can't vote twice.
         defer { isPerformingAction = false }
         do {
             try await gameClient.castVote(targetId: targetId, count: count)
