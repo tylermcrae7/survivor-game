@@ -39,19 +39,28 @@ struct ReactiveTheftOverlay: View {
 
     // MARK: - Defender
 
+    /// Web parity (ui.js reactive dialog): plain steals read "for a random
+    /// card"; card-sourced raids are titled with the card's name. Each raid
+    /// names its raider and instrument so back-to-back Sorry For You windows
+    /// read as separate raids, not a counter-chain.
     private func defenderDialog(_ pending: PendingTheftState) -> some View {
         let holdsSorry = gameClient.myPlayer?.hand.contains { $0.type == "sorry_for_you" } ?? false
-        let source = pending.source ?? "A raid"
+        let source = pending.source ?? "steal"
+        let isPlainSteal = source == "steal"
+        let sourceCardName = source.replacingOccurrences(of: "_", with: " ").capitalized
+        let raider = thiefNames.isEmpty ? "Someone" : thiefNames
 
         return ZStack {
             Color.black.opacity(0.65).ignoresSafeArea()
 
             VStack(spacing: 16) {
-                Text("A Raid On Your Camp")
+                Text(isPlainSteal ? "A Raid On Your Camp" : sourceCardName)
                     .font(.title2.bold())
                     .fontDesign(.serif)
 
-                Text("\(thiefNames.isEmpty ? "Someone" : thiefNames) is raiding your camp — \(source).")
+                Text(isPlainSteal
+                     ? "\(raider) is raiding your camp for a random card."
+                     : "\(raider) is raiding your camp with \(sourceCardName).")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
