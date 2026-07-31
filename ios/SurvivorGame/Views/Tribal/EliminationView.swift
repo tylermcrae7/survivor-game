@@ -3,6 +3,15 @@ import SwiftUI
 struct EliminationView: View {
     @Bindable var viewModel: TribalViewModel
     @State private var snuffTrigger = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The web's inline animation-delay recipe (see TorchTransitions.swift
+    /// §torchSnuff): the torch waits for the last ballot to finish flipping —
+    /// 0.5 + ballotCount × 0.32 + 0.25. Reduced motion collapses the ceremony
+    /// (ballots land instantly), so the snuff fires promptly instead.
+    private var snuffLead: Double {
+        reduceMotion ? 0.05 : 0.5 + Double(viewModel.voteResults.count) * 0.32 + 0.25
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -23,7 +32,7 @@ struct EliminationView: View {
                                 .accessibilityHidden(true)
                             PlayerAvatarView(player: player, size: 64, showName: false)
                         }
-                        .torchSnuff(trigger: snuffTrigger, delay: 0.25)
+                        .torchSnuff(trigger: snuffTrigger, delay: snuffLead)
 
                         Text(player.name)
                             .font(Torch.Font.display(Torch.TextSize.displaySM, weight: 700))
@@ -49,10 +58,18 @@ struct EliminationView: View {
         }
         .onAppear {
             if !viewModel.eliminatedInTribal.isEmpty {
-                HapticEngine.elimination()
-                TorchSound.play(.torchSnuff)
                 snuffTrigger += 1
             }
+        }
+        .task {
+            // Haptic + sound ride the same lead as the visual snuff, so all
+            // three land together after the last ballot flips. Structured so
+            // an early dismissal cancels the moment.
+            guard !viewModel.eliminatedInTribal.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(snuffLead))
+            guard !Task.isCancelled else { return }
+            HapticEngine.elimination()
+            TorchSound.play(.torchSnuff)
         }
     }
 }

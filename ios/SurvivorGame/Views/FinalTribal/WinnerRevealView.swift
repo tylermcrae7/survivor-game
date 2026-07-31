@@ -30,6 +30,9 @@ struct WinnerRevealView: View {
     @Environment(GameClient.self) private var gameClient
     @Environment(\.modelContext) private var modelContext
     @State private var showConfetti = false
+    /// Popping back from "View History" re-runs onAppear; the fanfare (and
+    /// the SwiftData record insert) must only happen once per reveal.
+    @State private var hasCelebrated = false
 
     var body: some View {
         let winner = resolveWinner()
@@ -41,6 +44,8 @@ struct WinnerRevealView: View {
                 if let winner {
                     WinnerRevealContent(winner: winner)
                         .onAppear {
+                            guard !hasCelebrated else { return }
+                            hasCelebrated = true
                             HapticEngine.winner()
                             TorchSound.play(.victory)
                             showConfetti = true

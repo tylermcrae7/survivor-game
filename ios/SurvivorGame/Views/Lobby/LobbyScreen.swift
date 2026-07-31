@@ -71,7 +71,9 @@ private struct LobbyContent: View {
                 .padding(.horizontal, Torch.Spacing.lg)
                 .padding(.bottom, Torch.Spacing.lg)
         }
-        .survivorScreen()
+        .background(TorchNightBackground(radialColor: Torch.Color.torch.opacity(0.14),
+                                         showEmbers: false, startRadius: 0, endRadius: 460))
+        .tint(Torch.Color.torch)
         .errorAlert($viewModel.error)
         .onAppear { knownPlayerIds = Set(viewModel.players.map(\.id)) }
         .onChange(of: viewModel.players.map(\.id)) { _, ids in

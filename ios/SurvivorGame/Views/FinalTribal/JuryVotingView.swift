@@ -88,6 +88,7 @@ struct JuryVotingView: View {
         .overlay {
             if let name = slamName {
                 VoteSlamOverlay(name: name) { slamName = nil }
+                    .accessibilityHidden(true) // transient decoration
             }
         }
     }

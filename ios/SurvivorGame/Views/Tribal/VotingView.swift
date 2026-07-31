@@ -63,6 +63,7 @@ struct VotingView: View {
         .overlay {
             if let name = slamName {
                 VoteSlamOverlay(name: name) { slamName = nil }
+                    .accessibilityHidden(true) // transient decoration
             }
         }
         .sheet(item: $chooserTarget) { target in
@@ -106,10 +107,12 @@ struct VotingView: View {
                 maxTotal: maxVotes
             ) { allocations in
                 showSplitBuilder = false
-                let top = allocations.max { $0.value < $1.value }?.key
-                slamBallot(name: top.flatMap { id in
-                    eligibleTargets.first { $0.id == id }?.name
-                })
+                // No flourish for an empty ballot — only slam when a real
+                // name got written. Submission is unchanged either way.
+                let top = allocations.filter { $0.value > 0 }.max { $0.value < $1.value }?.key
+                if let name = top.flatMap({ id in eligibleTargets.first { $0.id == id }?.name }) {
+                    slamBallot(name: name)
+                }
                 Task { await viewModel.castSplitBallot(allocations) }
             }
             .presentationDetents([.medium, .large])
