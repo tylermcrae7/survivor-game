@@ -662,7 +662,7 @@ window.playImmunityIdol = async function (targetId) {
     const playerId = window.SurvivorGame?.localGameState?.playerId;
     if (!gameId || !playerId) return;
     try {
-        const result = await window.SurvivorNetwork?.apiCall('/vote/immunity',
+        const result = await window.SurvivorNetwork?.apiCall('/immunity/play',
             { gameId, playerId, targetId });
         if (result?.success) {
             Haptics.trigger('success');
