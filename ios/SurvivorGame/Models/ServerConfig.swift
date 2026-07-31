@@ -27,6 +27,7 @@ final class ServerConfig {
     }
 
     static func loadDefault(from context: ModelContext) -> ServerConfig {
+        let migrationKey = "didMigrateLegacyLANDefault"
         let descriptor = FetchDescriptor<ServerConfig>(
             predicate: #Predicate { $0.id == "default" }
         )
@@ -35,7 +36,6 @@ final class ServerConfig {
             // default. Move that exact legacy value to the stable public island
             // exactly once; user-entered servers — even that same LAN address,
             // re-entered deliberately — remain untouched.
-            let migrationKey = "didMigrateLegacyLANDefault"
             if existing.baseURL == legacyLANURL,
                !UserDefaults.standard.bool(forKey: migrationKey) {
                 existing.baseURL = publicIslandURL
@@ -47,6 +47,9 @@ final class ServerConfig {
         let config = ServerConfig()
         context.insert(config)
         try? context.save()
+        // A fresh install has nothing to migrate — mark it done now so a LAN
+        // URL entered right after first launch is never rewritten.
+        UserDefaults.standard.set(true, forKey: migrationKey)
         return config
     }
 }
