@@ -9,6 +9,7 @@ struct VotingView: View {
     @State private var chooserTarget: PlayerState?
     @State private var showSplitBuilder = false
     @State private var confirmTarget: PlayerState?
+    @State private var slamName: String?
     @AppStorage("confirmVotes") private var confirmVotes = false
 
     private var me: PlayerState? { viewModel.gameState?.players[viewModel.myPlayerId ?? ""] }
@@ -27,19 +28,28 @@ struct VotingView: View {
         viewModel.activePlayers.filter(\.hasVoted).count
     }
 
+    /// The ballot-submitted flourish: slam card + strike haptic + drum,
+    /// per the VoteSlamOverlay contract. Replaces the plain vote() tap so
+    /// nothing double-fires.
+    private func slamBallot(name: String?) {
+        HapticEngine.voteSlam()
+        TorchSound.play(.voteReveal)
+        if let name { slamName = name }
+    }
+
     var body: some View {
         VStack(spacing: 16) {
-            Text("It Is Time to Vote")
-                .font(.title2.bold())
-                .fontDesign(.serif)
+            CeremonyTitle(text: "It Is Time to Vote")
 
             Text("\(votedCount) of \(viewModel.activePlayers.count) players have voted")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
 
             if viewModel.isEliminated {
                 Text("Your torch is out — the vote passes you by.")
-                    .foregroundStyle(.secondary)
+                    .font(Torch.Font.display(Torch.TextSize.base, weight: 500, italic: true))
+                    .foregroundStyle(Torch.Color.textSecondary)
             } else if viewModel.hasVoted {
                 votedConfirmation
             } else if maxVotes == 0 {
@@ -50,6 +60,11 @@ struct VotingView: View {
 
             votingStatus
         }
+        .overlay {
+            if let name = slamName {
+                VoteSlamOverlay(name: name) { slamName = nil }
+            }
+        }
         .sheet(item: $chooserTarget) { target in
             ExtraVoteChooser(
                 target: target,
@@ -57,7 +72,7 @@ struct VotingView: View {
                 maxTotal: maxVotes,
                 onCast: { total in
                     chooserTarget = nil
-                    HapticEngine.vote()
+                    slamBallot(name: target.name)
                     Task { await viewModel.castVote(targetId: target.id, count: total) }
                 },
                 onSplit: (extraVotes >= 1 && eligibleTargets.count >= 2) ? {
@@ -76,7 +91,7 @@ struct VotingView: View {
         ) {
             Button("Cast the vote", role: .destructive) {
                 if let target = confirmTarget {
-                    HapticEngine.vote()
+                    slamBallot(name: target.name)
                     Task { await viewModel.castVote(targetId: target.id, count: mandatoryVotes) }
                 }
                 confirmTarget = nil
@@ -91,7 +106,10 @@ struct VotingView: View {
                 maxTotal: maxVotes
             ) { allocations in
                 showSplitBuilder = false
-                HapticEngine.vote()
+                let top = allocations.max { $0.value < $1.value }?.key
+                slamBallot(name: top.flatMap { id in
+                    eligibleTargets.first { $0.id == id }?.name
+                })
                 Task { await viewModel.castSplitBallot(allocations) }
             }
             .presentationDetents([.medium, .large])
@@ -104,12 +122,14 @@ struct VotingView: View {
         VStack(spacing: 8) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 32))
-                .foregroundStyle(.orange)
+                .foregroundStyle(Torch.Color.torch)
+                .torchGlow()
             Text("The parchment is in the box")
-                .font(.subheadline.bold())
+                .font(Torch.Font.display(Torch.TextSize.base, weight: 700))
+                .foregroundStyle(Torch.Color.parchment)
             Text("Waiting for the rest of the tribe…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.xs))
+                .foregroundStyle(Torch.Color.textSecondary)
         }
         .padding(.vertical, 24)
     }
@@ -117,13 +137,13 @@ struct VotingView: View {
     private var passTheBox: some View {
         VStack(spacing: 12) {
             Text("You have no Vote Card — the box passes you by.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Pass the Voting Box") {
                 Task { await viewModel.passVotingBox() }
             }
-            .buttonStyle(.survivor(color: .gray))
+            .buttonStyle(.torchSecondary)
             .disabled(viewModel.isPerformingAction)
         }
         .padding(.vertical, 12)
@@ -133,35 +153,44 @@ struct VotingView: View {
         VStack(spacing: 10) {
             if extraVotes > 0 {
                 Text("You hold \(extraVotes) Extra Vote\(extraVotes == 1 ? "" : "s")")
-                    .font(.caption.bold())
-                    .foregroundStyle(.orange)
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.flame)
             }
             Text("Tap a name to write it on your parchment")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
 
-            ForEach(eligibleTargets) { player in
+            // Parchment slips against the night, rotated like scattered paper.
+            ForEach(Array(eligibleTargets.enumerated()), id: \.element.id) { index, player in
                 Button {
                     if extraVotes > 0 {
                         chooserTarget = player
                     } else if confirmVotes {
                         confirmTarget = player
                     } else {
-                        HapticEngine.vote()
+                        slamBallot(name: player.name)
                         Task { await viewModel.castVote(targetId: player.id, count: mandatoryVotes) }
                     }
                 } label: {
                     HStack(spacing: 12) {
                         PlayerAvatarView(player: player, size: 40, showName: false)
                         Text(player.name)
-                            .font(.body.bold())
+                            .font(Torch.Font.display(Torch.TextSize.lg, weight: 700))
+                            .foregroundStyle(Torch.Color.ink)
                         Spacer()
                         Image(systemName: "pencil.line")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Torch.Color.inkSoft)
                     }
                     .padding(12)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .background(
+                        RoundedRectangle(cornerRadius: Torch.Radius.sm, style: .continuous)
+                            .fill(LinearGradient(colors: [Torch.Color.parchment,
+                                                          Torch.Color.parchmentDim],
+                                                 startPoint: .top, endPoint: .bottom))
+                    )
+                    .shadow(color: .black.opacity(0.40), radius: 9, y: 6) // --shadow-md
+                    .rotationEffect(.degrees(index.isMultiple(of: 2) ? -0.8 : 0.9))
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.isPerformingAction)
@@ -172,24 +201,31 @@ struct VotingView: View {
     private var votingStatus: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("The Tribe")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
 
             ForEach(viewModel.activePlayers) { player in
                 HStack(spacing: 8) {
                     Image(systemName: player.hasVoted ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(player.hasVoted ? .orange : .secondary)
+                        .foregroundStyle(player.hasVoted ? Torch.Color.torch : Torch.Color.textFaint)
                         .font(.caption)
                     Text(player.name)
-                        .font(.caption)
-                        .foregroundStyle(player.hasVoted ? .primary : .secondary)
+                        .font(Torch.Font.body(Torch.TextSize.xs))
+                        .foregroundStyle(player.hasVoted ? Torch.Color.text : Torch.Color.textSecondary)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(
+            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                .fill(CouncilPalette.surfaceSunken)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                .strokeBorder(CouncilPalette.line, lineWidth: 1)
+        )
     }
 }
 
@@ -207,8 +243,8 @@ private struct ExtraVoteChooser: View {
             ScrollView {
                 VStack(spacing: 12) {
                     Text("You hold \(maxTotal - mandatory) Extra Vote\(maxTotal - mandatory == 1 ? "" : "s"). Spend them now, or keep them hidden for a later Tribal Council.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Torch.Font.body(Torch.TextSize.sm))
+                        .foregroundStyle(Torch.Color.textSecondary)
                         .multilineTextAlignment(.center)
 
                     ForEach(Array(max(1, mandatory)...max(max(1, mandatory), maxTotal)), id: \.self) { total in
@@ -227,7 +263,7 @@ private struct ExtraVoteChooser: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                         }
-                        .buttonStyle(.survivor)
+                        .buttonStyle(.torchGlow)
                     }
 
                     if let onSplit {
@@ -243,11 +279,13 @@ private struct ExtraVoteChooser: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                         }
-                        .buttonStyle(.survivor(color: .gray))
+                        .buttonStyle(.torchSecondary)
                     }
                 }
                 .padding(20)
             }
+            .background(CouncilBackground())
+            .tint(Torch.Color.torch)
             .navigationTitle("How many votes?")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -274,12 +312,14 @@ private struct SplitBallotBuilder: View {
                     Text(total < mandatory
                          ? "Cast at least \(mandatory) — your Vote Card must be used (\(total) placed)"
                          : "\(total) of up to \(maxTotal) votes placed")
-                        .font(.caption)
-                        .foregroundStyle(total < mandatory ? .orange : .secondary)
+                        .font(Torch.Font.body(Torch.TextSize.xs))
+                        .foregroundStyle(total < mandatory ? Torch.Color.flame : Torch.Color.textSecondary)
 
                     ForEach(targets) { player in
                         HStack {
-                            Text(player.name).font(.body.bold())
+                            Text(player.name)
+                                .font(Torch.Font.body(Torch.TextSize.base, weight: .bold))
+                                .foregroundStyle(Torch.Color.parchment)
                             Spacer()
                             Button {
                                 if allocations[player.id, default: 0] > 0 {
@@ -288,6 +328,7 @@ private struct SplitBallotBuilder: View {
                             } label: { Image(systemName: "minus.circle") }
                             Text("\(allocations[player.id, default: 0])")
                                 .font(.title3.monospacedDigit())
+                                .foregroundStyle(Torch.Color.text)
                                 .frame(minWidth: 28)
                             Button {
                                 if total < maxTotal {
@@ -296,18 +337,26 @@ private struct SplitBallotBuilder: View {
                             } label: { Image(systemName: "plus.circle") }
                         }
                         .padding(10)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .background(
+                            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                                .fill(CouncilPalette.surfaceSunken)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                                .strokeBorder(CouncilPalette.line, lineWidth: 1)
+                        )
                     }
 
                     Button("Cast this ballot") {
                         onCast(allocations)
                     }
-                    .buttonStyle(.survivor)
+                    .buttonStyle(.torchGlow)
                     .disabled(!castable)
                 }
                 .padding(20)
             }
+            .background(CouncilBackground())
+            .tint(Torch.Color.torch)
             .navigationTitle("Write your parchments")
             .navigationBarTitleDisplayMode(.inline)
         }

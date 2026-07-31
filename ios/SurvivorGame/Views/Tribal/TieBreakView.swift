@@ -7,19 +7,21 @@ struct TieBreakView: View {
         VStack(spacing: 16) {
             Image(systemName: "equal.circle.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Torch.Color.warning)
+                .shadow(color: Torch.Color.warning.opacity(0.4), radius: 12)
 
-            Text("Tie Break!")
-                .font(.title2.bold())
+            CeremonyTitle(text: "Tie Break!", size: Torch.TextSize.displayMD)
 
             Text("The council leader must break the tie.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Torch.Font.body(Torch.TextSize.sm))
+                .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
             if viewModel.isCouncilLeader {
                 Text("Choose who to eliminate:")
-                    .font(.subheadline.bold())
+                    .font(Torch.Font.label(Torch.TextSize.sm))
+                    .tracking(Torch.Track.label * Torch.TextSize.sm)
+                    .foregroundStyle(Torch.Color.parchment)
 
                 ForEach(viewModel.tiedPlayers) { player in
                     Button {
@@ -29,26 +31,39 @@ struct TieBreakView: View {
                         HStack(spacing: 12) {
                             PlayerAvatarView(player: player, size: 40, showName: false)
                             Text(player.name)
-                                .font(.body.bold())
+                                .font(Torch.Font.body(Torch.TextSize.base, weight: .bold))
+                                .foregroundStyle(Torch.Color.parchment)
                             Spacer()
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(Torch.Color.danger)
                         }
                         .padding(12)
-                        .background(.red.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .background(
+                            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                                .fill(Torch.Color.danger.opacity(0.1))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                                .strokeBorder(Torch.Color.danger.opacity(0.5), lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(viewModel.isPerformingAction)
                 }
             } else {
                 Text("Waiting for the council leader to decide...")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Torch.Color.textSecondary)
                     .padding()
             }
         }
         .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(
+            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                .fill(CouncilPalette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
+                .strokeBorder(CouncilPalette.line, lineWidth: 1)
+        )
     }
 }
