@@ -36,6 +36,11 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Survivor connects to the game server running on your local network.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fraunces-Variable.ttf</string>
+		<string>Fraunces-Italic-Variable.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

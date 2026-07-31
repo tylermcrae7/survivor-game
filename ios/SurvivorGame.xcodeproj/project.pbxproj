@@ -53,6 +53,7 @@
 		8E02DA709040646E6F0D1C2B /* InteractionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB0990923A310FD9070C0D2 /* InteractionState.swift */; };
 		8FA127114072649DF7470C51 /* LobbyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */; };
 		90B5801E1E939C0D164CBE91 /* FixtureDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 760A57B8F82EA8824DDB71EC /* FixtureDecodingTests.swift */; };
+		99B656C30772580AD847E2A3 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 9516609CF588473DFB3D6E94 /* OFL.txt */; };
 		9AC75944CC05B37E57093136 /* pending_theft_open.json in Resources */ = {isa = PBXBuildFile; fileRef = F68CD7E24847150FF4BBD2BE /* pending_theft_open.json */; };
 		9BD8D4B3208CEB5FEC078A00 /* interaction_active.json in Resources */ = {isa = PBXBuildFile; fileRef = 5D3F46EFB9F7ED22BAB45256 /* interaction_active.json */; };
 		9C9B02BD119CE0A0AEA9186B /* ConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62E87D253D9ED2756DC0392 /* ConnectionState.swift */; };
@@ -68,12 +69,14 @@
 		BA4BFAD2E4AB100F4000BA48 /* ImmunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFFF11354FE9CAD6EAE725A /* ImmunityView.swift */; };
 		BAC2700472EA489F28B66E93 /* generate_fixtures.py in Resources */ = {isa = PBXBuildFile; fileRef = 7BB75BFC18653A3BCE2AD7D5 /* generate_fixtures.py */; };
 		BEB59F9940D82979C9153A2C /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9253DFC3E29C1CF800A5BDB8 /* ServerConfig.swift */; };
+		C075F08125AF87186C01E9E5 /* Fraunces-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 77B14D26CBDB75B91E4F38B4 /* Fraunces-Variable.ttf */; };
 		C1E2FA6B3951FEDDC7D37147 /* CardHandViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1517A7372D1302738C30068E /* CardHandViewModel.swift */; };
 		C2ECBD539232E1B216A34178 /* PhaseProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7358AA566FA334CD64594A21 /* PhaseProgressView.swift */; };
 		C576C0F88C387E636B7C4F7B /* LobbyScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083E4829752E7D45735E2195 /* LobbyScreen.swift */; };
 		C6BEA86E114D8E10106204D6 /* tribal_voting.json in Resources */ = {isa = PBXBuildFile; fileRef = 5618ECF801683DD6C8DBA6BE /* tribal_voting.json */; };
 		C6C625813948A955FAA1DC73 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 846851F355576D48E3ABF7C8 /* SocketIO */; };
 		C85B70696006F49D5A87DB82 /* ViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */; };
+		CA12C96490BA7B73FF7061A6 /* Fraunces-Italic-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 924625FFF4F0B9BB4CCBCB83 /* Fraunces-Italic-Variable.ttf */; };
 		CBC8394BD4CC512081EB571F /* finished.json in Resources */ = {isa = PBXBuildFile; fileRef = E4BA6D1E2669918A257E1881 /* finished.json */; };
 		CC1BEF10DF3345DF2A29FE08 /* WinnerRevealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB57868E072CE166B33E87FC /* WinnerRevealView.swift */; };
 		D1D9BFBF872B6042CABB1E1A /* tribal_reveal_tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 6BA6D340E92FC8B7447C972A /* tribal_reveal_tie.json */; };
@@ -92,6 +95,7 @@
 		F30C219F782CDB1413CB8D9D /* SocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853B0306B3185B9F7644BD64 /* SocketClient.swift */; };
 		F4339C498EB09F44618E2802 /* CardDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FA1D6F26BC0F94002F4A81 /* CardDetailSheet.swift */; };
 		F46B39415372AF4A412FA05E /* HallOfFameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */; };
+		F9C27661153509EA11A3AADB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32C075937A0671D2605E1D40 /* Theme.swift */; };
 		FD312F51894BB9E628FF785A /* StealTargetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */; };
 /* End PBXBuildFile section */
 
@@ -126,6 +130,7 @@
 		22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartViewModel.swift; sourceTree = "<group>"; };
 		2337381ED99BCA2F9B2C75AF /* SurvivorGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SurvivorGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorGameApp.swift; sourceTree = "<group>"; };
+		32C075937A0671D2605E1D40 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4AB0990923A310FD9070C0D2 /* InteractionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionState.swift; sourceTree = "<group>"; };
 		4C6C157EA402C9C0508A1015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4ECB78904519F6AC83C6B812 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -148,6 +153,7 @@
 		7519B7FA5A92C991D2A06F0B /* CardAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardAnimations.swift; sourceTree = "<group>"; };
 		75FA1D6F26BC0F94002F4A81 /* CardDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailSheet.swift; sourceTree = "<group>"; };
 		760A57B8F82EA8824DDB71EC /* FixtureDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureDecodingTests.swift; sourceTree = "<group>"; };
+		77B14D26CBDB75B91E4F38B4 /* Fraunces-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces-Variable.ttf"; sourceTree = "<group>"; };
 		79A85A7271CC67973B736F22 /* SurvivorGameTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SurvivorGameTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A28D71C09386EDFF87566C8 /* survivor_cards.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = survivor_cards.json; sourceTree = "<group>"; };
 		7BB75BFC18653A3BCE2AD7D5 /* generate_fixtures.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = generate_fixtures.py; sourceTree = "<group>"; };
@@ -162,10 +168,12 @@
 		8FBD5FAB075FC347AA744261 /* GameClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameClient.swift; sourceTree = "<group>"; };
 		916EE9262A4CE799AD4AE108 /* ChallengeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeScreen.swift; sourceTree = "<group>"; };
 		92456205F3671193A6B2CBB5 /* TribalVoteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TribalVoteState.swift; sourceTree = "<group>"; };
+		924625FFF4F0B9BB4CCBCB83 /* Fraunces-Italic-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces-Italic-Variable.ttf"; sourceTree = "<group>"; };
 		9253DFC3E29C1CF800A5BDB8 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		93FA3B0AE23656E308ED353E /* PlayingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingViewModel.swift; sourceTree = "<group>"; };
 		94828426CF60FB58932E318C /* GamePhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePhase.swift; sourceTree = "<group>"; };
 		94C17E55F46E2B7F3ADF0577 /* legacy_no_settings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = legacy_no_settings.json; sourceTree = "<group>"; };
+		9516609CF588473DFB3D6E94 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorySoFarDrawer.swift; sourceTree = "<group>"; };
 		9E24B36808ACBE3C8AC5E22A /* lobby.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lobby.json; sourceTree = "<group>"; };
 		A1F9BD82EEC0E4818C6523F9 /* PlayerAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerAvatarView.swift; sourceTree = "<group>"; };
@@ -354,6 +362,16 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		6E614A12EAAC8CFBF578A254 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				924625FFF4F0B9BB4CCBCB83 /* Fraunces-Italic-Variable.ttf */,
+				77B14D26CBDB75B91E4F38B4 /* Fraunces-Variable.ttf */,
+				9516609CF588473DFB3D6E94 /* OFL.txt */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
 		8C418A763DB09A8896276750 /* Playing */ = {
 			isa = PBXGroup;
 			children = (
@@ -422,6 +440,7 @@
 			isa = PBXGroup;
 			children = (
 				683DC624062BB2D07896B0C2 /* App */,
+				ECA397ABFE1CC534E7000CF2 /* DesignSystem */,
 				C36D6E2918A51A06F96D69C9 /* Models */,
 				084A9AD623D60225712137E1 /* Networking */,
 				F7DAF13431AA8DA0B5E009B5 /* Resources */,
@@ -484,11 +503,20 @@
 			path = State;
 			sourceTree = "<group>";
 		};
+		ECA397ABFE1CC534E7000CF2 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				32C075937A0671D2605E1D40 /* Theme.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
 		F7DAF13431AA8DA0B5E009B5 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 				4C6C157EA402C9C0508A1015 /* Assets.xcassets */,
 				7A28D71C09386EDFF87566C8 /* survivor_cards.json */,
+				6E614A12EAAC8CFBF578A254 /* Fonts */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -643,6 +671,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				3312584CA42387F6971DD8A5 /* Assets.xcassets in Resources */,
+				CA12C96490BA7B73FF7061A6 /* Fraunces-Italic-Variable.ttf in Resources */,
+				C075F08125AF87186C01E9E5 /* Fraunces-Variable.ttf in Resources */,
+				99B656C30772580AD847E2A3 /* OFL.txt in Resources */,
 				DF3A2759B5C79FE061E34B34 /* survivor_cards.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -720,6 +751,7 @@
 				270F3BDFB4C49636A5453C66 /* SurvivorButton.swift in Sources */,
 				17B3E69CDDBB66087B4A5957 /* SurvivorGameApp.swift in Sources */,
 				ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */,
+				F9C27661153509EA11A3AADB /* Theme.swift in Sources */,
 				E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */,
 				79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */,
 				577D9E98A849DA3DFE397FD4 /* TribalScreen.swift in Sources */,
