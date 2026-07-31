@@ -94,6 +94,26 @@ private struct LobbyContent: View {
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
+            // Computer players: fill the tribe and play solo
+            if viewModel.isHost {
+                HStack {
+                    Label("Computer players", systemImage: "cpu")
+                        .font(.subheadline)
+                    Spacer()
+                    Button {
+                        Task { await viewModel.addBot() }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                    }
+                    .disabled(viewModel.playerCount >= 6)
+                    .accessibilityLabel("Add a computer player")
+                }
+                .padding()
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+
             Spacer()
 
             // Start button

@@ -36,7 +36,21 @@ struct SurvivorGameApp: App {
         _modelContainerError = State(initialValue: initError)
 
         let serverConfig = ServerConfig.loadDefault(from: modelContainer.mainContext)
-        _gameClient = State(initialValue: GameClient(baseURL: serverConfig.baseURL))
+
+        // Dev/test override: SURVIVOR_SERVER_URL in the launch environment
+        // points the whole app (API + socket) at a scratch server — the sim
+        // smoke harness relies on this to never touch the live island.
+        var baseURL = serverConfig.baseURL
+        if let override = ProcessInfo.processInfo.environment["SURVIVOR_SERVER_URL"],
+           let url = URL(string: override) {
+            baseURL = url
+            serverConfig.baseURL = url
+        }
+        if let name = ProcessInfo.processInfo.environment["SURVIVOR_PLAYER_NAME"],
+           !name.isEmpty {
+            serverConfig.playerName = name
+        }
+        _gameClient = State(initialValue: GameClient(baseURL: baseURL))
         
         // Prepare haptic generators for optimal performance
         HapticEngine.prepare()
@@ -47,6 +61,7 @@ struct SurvivorGameApp: App {
             ZStack {
                 ContentView()
                     .environment(gameClient)
+                    .survivorScreen()
                 
                 // Show non-blocking warning if storage is in-memory only
                 if modelContainerError != nil {
@@ -57,9 +72,15 @@ struct SurvivorGameApp: App {
                     }
                 }
             }
+            .preferredColorScheme(.dark)
+            .tint(SurvivorTheme.ember)
         }
         .modelContainer(modelContainer)
     }
+}
+
+extension SurvivorGameApp {
+    // The island is dark by design — the whole app runs torchlit.
 }
 
 /// Warning banner shown when app is using in-memory storage

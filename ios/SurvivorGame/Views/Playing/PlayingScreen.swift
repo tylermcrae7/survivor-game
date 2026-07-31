@@ -18,9 +18,31 @@ struct PlayingScreen: View {
 private struct PlayingContent: View {
     @Bindable var viewModel: PlayingViewModel
     @Environment(GameClient.self) private var gameClient
+    @State private var showStory = false
+    @State private var showPace = false
 
     var body: some View {
         VStack(spacing: 0) {
+            // Utility strip: the story drawer + the Leader's pace dial
+            HStack {
+                Spacer()
+                Button {
+                    showStory = true
+                } label: {
+                    Image(systemName: "scroll")
+                }
+                .accessibilityLabel("The story so far")
+                Button {
+                    showPace = true
+                } label: {
+                    Image(systemName: "hourglass")
+                }
+                .accessibilityLabel("Game pace")
+            }
+            .font(.body)
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+
             // Turn indicator
             TurnIndicatorView(
                 currentPlayer: viewModel.currentPlayer,
@@ -58,6 +80,12 @@ private struct PlayingContent: View {
             CardHandView()
                 .padding(.vertical, 8)
         }
+        .sheet(isPresented: $showStory) {
+            StorySoFarDrawer()
+        }
+        .sheet(isPresented: $showPace) {
+            GameSettingsSheet()
+        }
         .sheet(isPresented: $viewModel.showStealPicker) {
             StealTargetPicker(targets: viewModel.stealTargets) { targetId in
                 Task { await viewModel.steal(targetId: targetId) }
@@ -91,32 +119,22 @@ private struct TurnActionsView: View {
             }
 
             if viewModel.canPlay {
-                Text("Play cards from your hand, then draw to end turn")
+                Text("Play a card if you like, then draw to end your turn")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 12) {
-                Button {
-                    Task { await viewModel.drawCard() }
-                } label: {
-                    Label("Draw", systemImage: "arrow.down.doc.fill")
-                }
-                .buttonStyle(.survivor(color: .blue))
-                .disabled(!viewModel.canDraw || viewModel.isPerformingAction)
-                .accessibilityLabel("Draw card")
-                .accessibilityHint("Draw a new card from the deck")
-
-                Button {
-                    Task { await viewModel.advanceTurn() }
-                } label: {
-                    Label("End Turn", systemImage: "arrow.right")
-                }
-                .buttonStyle(.survivorSecondary)
-                .disabled(viewModel.isPerformingAction)
-                .accessibilityLabel("End turn")
-                .accessibilityHint("Complete your turn and pass to the next player")
+            // Official turn: the draw IS the end of the turn. No End Turn
+            // button exists anywhere — the torch moves on by itself.
+            Button {
+                Task { await viewModel.drawCard() }
+            } label: {
+                Label("Draw Card & End Turn", systemImage: "arrow.down.doc.fill")
             }
+            .buttonStyle(.survivor(color: .blue))
+            .disabled(!viewModel.canDraw || viewModel.isPerformingAction)
+            .accessibilityLabel("Draw card and end your turn")
+            .accessibilityHint("Draws from the deck; drawing ends your turn automatically")
 
             if viewModel.isPerformingAction {
                 ProgressView()

@@ -34,6 +34,7 @@ final class GameClient {
             stateListenerTask?.cancel()
             eventListenerTask?.cancel()
             connectionListenerTask?.cancel()
+            pollTask?.cancel()
         }
     }
 
@@ -53,11 +54,16 @@ final class GameClient {
 
     // MARK: - Game Lifecycle
 
-    func createGame() async throws -> String {
+    func createGame(
+        deckMode: String = "official",
+        expansion: Bool = false,
+        settings: [String: String]? = nil
+    ) async throws -> String {
         isLoading = true
         defer { isLoading = false }
 
-        let response = try await apiClient.createGame()
+        let response = try await apiClient.createGame(
+            deckMode: deckMode, expansion: expansion, settings: settings)
         guard response.success else {
             throw GameClientError.operationFailed("Failed to create game")
         }
@@ -138,6 +144,17 @@ final class GameClient {
         return try await apiClient.playCard(gameId: gameId, playerId: playerId, cardIdx: index)
     }
 
+    /// Targeted card play — params carry targetId/allyId/victimId/cardType/
+    /// takeIndex/choice… straight through as the server's effect kwargs.
+    nonisolated func playCard(at index: Int, params: [String: Any]) async throws -> PlayCardResponse {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        nonisolated(unsafe) let paramsCopy = params
+        return try await apiClient.playCard(
+            gameId: gameId, playerId: playerId, cardIdx: index, params: paramsCopy)
+    }
+
     func drawCard() async throws -> DrawResponse {
         guard let gameId, let playerId else { throw GameClientError.noGame }
         return try await apiClient.draw(gameId: gameId, playerId: playerId)
@@ -189,10 +206,38 @@ final class GameClient {
 
     func castVote(targetId: String, count: Int = 1) async throws {
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        let votesData: [[String: Any]] = [["targetId": targetId, "count": count]]
+        // The server reads "votes", not "count" — a ballot of votes:0 is refused.
+        let votesData: [[String: Any]] = [["targetId": targetId, "votes": count]]
         let response = try await apiClient.castVote(gameId: gameId, voterId: playerId, votesData: votesData)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Cast vote failed")
+        }
+    }
+
+    /// A split ballot: your Vote (and any Extra Votes) across several players.
+    /// allocations: playerId → votes (zero entries are dropped).
+    nonisolated func castSplitBallot(_ allocations: [String: Int]) async throws {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        nonisolated(unsafe) let votesData: [[String: Any]] = allocations
+            .filter { $0.value > 0 }
+            .map { ["targetId": $0.key, "votes": $0.value] }
+        let response = try await apiClient.castVote(gameId: gameId, voterId: playerId, votesData: votesData)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Cast votes failed")
+        }
+    }
+
+    /// Passing the box with no Vote Card is legal — an explicitly empty ballot.
+    nonisolated func passVotingBox() async throws {
+        let gameId = await self.gameId
+        let playerId = await self.playerId
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        nonisolated(unsafe) let empty: [[String: Any]] = []
+        let response = try await apiClient.castVote(gameId: gameId, voterId: playerId, votesData: empty)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Pass failed")
         }
     }
 
@@ -252,9 +297,10 @@ final class GameClient {
         }
     }
 
-    func playImmunity() async throws {
+    func playImmunity(targetId: String? = nil) async throws {
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        let response = try await apiClient.playImmunity(gameId: gameId, playerId: playerId)
+        let response = try await apiClient.playImmunity(
+            gameId: gameId, playerId: playerId, targetId: targetId)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Play immunity failed")
         }
@@ -314,6 +360,61 @@ final class GameClient {
         }
     }
 
+    // MARK: - Lobby, Settings, Rocks
+
+    func addBot() async throws {
+        guard let gameId else { throw GameClientError.noGame }
+        let response = try await apiClient.addBot(gameId: gameId)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Add bot failed")
+        }
+    }
+
+    func removeBot(playerId botId: String) async throws {
+        guard let gameId else { throw GameClientError.noGame }
+        let response = try await apiClient.removeBot(gameId: gameId, playerId: botId)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Remove bot failed")
+        }
+    }
+
+    func renameSelf(to newName: String) async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.renamePlayer(
+            gameId: gameId, playerId: playerId, newName: newName)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Rename failed")
+        }
+        playerName = newName
+    }
+
+    func updateGameSettings(_ settings: [String: String]) async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.updateGameSettings(
+            gameId: gameId, playerId: playerId, settings: settings)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Settings change refused")
+        }
+    }
+
+    func challengeAction(_ action: String, value: Int? = nil) async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.challengeAction(
+            gameId: gameId, playerId: playerId, action: action, value: value)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Challenge refused that")
+        }
+    }
+
+    func interactionAct(_ action: String, value: Int? = nil) async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.interactionAct(
+            gameId: gameId, playerId: playerId, action: action, value: value)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "That move was refused")
+        }
+    }
+
     // MARK: - Session Management
 
     func leaveGame() {
@@ -341,12 +442,27 @@ final class GameClient {
 
     // MARK: - Private
 
+    private var pollTask: Task<Void, Never>?
+
     private func startListening() {
         stateListenerTask = Task { [weak self] in
             guard let self else { return }
             for await state in self.socketClient.gameStateStream {
                 self.gameState = state
                 self.updateNavigationState()
+            }
+        }
+
+        // REST-first resilience: the web app ran on polling alone for months.
+        // 3s cadence while the socket is down, a 10s safety sync while it's up.
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let connected = self.connectionState == .connected
+                try? await Task.sleep(for: .seconds(connected ? 10 : 3))
+                if self.gameId != nil {
+                    await self.syncState()
+                }
             }
         }
 
@@ -425,7 +541,11 @@ extension GameClient {
     }
 
     var isCouncilLeader: Bool {
-        myPlayer?.isCouncilLeader ?? false
+        // councilLeaderId on the vote outranks the per-player flag
+        if let leaderId = gameState?.currentVote?.councilLeaderId {
+            return leaderId == playerId
+        }
+        return myPlayer?.isCouncilLeader ?? false
     }
 
     var isEliminated: Bool {

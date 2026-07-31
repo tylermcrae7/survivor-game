@@ -54,8 +54,14 @@ actor APIClient {
 
     // MARK: - Game Management
 
-    func createGame() async throws -> CreateGameResponse {
-        try await post(path: "/api/game/create")
+    func createGame(
+        deckMode: String = "official",
+        expansion: Bool = false,
+        settings: [String: String]? = nil
+    ) async throws -> CreateGameResponse {
+        var body: [String: Any] = ["deckMode": deckMode, "expansion": expansion]
+        if let settings { body["settings"] = settings }
+        return try await post(path: "/api/game/create", body: body)
     }
 
     func joinGame(gameId: String, name: String, color: String?) async throws -> JoinGameResponse {
@@ -92,10 +98,17 @@ actor APIClient {
         ])
     }
 
-    func playCard(gameId: String, playerId: String, cardIdx: Int) async throws -> PlayCardResponse {
-        try await post(path: "/api/turn/play_card", body: [
+    func playCard(
+        gameId: String, playerId: String, cardIdx: Int,
+        params: [String: Any] = [:]
+    ) async throws -> PlayCardResponse {
+        // Card params (targetId, allyId, victimId, cardType, takeIndex, choice…)
+        // ride along as top-level kwargs — the server reads them as effect args.
+        var body: [String: Any] = [
             "gameId": gameId, "playerId": playerId, "cardIdx": cardIdx
-        ])
+        ]
+        for (key, value) in params { body[key] = value }
+        return try await post(path: "/api/turn/play_card", body: body)
     }
 
     func draw(gameId: String, playerId: String) async throws -> DrawResponse {
@@ -158,8 +171,11 @@ actor APIClient {
         return try await post(path: "/api/tribal/advantage", body: body)
     }
 
-    func playImmunity(gameId: String, playerId: String) async throws -> ActionResponse {
-        try await post(path: "/api/immunity/play", body: ["gameId": gameId, "playerId": playerId])
+    func playImmunity(gameId: String, playerId: String, targetId: String? = nil) async throws -> ActionResponse {
+        // targetId lets you shield an ally with your idol; omitted = yourself
+        var body: [String: Any] = ["gameId": gameId, "playerId": playerId]
+        if let targetId { body["targetId"] = targetId }
+        return try await post(path: "/api/immunity/play", body: body)
     }
 
     func blockImmunity(gameId: String, playerId: String, targetId: String) async throws -> ActionResponse {
@@ -203,6 +219,66 @@ actor APIClient {
 
     func signalReady(gameId: String, juryMemberId: String) async throws -> ActionResponse {
         try await post(path: "/api/final/ready", body: ["gameId": gameId, "juryMemberId": juryMemberId])
+    }
+
+    // MARK: - Lobby & Settings
+
+    func addBot(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/player/add_bot", body: ["gameId": gameId])
+    }
+
+    func removeBot(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/player/remove_bot", body: [
+            "gameId": gameId, "playerId": playerId
+        ])
+    }
+
+    func renamePlayer(gameId: String, playerId: String, newName: String) async throws -> ActionResponse {
+        try await post(path: "/api/player/rename", body: [
+            "gameId": gameId, "playerId": playerId, "newName": newName
+        ])
+    }
+
+    func updateGameSettings(gameId: String, playerId: String, settings: [String: String]) async throws -> ActionResponse {
+        try await post(path: "/api/game/update_settings", body: [
+            "gameId": gameId, "playerId": playerId, "settings": settings
+        ])
+    }
+
+    func deleteGame(gameId: String) async throws -> ActionResponse {
+        try await post(path: "/api/game/delete", body: ["gameId": gameId])
+    }
+
+    // MARK: - Challenges & Interactions (Let's Go To Rocks)
+
+    func challengeAction(gameId: String, playerId: String, action: String, value: Int?) async throws -> ActionResponse {
+        var body: [String: Any] = [
+            "gameId": gameId, "playerId": playerId, "action": action
+        ]
+        if let value { body["value"] = value }
+        return try await post(path: "/api/challenge/action", body: body)
+    }
+
+    func interactionAct(gameId: String, playerId: String, action: String, value: Any?) async throws -> ActionResponse {
+        var body: [String: Any] = [
+            "gameId": gameId, "playerId": playerId, "action": action
+        ]
+        if let value { body["value"] = value }
+        return try await post(path: "/api/interaction/act", body: body)
+    }
+
+    // MARK: - Hall of Fame & Access
+
+    func winners() async throws -> [WinnerRecord] {
+        try await get(path: "/api/winners")
+    }
+
+    func accessCheck() async throws -> AccessCheckResponse {
+        try await get(path: "/api/access/check")
+    }
+
+    func submitAccess(code: String) async throws -> ActionResponse {
+        try await post(path: "/api/access", body: ["code": code])
     }
 
     // MARK: - Health
@@ -249,10 +325,14 @@ struct PlayCardResponse: Codable {
     let success: Bool
     let message: String?
     let tribalTriggered: Bool?
+    /// The Spy Shack's first call (no takeIndex) answers with the target's
+    /// hand so the spy can choose which card to take.
+    let spiedHand: [CardInstance]?
 
     enum CodingKeys: String, CodingKey {
         case success, message
         case tribalTriggered = "tribal_triggered"
+        case spiedHand = "spied_hand"
     }
 }
 
@@ -270,6 +350,27 @@ struct DrawResponse: Codable {
 struct PingResponse: Codable {
     let success: Bool
     let timestamp: Double?
+}
+
+struct WinnerRecord: Codable, Equatable, Identifiable {
+    let id: String?
+    let winnerName: String?
+    let date: String?
+    let gameId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, date
+        case winnerName = "winner_name"
+        case gameId = "game_id"
+    }
+}
+
+struct AccessCheckResponse: Codable {
+    let success: Bool
+    /// The island is code-locked.
+    let gated: Bool
+    /// This client already holds a valid access cookie.
+    let ok: Bool
 }
 
 // MARK: - Errors

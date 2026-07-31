@@ -11,7 +11,7 @@ struct StartScreen: View {
         NavigationStack {
             if let vm = viewModel {
                 StartContent(viewModel: vm)
-                    .navigationTitle("Survivor")
+                    .navigationTitle("")
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
@@ -46,18 +46,9 @@ private struct StartContent: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 32) {
-                // Logo area
-                VStack(spacing: 8) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.orange)
-                    Text("Survivor")
-                        .font(.largeTitle.bold())
-                    Text("The Board Game")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 20)
+                // The wordmark — same ceremony as the web app
+                SurvivorWordmark()
+                    .padding(.top, 20)
 
                 // Player setup
                 PlayerSetupView(
@@ -118,8 +109,11 @@ private struct StartContent: View {
 
 private struct ServerSettingsSheet: View {
     @Bindable var viewModel: StartViewModel
+    @Environment(GameClient.self) private var gameClient
     @Environment(\.dismiss) private var dismiss
     @State private var connectionOk: Bool?
+    @State private var islandCode = ""
+    @State private var accessResult: String?
 
     var body: some View {
         NavigationStack {
@@ -143,6 +137,36 @@ private struct ServerSettingsSheet: View {
                         )
                         .foregroundStyle(ok ? .green : .red)
                     }
+                }
+
+                Section {
+                    TextField("Island code", text: $islandCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button("Unlock the island") {
+                        Task {
+                            do {
+                                let response = try await gameClient.apiClient.submitAccess(code: islandCode)
+                                accessResult = response.success
+                                    ? "The island knows you now"
+                                    : (response.message ?? "That code was refused")
+                            } catch {
+                                accessResult = error.localizedDescription
+                            }
+                        }
+                    }
+                    .disabled(islandCode.isEmpty)
+
+                    if let accessResult {
+                        Text(accessResult)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Access")
+                } footer: {
+                    Text("The public island is code-locked. Enter the shared code once; this phone keeps the key.")
                 }
             }
             .navigationTitle("Settings")

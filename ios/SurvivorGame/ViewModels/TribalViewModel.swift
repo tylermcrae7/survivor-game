@@ -90,11 +90,31 @@ final class TribalViewModel {
         }
     }
 
-    func castVote(targetId: String) async {
+    func castVote(targetId: String, count: Int = 1) async {
         isPerformingAction = true
         defer { isPerformingAction = false }
         do {
-            try await gameClient.castVote(targetId: targetId)
+            try await gameClient.castVote(targetId: targetId, count: count)
+        } catch {
+            self.error = .from(error)
+        }
+    }
+
+    func castSplitBallot(_ allocations: [String: Int]) async {
+        isPerformingAction = true
+        defer { isPerformingAction = false }
+        do {
+            try await gameClient.castSplitBallot(allocations)
+        } catch {
+            self.error = .from(error)
+        }
+    }
+
+    func passVotingBox() async {
+        isPerformingAction = true
+        defer { isPerformingAction = false }
+        do {
+            try await gameClient.passVotingBox()
         } catch {
             self.error = .from(error)
         }
@@ -152,11 +172,11 @@ final class TribalViewModel {
         }
     }
 
-    func playImmunity() async {
+    func playImmunity(targetId: String? = nil) async {
         isPerformingAction = true
         defer { isPerformingAction = false }
         do {
-            try await gameClient.playImmunity()
+            try await gameClient.playImmunity(targetId: targetId)
         } catch {
             self.error = .from(error)
         }

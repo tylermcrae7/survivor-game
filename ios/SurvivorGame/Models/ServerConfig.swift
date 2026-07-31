@@ -11,7 +11,9 @@ final class ServerConfig {
     var lastPlayerId: String?
 
     init(
-        baseURL: URL = URL(string: "http://localhost:8080")!,
+        // The island's home on Tyler's LAN. A simulator overrides this via
+        // SURVIVOR_SERVER_URL; any network change is editable in Settings.
+        baseURL: URL = URL(string: "http://192.168.0.189:8080")!,
         playerName: String = "",
         preferredColor: String? = nil
     ) {

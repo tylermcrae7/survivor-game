@@ -30,6 +30,14 @@ final class LobbyViewModel {
         }
     }
 
+    func addBot() async {
+        do {
+            try await gameClient.addBot()
+        } catch {
+            self.error = .from(error)
+        }
+    }
+
     func leaveGame() {
         gameClient.leaveGame()
     }

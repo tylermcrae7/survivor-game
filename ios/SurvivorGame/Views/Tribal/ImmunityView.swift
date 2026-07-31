@@ -3,6 +3,7 @@ import SwiftUI
 struct ImmunityView: View {
     @Bindable var viewModel: TribalViewModel
     @State private var showNullifierTarget = false
+    @State private var showShieldTarget = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -27,6 +28,17 @@ struct ImmunityView: View {
                         Label("Play Immunity Idol", systemImage: "shield.fill")
                     }
                     .buttonStyle(.survivor(color: .yellow))
+                    .disabled(viewModel.isPerformingAction)
+
+                    // Your idol can protect an ally instead of you
+                    Button {
+                        showShieldTarget = true
+                    } label: {
+                        Label("Shield an ally instead…", systemImage: "person.2.fill")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                     .disabled(viewModel.isPerformingAction)
                 }
 
@@ -67,6 +79,14 @@ struct ImmunityView: View {
                 .padding()
                 .background(.yellow.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .sheet(isPresented: $showShieldTarget) {
+            TargetPickerSheet(
+                title: "Shield Which Ally?",
+                players: viewModel.activePlayers.filter { $0.id != viewModel.myPlayerId }
+            ) { targetId in
+                Task { await viewModel.playImmunity(targetId: targetId) }
             }
         }
         .sheet(isPresented: $showNullifierTarget) {

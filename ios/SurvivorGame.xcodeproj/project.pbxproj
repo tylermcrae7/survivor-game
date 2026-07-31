@@ -37,6 +37,7 @@
 		6588210FEAEEB4108AD7AFC7 /* MockGameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB96FC8285F596A14C699518 /* MockGameClient.swift */; };
 		66970C6962DCA3843B7D9FC6 /* VotingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEAA0AF59E6324AA323F21F /* VotingView.swift */; };
 		727FBFD5CDA13F859F0681A4 /* legacy_no_settings.json in Resources */ = {isa = PBXBuildFile; fileRef = 94C17E55F46E2B7F3ADF0577 /* legacy_no_settings.json */; };
+		76E7B99479024C447BD3D6F8 /* StorySoFarDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */; };
 		796171B19E1C7D9B77015169 /* GameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBD5FAB075FC347AA744261 /* GameClient.swift */; };
 		79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC7B695E90A4526E36793462 /* ToastView.swift */; };
 		7E6866EED3C5AD6C0C1B1D0C /* playing_midturn.json in Resources */ = {isa = PBXBuildFile; fileRef = 835B2847716E322179470F0C /* playing_midturn.json */; };
@@ -51,6 +52,8 @@
 		9C9B02BD119CE0A0AEA9186B /* ConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62E87D253D9ED2756DC0392 /* ConnectionState.swift */; };
 		9F0FB44D1289128C78EF57BE /* tribal_immunity.json in Resources */ = {isa = PBXBuildFile; fileRef = C8F4EFC64C011461248D2CEB /* tribal_immunity.json */; };
 		A8D88EDDD19265E64E1BF7EC /* tribal_announcement.json in Resources */ = {isa = PBXBuildFile; fileRef = 67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */; };
+		AC36887BE6C5E1F847FCAE13 /* ReactiveTheftOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */; };
+		ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */; };
 		B1E4E38E15E1EAA91EA2497A /* TurnIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */; };
 		B5C7A07069920F180EA34700 /* FinalTribalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11B9FE2927CB134124B9342 /* FinalTribalViewModel.swift */; };
 		B84BACD6DBD1285101106F59 /* ChallengeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */; };
@@ -140,12 +143,14 @@
 		93FA3B0AE23656E308ED353E /* PlayingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingViewModel.swift; sourceTree = "<group>"; };
 		94828426CF60FB58932E318C /* GamePhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePhase.swift; sourceTree = "<group>"; };
 		94C17E55F46E2B7F3ADF0577 /* legacy_no_settings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = legacy_no_settings.json; sourceTree = "<group>"; };
+		9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorySoFarDrawer.swift; sourceTree = "<group>"; };
 		9E24B36808ACBE3C8AC5E22A /* lobby.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lobby.json; sourceTree = "<group>"; };
 		A1F9BD82EEC0E4818C6523F9 /* PlayerAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerAvatarView.swift; sourceTree = "<group>"; };
 		A25ADB5FD87C59CD9CAD2CCE /* GameHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameHistoryView.swift; sourceTree = "<group>"; };
 		A6CB5AAE841ACA3F75052A81 /* GameRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameRecord.swift; sourceTree = "<group>"; };
 		AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkingTests.swift; sourceTree = "<group>"; };
 		ACEAA0AF59E6324AA323F21F /* VotingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VotingView.swift; sourceTree = "<group>"; };
+		AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorTheme.swift; sourceTree = "<group>"; };
 		BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyViewModel.swift; sourceTree = "<group>"; };
 		BF71C61DAA3A57852843D2F0 /* AccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTests.swift; sourceTree = "<group>"; };
 		C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StealTargetPicker.swift; sourceTree = "<group>"; };
@@ -163,6 +168,7 @@
 		E4BA6D1E2669918A257E1881 /* finished.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = finished.json; sourceTree = "<group>"; };
 		EB57868E072CE166B33E87FC /* WinnerRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WinnerRevealView.swift; sourceTree = "<group>"; };
 		EB96FC8285F596A14C699518 /* MockGameClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGameClient.swift; sourceTree = "<group>"; };
+		EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactiveTheftOverlay.swift; sourceTree = "<group>"; };
 		ECE14A68AE3FEDAD4CC62A30 /* StartScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartScreen.swift; sourceTree = "<group>"; };
 		EEFFF11354FE9CAD6EAE725A /* ImmunityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmunityView.swift; sourceTree = "<group>"; };
 		F438FC100DE10D7EA2EF6416 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
@@ -317,7 +323,10 @@
 				E0D6A9B48AC1F6B010C3DC27 /* ConnectionBanner.swift */,
 				68644E98FB21432FA5656F26 /* HapticEngine.swift */,
 				7358AA566FA334CD64594A21 /* PhaseProgressView.swift */,
+				EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */,
+				9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */,
 				72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */,
+				AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */,
 				FC7B695E90A4526E36793462 /* ToastView.swift */,
 			);
 			path = Components;
@@ -594,13 +603,16 @@
 				ECB10D498CD44DEA3A3894DA /* PlayerStatusBar.swift in Sources */,
 				363E486B92D0F8ED41213292 /* PlayingScreen.swift in Sources */,
 				D9EEC9D120C0D13389A3751E /* PlayingViewModel.swift in Sources */,
+				AC36887BE6C5E1F847FCAE13 /* ReactiveTheftOverlay.swift in Sources */,
 				BEB59F9940D82979C9153A2C /* ServerConfig.swift in Sources */,
 				F30C219F782CDB1413CB8D9D /* SocketClient.swift in Sources */,
 				83EAAFA8BE7FE7FA7797BED6 /* StartScreen.swift in Sources */,
 				41E5F07EB8990425AF7B7EEF /* StartViewModel.swift in Sources */,
 				FD312F51894BB9E628FF785A /* StealTargetPicker.swift in Sources */,
+				76E7B99479024C447BD3D6F8 /* StorySoFarDrawer.swift in Sources */,
 				270F3BDFB4C49636A5453C66 /* SurvivorButton.swift in Sources */,
 				17B3E69CDDBB66087B4A5957 /* SurvivorGameApp.swift in Sources */,
+				ACDF94813CDD90BB6BBDD29C /* SurvivorTheme.swift in Sources */,
 				E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */,
 				79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */,
 				577D9E98A849DA3DFE397FD4 /* TribalScreen.swift in Sources */,
