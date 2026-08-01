@@ -20,8 +20,9 @@ struct InteractionScreen: View {
         case "power_pair": return "Power Pair"
         case "numbers_game": return "It's a Numbers Game"
         default:
-            return (interaction?.type ?? "Reward Challenge")
-                .replacingOccurrences(of: "_", with: " ").capitalized
+            return interaction?.name
+                ?? (interaction?.type ?? "Reward Challenge")
+                    .replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
@@ -40,7 +41,8 @@ struct InteractionScreen: View {
                             Text(title)
                                 .font(.title.weight(.black))
                                 .fontDesign(.serif)
-                            if let round = interaction.round, round > 1 {
+                            if let round = interaction.round, round > 1,
+                               !interaction.isComplete {
                                 Text("Round \(round)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -48,24 +50,145 @@ struct InteractionScreen: View {
                         }
                         .padding(.top, 8)
 
-                        if let prompt = interaction.prompt {
-                            Text(prompt)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-
-                        if awaitingMe {
-                            pickPanel(interaction)
+                        if interaction.isComplete {
+                            // The server parks a finished interaction until
+                            // SOMEBODY dismisses it, and bots only clear their
+                            // own. Without this panel every client sits on the
+                            // waiting spinner forever and the table freezes.
+                            revealPanel(interaction)
                         } else {
-                            waitingPanel(interaction)
+                            if let prompt = interaction.prompt {
+                                Text(prompt)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
+
+                            if awaitingMe {
+                                pickPanel(interaction)
+                            } else {
+                                waitingPanel(interaction)
+                            }
                         }
                     }
                     .padding(20)
                 }
             }
             .errorAlert($error)
+        }
+    }
+
+    // MARK: - The Reveal (complete phase)
+
+    /// Web parity with `ui.js showInteractionReveal`: everyone's picks, the
+    /// outcome, and a Continue button. Every player gets Continue — the server
+    /// accepts a dismiss from anyone, and only one of them needs to land.
+    @ViewBuilder
+    private func revealPanel(_ interaction: InteractionState) -> some View {
+        let picks = interaction.revealedPicks
+
+        VStack(spacing: Torch.Spacing.md) {
+            Text("The Reveal")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
+
+            if let prompt = interaction.prompt, !prompt.isEmpty {
+                Text(prompt)
+                    .font(Torch.Font.display(Torch.TextSize.displaySM, weight: 900,
+                                             relativeTo: .title3))
+                    .foregroundStyle(Torch.Color.parchment)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !picks.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(revealOrder(interaction, picks: picks), id: \.self) { id in
+                        if let pick = picks[id] {
+                            revealRow(playerId: id, pick: pick,
+                                      isWinner: id == interaction.winnerId)
+                        }
+                    }
+                }
+            }
+
+            if let winnerId = interaction.winnerId,
+               let winner = players[winnerId] {
+                Text("\(winner.name) takes the reward")
+                    .font(Torch.Font.label(Torch.TextSize.sm))
+                    .tracking(Torch.Track.label * Torch.TextSize.sm)
+                    .foregroundStyle(Torch.Color.juryGold)
+            }
+
+            // Lowercase for the style's SF small caps; the a11y label keeps
+            // the readable "Continue" the web button uses.
+            Button("continue") { dismiss() }
+                .buttonStyle(.torchGlow)
+                .disabled(isActing)
+                .accessibilityLabel("Continue")
+
+            if isActing { ProgressView().tint(Torch.Color.torch) }
+        }
+        .padding(Torch.Spacing.md)
+        .frame(maxWidth: .infinity)
+        .torchCard()
+    }
+
+    /// Participant order where the server gave one, so the reveal reads the
+    /// same on every phone (a dictionary alone has none).
+    private func revealOrder(_ interaction: InteractionState,
+                             picks: [String: InteractionPick]) -> [String] {
+        let ordered = (interaction.participants ?? []).filter { picks[$0] != nil }
+        let extras = picks.keys.filter { !ordered.contains($0) }.sorted()
+        return ordered + extras
+    }
+
+    private func revealRow(playerId: String, pick: InteractionPick,
+                           isWinner: Bool) -> some View {
+        let player = players[playerId]
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(player?.swiftUIColor ?? Torch.Color.textFaint)
+                .frame(width: 10, height: 10)
+            Text(player?.name ?? playerId)
+                .font(Torch.Font.body(Torch.TextSize.base, weight: .semibold))
+                .foregroundStyle(Torch.Color.text)
+            Spacer(minLength: 8)
+            Text(pick.displayValue)
+                .font(Torch.Font.body(Torch.TextSize.base, weight: .bold))
+                .foregroundStyle(isWinner ? Torch.Color.juryGold : Torch.Color.flame)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                .fill(Torch.Color.surfaceSunken)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                .strokeBorder(isWinner ? Torch.Color.juryGold.opacity(0.5) : Torch.Color.line,
+                              lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(player?.name ?? playerId) \(pick.revealPhrase)")
+    }
+
+    private func dismiss() {
+        isActing = true
+        Task {
+            defer { isActing = false }
+            do {
+                try await gameClient.dismissInteraction()
+                HapticEngine.impact(.medium)
+            } catch {
+                // Someone else's Continue landing first is a success, not a
+                // failure — the interaction is already gone either way.
+                if gameClient.gameState?.interaction != nil {
+                    self.error = .from(error)
+                }
+            }
         }
     }
 

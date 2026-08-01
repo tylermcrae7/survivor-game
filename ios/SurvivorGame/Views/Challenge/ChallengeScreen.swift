@@ -27,7 +27,7 @@ struct ChallengeScreen: View {
     }
 
     var body: some View {
-        if let challenge, !challenge.isComplete {
+        if let challenge {
             ZStack {
                 SurvivorTheme.Background()
 
@@ -44,31 +44,40 @@ struct ChallengeScreen: View {
                         }
                         .padding(.top, 8)
 
-                        if let prompt = challenge.prompt {
-                            Text(prompt)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-
-                        if let currentId = challenge.currentPlayerId,
-                           let current = players[currentId] {
-                            SurvivorChip {
-                                Circle().fill(current.swiftUIColor).frame(width: 10, height: 10)
-                                Text(isMyMove ? "Your move" : "\(current.name) is up")
-                            }
-                        }
-
-                        if isMyMove {
-                            actionPanel(challenge)
+                        if challenge.isComplete {
+                            // The server parks a finished Challenge until it is
+                            // dismissed, and bots refuse to act while a
+                            // human-won one sits parked. Unmounting here (the
+                            // old behaviour) both hid the win and wedged the
+                            // table — so the winner gets their reveal instead.
+                            victoryPanel(challenge)
                         } else {
-                            ProgressView()
-                                .padding(.vertical, 8)
-                        }
+                            if let prompt = challenge.prompt {
+                                Text(prompt)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
 
-                        if let scores = challenge.scores, !scores.isEmpty {
-                            scoreBoard(scores)
+                            if let currentId = challenge.currentPlayerId,
+                               let current = players[currentId] {
+                                SurvivorChip {
+                                    Circle().fill(current.swiftUIColor).frame(width: 10, height: 10)
+                                    Text(isMyMove ? "Your move" : "\(current.name) is up")
+                                }
+                            }
+
+                            if isMyMove {
+                                actionPanel(challenge)
+                            } else {
+                                ProgressView()
+                                    .padding(.vertical, 8)
+                            }
+
+                            if let scores = challenge.scores, !scores.isEmpty {
+                                scoreBoard(scores)
+                            }
                         }
 
                         if let log = challenge.log, !log.isEmpty {
@@ -82,7 +91,114 @@ struct ChallengeScreen: View {
         }
     }
 
+    // MARK: - Victory (complete phase)
+
+    /// The win beat: who took it, the final scores where the Challenge kept
+    /// any, the Necklace line, and a Continue that clears the parked Challenge
+    /// (survivor_server.py `challenge_action` accepts a dismiss from anyone).
+    @ViewBuilder
+    private func victoryPanel(_ challenge: ChallengeState) -> some View {
+        let winner = challenge.winnerId.flatMap { players[$0] }
+        let wonNecklace = challenge.winnerId != nil
+            && gameClient.gameState?.necklaceHolder == challenge.winnerId
+
+        VStack(spacing: Torch.Spacing.md) {
+            Text("The Challenge Is Won")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.wide * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textSecondary)
+
+            Text(winner?.name ?? "Nobody")
+                .font(Torch.Font.display(Torch.TextSize.displayLG, weight: 900,
+                                         relativeTo: .largeTitle))
+                .foregroundStyle(Torch.Color.parchment)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .shadow(color: Torch.Color.torch.opacity(0.35), radius: 24)
+
+            // The server's completed prompt is exactly "{name} won the
+            // Challenge!", so it would only echo the name above — the reward
+            // detail lives in the Necklace line and the fireside log.
+            if winner != nil {
+                Text("won the Challenge")
+                    .font(Torch.Font.body(Torch.TextSize.base))
+                    .foregroundStyle(Torch.Color.textSecondary)
+            } else if let prompt = challenge.prompt, !prompt.isEmpty {
+                Text(prompt)
+                    .font(Torch.Font.body(Torch.TextSize.base))
+                    .foregroundStyle(Torch.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if wonNecklace {
+                Label("Wears the Immunity Necklace — nobody can vote for them at the next Tribal Council",
+                      systemImage: "shield.lefthalf.filled")
+                    .font(Torch.Font.body(Torch.TextSize.sm, weight: .semibold))
+                    .foregroundStyle(Torch.Color.juryGold)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                            .fill(Torch.Color.surfaceSunken)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                            .strokeBorder(Torch.Color.juryGold.opacity(0.45), lineWidth: 1)
+                    )
+            }
+
+            if let scores = challenge.scores, !scores.isEmpty {
+                scoreBoard(scores)
+            }
+
+            // Lowercase for the style's SF small caps; the a11y label keeps
+            // the readable "Continue".
+            Button("continue") { dismiss() }
+                .buttonStyle(.torchGlow)
+                .disabled(isActing)
+                .accessibilityLabel("Continue")
+
+            if isActing { ProgressView().tint(Torch.Color.torch) }
+        }
+        .padding(Torch.Spacing.md)
+        .frame(maxWidth: .infinity)
+        .torchCard()
+    }
+
+    private func dismiss() {
+        isActing = true
+        Task {
+            defer { isActing = false }
+            do {
+                try await gameClient.dismissChallenge()
+                HapticEngine.impact(.medium)
+            } catch {
+                // Another player's Continue landing first already cleared it —
+                // that is the outcome we wanted, not an error to surface.
+                if gameClient.gameState?.challenge != nil {
+                    self.error = .from(error)
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
+
+    /// Passing means two different things. In Highest Bidder (challenges.py
+    /// `_action_highest_bidder`, phase "bidding") you drop out of the bidding;
+    /// in 1 Now or 2 Later (`_begin_one_now_round`, phase "choosing") you
+    /// decline the pull and hand the bag on.
+    private var passLabel: String {
+        switch challenge?.type {
+        case "highest_bidder": "Pass on bidding"
+        case "one_now_or_two_later": "Pass the bag"
+        default: "Pass"
+        }
+    }
 
     @ViewBuilder
     private func actionPanel(_ challenge: ChallengeState) -> some View {
@@ -120,7 +236,7 @@ struct ChallengeScreen: View {
             }
 
             if actions.contains("pass") {
-                Button("Pass the bag") {
+                Button(passLabel) {
                     act("pass", value: nil)
                 }
                 .buttonStyle(.survivorSecondary)

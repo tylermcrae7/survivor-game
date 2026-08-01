@@ -274,8 +274,9 @@ final class GameClient {
     // MARK: - Tribal Council
 
     func startVoting(type: String = "elimination") async throws {
-        guard let gameId else { throw GameClientError.noGame }
-        let response = try await apiClient.startVoting(gameId: gameId, voteType: type)
+        // playerId rides along: the server only lets the council Leader do this.
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.startVoting(gameId: gameId, playerId: playerId, voteType: type)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Start voting failed")
         }
@@ -338,8 +339,8 @@ final class GameClient {
     }
 
     func revealVotes() async throws {
-        guard let gameId else { throw GameClientError.noGame }
-        let response = try await apiClient.revealVotes(gameId: gameId)
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.revealVotes(gameId: gameId, playerId: playerId)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Reveal votes failed")
         }
@@ -356,8 +357,8 @@ final class GameClient {
     }
 
     func completeTribal() async throws {
-        guard let gameId else { throw GameClientError.noGame }
-        let response = try await apiClient.completeTribial(gameId: gameId)
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.completeTribial(gameId: gameId, playerId: playerId)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Complete tribal failed")
         }
@@ -365,8 +366,8 @@ final class GameClient {
     }
 
     func advanceTribal(to phase: String) async throws {
-        guard let gameId else { throw GameClientError.noGame }
-        let response = try await apiClient.advanceTribal(gameId: gameId, phase: phase)
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.advanceTribal(gameId: gameId, playerId: playerId, phase: phase)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Advance tribal failed")
         }
@@ -517,6 +518,21 @@ final class GameClient {
             throw GameClientError.operationFailed(response.message ?? "That move was refused")
         }
         await applyState(response.gameState)
+    }
+
+    /// Clear a finished Reward Challenge so the table can move on. The server
+    /// parks a `phase == "complete"` interaction until *somebody* dismisses it
+    /// (interactions.py `act`, no identity check) — bots only clear the ones
+    /// they started, so every client must be able to send this or a
+    /// human-played interaction wedges the whole game.
+    nonisolated func dismissInteraction() async throws {
+        try await interactionAct("dismiss", value: nil)
+    }
+
+    /// Clear a finished Rocks Challenge — the same park-until-dismissed
+    /// contract (survivor_server.py `challenge_action`, no identity check).
+    nonisolated func dismissChallenge() async throws {
+        try await challengeAction("dismiss", value: nil)
     }
 
     // MARK: - Session Management

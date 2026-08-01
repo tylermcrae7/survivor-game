@@ -3,23 +3,41 @@ import SwiftUI
 struct ContentView: View {
     @Environment(GameClient.self) private var gameClient
 
+    /// True while a Challenge / Reward Challenge screen is covering the table.
+    /// A *complete* one counts: the server parks it until somebody dismisses
+    /// it, so its reveal screen is still mounted and still the only thing the
+    /// player may touch.
+    private var takeoverActive: Bool {
+        guard gameClient.accessState == .unlocked else { return false }
+        return gameClient.gameState?.challenge != nil
+            || gameClient.gameState?.interaction != nil
+    }
+
     var body: some View {
         ZStack {
-            switch gameClient.accessState {
-            case .checking:
-                ProgressView("Finding the island…")
-            case .requiresCode:
-                IslandAccessScreen()
-            case .unavailable(let message):
-                IslandUnavailableScreen(message: message)
-            case .unlocked:
-                gameContent
+            Group {
+                switch gameClient.accessState {
+                case .checking:
+                    ProgressView("Finding the island…")
+                case .requiresCode:
+                    IslandAccessScreen()
+                case .unavailable(let message):
+                    IslandUnavailableScreen(message: message)
+                case .unlocked:
+                    gameContent
+                }
             }
+            // The takeover screens paint over this content but do not remove
+            // it, so without these the buried game stays reachable by
+            // VoiceOver and by stray taps through transparent areas.
+            .accessibilityHidden(takeoverActive)
+            .allowsHitTesting(!takeoverActive)
 
             if gameClient.accessState == .unlocked {
-                // A running Challenge or Reward Challenge takes the table over
-                // (the server blocks ordinary turns while one is live).
-                if gameClient.gameState?.challenge?.isComplete == false {
+                // A Challenge or Reward Challenge takes the table over (the
+                // server blocks ordinary turns while one is live, and holds a
+                // finished one until it is dismissed).
+                if gameClient.gameState?.challenge != nil {
                     ChallengeScreen()
                 } else if gameClient.gameState?.interaction != nil {
                     InteractionScreen()
