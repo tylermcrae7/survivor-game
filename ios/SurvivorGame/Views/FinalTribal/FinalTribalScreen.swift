@@ -67,10 +67,16 @@ private struct FinalTribalContent: View {
     var body: some View {
         VStack(spacing: 0) {
             // Phase indicator
+            // Server tokens (survivor_server.advance_final_phase):
+            // questions → deliberation → voting → reveal.
             PhaseProgressView(
                 phases: ["Questions", "Deliberation", "Voting", "Reveal"],
                 currentIndex: phaseIndex
             )
+            // Keep the labels on one line instead of hyphenating mid-word;
+            // both modifiers inherit into the tracker's Text views.
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .padding(.vertical, 12)
 
             hairline
@@ -135,7 +141,9 @@ private struct FinalistsRow: View {
             HStack(spacing: 24) {
                 ForEach(finalists) { player in
                     VStack(spacing: 8) {
-                        PlayerAvatarView(player: player, size: 56)
+                        // The avatar's own caption is suppressed — the serif
+                        // title below is this finalist's single name.
+                        PlayerAvatarView(player: player, size: 56, showName: false)
                         Text(player.name)
                             .font(Torch.Font.display(Torch.TextSize.base, weight: 700))
                             .foregroundStyle(Torch.Color.parchment)
@@ -303,6 +311,12 @@ private struct FinalTieBreakView: View {
 private struct FinalLeaderBar: View {
     @Bindable var viewModel: FinalTribalViewModel
 
+    /// Any computer player in the game — bot games are barred from the Hall of
+    /// Fame server-side, so "Record Winner" has nothing to do.
+    private var gameHasBots: Bool {
+        viewModel.gameState?.players.values.contains { $0.isBot } ?? false
+    }
+
     var body: some View {
         HStack {
             switch viewModel.phase {
@@ -322,7 +336,11 @@ private struct FinalLeaderBar: View {
                 EmptyView()
 
             case .reveal:
-                if let winner = viewModel.winner {
+                // The server refuses to record a game containing computer
+                // players ("Games with computer players aren't recorded in the
+                // Hall of Fame" — survivor_server.record_winner), so the button
+                // would only ever error. Hide it rather than dangle it.
+                if let winner = viewModel.winner, !gameHasBots {
                     Button("Record Winner") {
                         Task { await viewModel.finishGame(winnerId: winner.id) }
                     }

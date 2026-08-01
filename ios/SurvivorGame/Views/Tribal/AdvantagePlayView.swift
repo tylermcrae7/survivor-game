@@ -16,8 +16,14 @@ struct AdvantagePlayView: View {
                 .multilineTextAlignment(.center)
 
             if !viewModel.isEliminated {
-                let advantages = viewModel.myTribalCards.filter {
-                    $0.category == "tribal_advantage" && $0.playablePhases?.contains("tribal_discussion") == true
+                // `myTribalCards` is already catalog-resolved; going back through
+                // the catalog for the phases keeps this correct even for a card
+                // that arrived fully formed. The advantage_play window maps to
+                // the server's `tribal_discussion` playability token (the same
+                // mapping CardHandViewModel.currentPhase makes).
+                let advantages = viewModel.myTribalCards.filter { card in
+                    card.category == "tribal_advantage"
+                        && CardCatalog.shared.playablePhases(for: card).contains("tribal_discussion")
                 }
 
                 if advantages.isEmpty {

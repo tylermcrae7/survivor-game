@@ -93,7 +93,19 @@ struct TribalScreen: View {
 private struct TribalContent: View {
     @Bindable var viewModel: TribalViewModel
 
-    private let phaseNames = ["Announce", "Advantage", "Discuss", "Immunity", "Vote", "Reveal"]
+    /// The server's canonical tribal order (rules_engine.TribalPhase:
+    /// announcement → advantage_play → discussion → voting → immunity →
+    /// reveal). Voting precedes the idol window because "Immunity Idol … can
+    /// only be played AFTER all players have voted" — the server enforces a
+    /// full Voting Box before it will advance to immunity or reveal. Listing
+    /// Immunity before Vote lit the idol window as "passed" while the tribe
+    /// was still casting ballots.
+    /// Short by necessity: six labels share one iPhone-portrait row, and the
+    /// longer wording ("Announce"/"Discuss"/"Immunity") truncated to
+    /// "Announ…"/"Advant…" even scaled down. Each still names its phase
+    /// honestly — Open the council, play Advantages, Talk, Vote, the Idols
+    /// window, then Reveal.
+    private let phaseNames = ["Open", "Advantage", "Talk", "Vote", "Idols", "Reveal"]
 
     private var hairline: some View {
         Rectangle().fill(CouncilPalette.line).frame(height: 1)
@@ -106,6 +118,13 @@ private struct TribalContent: View {
                 phases: phaseNames,
                 currentIndex: phaseIndex
             )
+            // Six labels across one row used to hyphenate mid-word
+            // ("An-nounc-e", "Im-muni-ty"). Both modifiers ride the
+            // environment down into the tracker's Text views, so each label
+            // shrinks to fit on a single line instead of breaking — and with
+            // the shorter wording above, none has to shrink far.
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
             .padding(.vertical, 12)
 
             hairline
@@ -147,8 +166,8 @@ private struct TribalContent: View {
         case .waiting, .announcement: return 0
         case .advantagePlay: return 1
         case .discussion: return 2
-        case .immunity: return 3
-        case .voting: return 4
+        case .voting: return 3
+        case .immunity: return 4
         case .reveal: return 5
         }
     }
@@ -223,18 +242,26 @@ private struct LeaderActionsBar: View {
                 .buttonStyle(.torchGlow)
 
             case .discussion:
-                Button("Advance to Immunity") {
-                    Task { await viewModel.advancePhase(to: "immunity") }
-                }
-                .buttonStyle(.torchGlow)
-
-            case .immunity:
                 Button("Start Voting") {
                     Task { await viewModel.startVoting() }
                 }
                 .buttonStyle(.torchGlow)
 
             case .voting:
+                // The idol window opens only once the Voting Box has reached
+                // everyone (the server rejects voting → immunity/reveal while
+                // ballots are outstanding), so both doors are offered here.
+                Button("Open Idol Window") {
+                    Task { await viewModel.advancePhase(to: "immunity") }
+                }
+                .buttonStyle(.torchGlow)
+
+                Button("Reveal Votes") {
+                    Task { await viewModel.revealVotes() }
+                }
+                .buttonStyle(.torchGlow)
+
+            case .immunity:
                 Button("Reveal Votes") {
                     Task { await viewModel.revealVotes() }
                 }

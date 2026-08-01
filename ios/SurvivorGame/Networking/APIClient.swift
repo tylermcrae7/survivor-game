@@ -153,8 +153,12 @@ actor APIClient {
 
     // MARK: - Tribal Council
 
-    func startVoting(gameId: String, voteType: String) async throws -> ActionResponse {
-        try await post(path: "/api/vote/start", body: ["gameId": gameId, "voteType": voteType])
+    // Leader-only controls: the server checks playerId against the council
+    // leader (LEADER_ONLY in survivor_server.py) and 403s without it.
+    func startVoting(gameId: String, playerId: String, voteType: String) async throws -> ActionResponse {
+        try await post(path: "/api/vote/start", body: [
+            "gameId": gameId, "playerId": playerId, "voteType": voteType
+        ])
     }
 
     func castVote(gameId: String, voterId: String, votesData: [[String: Any]]) async throws -> ActionResponse {
@@ -163,8 +167,8 @@ actor APIClient {
         ])
     }
 
-    func revealVotes(gameId: String) async throws -> ActionResponse {
-        try await post(path: "/api/vote/reveal", body: ["gameId": gameId])
+    func revealVotes(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/vote/reveal", body: ["gameId": gameId, "playerId": playerId])
     }
 
     func tieBreak(gameId: String, leaderId: String, chosenId: String) async throws -> ActionResponse {
@@ -173,12 +177,14 @@ actor APIClient {
         ])
     }
 
-    func completeTribial(gameId: String) async throws -> ActionResponse {
-        try await post(path: "/api/tribal/complete", body: ["gameId": gameId])
+    func completeTribial(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/complete", body: ["gameId": gameId, "playerId": playerId])
     }
 
-    func advanceTribal(gameId: String, phase: String) async throws -> ActionResponse {
-        try await post(path: "/api/tribal/advance", body: ["gameId": gameId, "phase": phase])
+    func advanceTribal(gameId: String, playerId: String, phase: String) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/advance", body: [
+            "gameId": gameId, "playerId": playerId, "phase": phase
+        ])
     }
 
     func playAdvantage(gameId: String, playerId: String, advantageType: String, targetId: String?) async throws -> ActionResponse {
@@ -202,8 +208,8 @@ actor APIClient {
         ])
     }
 
-    func resetTribal(gameId: String) async throws -> ActionResponse {
-        try await post(path: "/api/tribal/reset", body: ["gameId": gameId])
+    func resetTribal(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/tribal/reset", body: ["gameId": gameId, "playerId": playerId])
     }
 
     func changeLeader(gameId: String, newLeaderId: String) async throws -> ActionResponse {

@@ -54,10 +54,14 @@ final class TribalViewModel {
 
     var protectedPlayers: [String] { voteState?.protectedPlayers ?? [] }
 
+    /// Tribal-playable cards, enriched through the card catalog first — server
+    /// hands are bare `{"type": …}` stubs with no category/phases of their own,
+    /// so filtering the raw hand matched nothing and every advantage window
+    /// read as empty. Same resolve step the playing-hand grid uses.
     var myTribalCards: [CardInstance] {
-        gameClient.myPlayer?.hand.filter { card in
-            card.category == "tribal_advantage" || card.category == "vote"
-        } ?? []
+        (gameClient.myPlayer?.hand ?? [])
+            .map { CardCatalog.shared.resolve($0) }
+            .filter { $0.category == "tribal_advantage" || $0.category == "vote" }
     }
 
     var hasImmunityIdol: Bool {
