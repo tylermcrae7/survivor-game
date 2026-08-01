@@ -517,6 +517,10 @@ def _windows(base):
 
 
 BASE_DELAY = _base_delay()
+
+# How long past a timer's due moment we still trust it to fire. Beyond this,
+# poke() assumes the scheduler lost it and re-arms.
+TIMER_GRACE = 10.0
 WINDOWS = _windows(BASE_DELAY)
 
 # Refusal circuit breaker: transient refusals (a reactive window mid-close)
@@ -594,7 +598,7 @@ class BotRunner:
         self.broadcast = broadcast or (lambda gid, action: None)
         self.rng = rng or random
         self._spawn_later = None
-        self._scheduled = set()
+        self._scheduled = {}   # gid -> when the pending timer should have fired
         self._phase_seen = {}   # (gid, key) -> first-seen timestamp
         self._turn_mem = {}     # gid -> per-bot turn progress
         self._refusals = {}     # gid -> consecutive refused actions
@@ -608,7 +612,16 @@ class BotRunner:
 
     def poke(self, gid, delay=None):
         """Something changed in this game — have the bots look at it soon."""
-        if self._spawn_later is None or gid in self._scheduled:
+        if self._spawn_later is None:
+            return
+        # A pending timer normally blocks double-scheduling — but timers can
+        # be lost (a greenlet dying under I/O stalls never fires _tick). Once
+        # one is overdue past its grace, treat it as lost and schedule anew;
+        # otherwise the heartbeat can never revive the game. Observed: a bot's
+        # rocks pull wedged a live table for five hours this way.
+        now = time.time()
+        due = self._scheduled.get(gid)
+        if due is not None and now < due + TIMER_GRACE:
             return
         game = self.gs.games.get(gid)
         if not game or not game_has_bot(game) or not has_human(game):
@@ -616,7 +629,7 @@ class BotRunner:
         if delay is None:
             base = BASE_DELAY * delay_mult(game)
             delay = base * (0.7 + 0.6 * self.rng.random()) if base else 0.01
-        self._scheduled.add(gid)
+        self._scheduled[gid] = now + delay
         self._spawn_later(delay, self._tick, gid)
 
     def heartbeat(self):
@@ -626,7 +639,7 @@ class BotRunner:
                 self.poke(gid)
 
     def _tick(self, gid):
-        self._scheduled.discard(gid)
+        self._scheduled.pop(gid, None)
         try:
             acted = self.step(gid)
         except Exception:

@@ -461,6 +461,46 @@ def test_bot_draw_logs_a_redacted_entry():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_lost_timer_self_heals():
+    """A spawn_later timer that never fires must not wedge the game forever.
+
+    Reproduces the five-hour rocks wedge: poke() marks the game scheduled, the
+    scheduler loses the callback, and every later poke/heartbeat used to bail
+    out on the stale entry. With expiring entries, the next poke after
+    TIMER_GRACE re-arms the timer.
+    """
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing lost-timer self-healing ===")
+        gid = gs.create_game()
+        gs.add_player(gid, "Tyler", "red")
+        gs.add_bot(gid)
+
+        runner = BotRunner(gs, rng=random.Random(7))
+        fired = []
+        runner.attach(lambda delay, fn, *a: fired.append((delay, fn, a)))
+
+        # First poke arms a timer; simulate the scheduler losing it (we never
+        # invoke the callback). A pending, in-grace entry must block re-arming.
+        runner.poke(gid, delay=0.05)
+        assert len(fired) == 1, "first poke should schedule"
+        runner.poke(gid, delay=0.05)
+        assert len(fired) == 1, "a live pending timer must not double-schedule"
+
+        # Once the timer is overdue past its grace, poke treats it as lost.
+        runner._scheduled[gid] = time.time() - (bots.TIMER_GRACE + 1)
+        runner.poke(gid, delay=0.05)
+        assert len(fired) == 2, "an overdue entry must re-arm (the wedge fix)"
+
+        # And a timer that actually fires clears the entry the normal way.
+        delay, fn, args = fired[-1]
+        fn(*args)
+        assert gid not in runner._scheduled, "_tick clears the entry"
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     print("🧪 Testing Computer Players")
     print("=" * 50)
@@ -473,6 +513,7 @@ if __name__ == "__main__":
         test_bot_draw_logs_a_redacted_entry()
         test_full_game_official()
         test_full_game_extended_expansion()
+        test_lost_timer_self_heals()
         print("🎉 All computer player tests passed!")
     except AssertionError as e:
         print(f"❌ Test failed: {e}")

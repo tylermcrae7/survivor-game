@@ -185,16 +185,14 @@ class DataPersistenceEdgeCases(EdgeCaseTester):
         GameState._FILE = os.path.join(readonly_dir, 'games.json')
         
         try:
-            gs._save()
-            # If no exception, file was created (unexpected)
-            success = False
-        except (IOError, OSError, Exception):
-            # Expected behavior (PermissionError may not exist in all Python versions)
-            success = True
+            # _save's contract: a failed write must never raise into gameplay —
+            # it logs loudly and returns False (in-memory state stays
+            # authoritative; the next save retries).
+            success = gs._save() is False
         finally:
             GameState._FILE = old_file
             os.chmod(readonly_dir, 0o755)  # Make it removable
-            
+
         return success
         
     def test_large_game_state_limits(self):
@@ -542,13 +540,11 @@ class IOSPythonistaEdgeCases(EdgeCaseTester):
         GameState._FILE = os.path.join(self.temp_dir, "nonexistent", "games.json")
         
         try:
-            gs._save()
-            success = False  # Should not succeed
-        except (IOError, OSError, FileNotFoundError):
-            success = True  # Expected behavior
+            # Same contract as above: graceful False, never a raise mid-game.
+            success = gs._save() is False
         finally:
             GameState._FILE = old_file
-            
+
         return success
 
 
