@@ -220,6 +220,12 @@ final class SocketClient {
             }
         }
 
+        socket.on("game_wiped") { [weak self] _, _ in
+            Task { @MainActor in
+                self?.gameEventContinuation?.yield(.wiped)
+            }
+        }
+
         socket.on("error") { [weak self] data, _ in
             Task { @MainActor in
                 let msg = (data.first as? [String: Any])?["message"] as? String ?? "Server error"
@@ -252,5 +258,6 @@ final class SocketClient {
 enum GameEvent: @unchecked Sendable {
     case custom(type: String, data: [String: Any])
     case reset
+    case wiped
     case error(String)
 }

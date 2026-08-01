@@ -156,6 +156,10 @@ class TestBotPacing(SettingsTestBase):
             # (Tyler couldn't play his idol before the ceremony moved on)
             self.game["settings"]["tribalPace"] = "normal"
             human = self.game["players"][self.leader]
+            # The opening deal is random and may already contain an idol.
+            # Establish the no-idol baseline explicitly so this assertion is
+            # deterministic across shuffled decks.
+            human["hand"] = []
             base_immunity = bots.windows_for(self.game)["immunity"]
             human["hand"] = [{"type": "immunity_idol"}]
             self.assertGreaterEqual(bots.windows_for(self.game)["immunity"], 12.0)

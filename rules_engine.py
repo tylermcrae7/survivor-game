@@ -177,8 +177,9 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 			                   "only Control The Vote can take a Vote Card"}
 		card = hand.pop(idx)
 		thief.setdefault("hand", []).append(card)
+		card_name = spec.get("cardName") or card.get("name", "a card")
 		return {"success": True,
-		        "message": f"{names(spec['thiefId'])} took {card.get('name', 'a card')} from {victim.get('name')}",
+		        "message": f"{names(spec['thiefId'])} took {card_name} from {victim.get('name')}",
 		        # Thief and victim both know which card moved; the table only
 		        # sees that one did.
 		        "log_message": f"{names(spec['thiefId'])} took a card from {victim.get('name')}"}
@@ -1618,9 +1619,11 @@ class SurvivorRulesEngine:
 			# Defensive — validate_play rejects this before the card is consumed
 			return {"message": "The Spy Shack requires choosing which card to take", "spied_hand": target_hand}
 
+		chosen_name = self.resolve_card(target_hand[take_index]).get("name", "a card")
 		pending, result = request_take(
 			game, [player_id], target_id, "The Spy Shack",
-			{"kind": "index", "thiefId": player_id, "index": take_index})
+			{"kind": "index", "thiefId": player_id, "index": take_index,
+			 "cardName": chosen_name})
 		if pending:
 			return {"message": f"{player['name']} spied on {target['name']}'s camp — "
 			                   f"but {target['name']} is holding Sorry For You",
@@ -2016,4 +2019,3 @@ class SurvivorRulesEngine:
 				break  # Only one inheritance per eliminated player
 				
 		return inheritance_messages
-

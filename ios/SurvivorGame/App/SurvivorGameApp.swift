@@ -67,7 +67,14 @@ struct SurvivorGameApp: App {
             IslandAccessCookieStore.forget(for: baseURL)
         }
 #endif
-        _gameClient = State(initialValue: GameClient(baseURL: baseURL))
+        _gameClient = State(initialValue: GameClient(
+            baseURL: baseURL,
+            clearSavedSession: {
+                serverConfig.lastGameId = nil
+                serverConfig.lastPlayerId = nil
+                try? container.mainContext.save()
+            }
+        ))
         
         // Prepare haptic generators for optimal performance
         HapticEngine.prepare()

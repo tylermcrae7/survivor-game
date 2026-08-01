@@ -24,13 +24,18 @@ final class GameClient {
 
     private(set) var apiClient: APIClient
     private let socketClient = SocketClient()
+    private let clearSavedSession: @MainActor () -> Void
     private var stateListenerTask: Task<Void, Never>?
     private var eventListenerTask: Task<Void, Never>?
     private var connectionListenerTask: Task<Void, Never>?
 
-    init(baseURL: URL) {
+    init(
+        baseURL: URL,
+        clearSavedSession: @escaping @MainActor () -> Void = {}
+    ) {
         IslandAccessCookieStore.restore(for: baseURL)
         self.apiClient = APIClient(baseURL: baseURL)
+        self.clearSavedSession = clearSavedSession
         startListening()
     }
 
@@ -519,6 +524,7 @@ final class GameClient {
     // MARK: - Session Management
 
     func leaveGame() {
+        clearSavedSession()
         disconnect()
         gameState = nil
         gameId = nil
@@ -599,11 +605,16 @@ final class GameClient {
         }
     }
 
-    private func handleEvent(_ event: GameEvent) {
+    func handleEvent(_ event: GameEvent) {
         switch event {
         case .reset:
             gameState?.phase = .lobby
             updateNavigationState()
+        case .wiped:
+            // The server removed this game for everyone. Clear both the live
+            // client and the persisted rejoin IDs so launch cannot pull the
+            // player straight back into a dead session.
+            leaveGame()
         case .error(let message):
             lastError = message
         case .custom(let type, _):

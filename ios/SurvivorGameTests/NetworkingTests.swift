@@ -151,6 +151,7 @@ struct NetworkingTests {
     
     @Test func gameEventTypes() {
         let resetEvent = GameEvent.reset
+        let wipedEvent = GameEvent.wiped
         let errorEvent = GameEvent.error("Something went wrong")
         let customEvent = GameEvent.custom(type: "player_joined", data: ["playerId": "p1"])
         
@@ -158,6 +159,12 @@ struct NetworkingTests {
             // Success
         } else {
             Issue.record("Expected reset event")
+        }
+
+        if case .wiped = wipedEvent {
+            // Success
+        } else {
+            Issue.record("Expected wiped event")
         }
         
         if case .error(let message) = errorEvent {
@@ -172,5 +179,29 @@ struct NetworkingTests {
         } else {
             Issue.record("Expected custom event")
         }
+    }
+
+    @Test @MainActor func leaveAndWipeClearThePersistedSession() {
+        var clearCount = 0
+        let client = GameClient(
+            baseURL: URL(string: "https://survivor-session-test.invalid")!,
+            clearSavedSession: { clearCount += 1 }
+        )
+
+        client.gameId = "deadbeef"
+        client.playerId = "player-1"
+        client.leaveGame()
+        #expect(clearCount == 1)
+        #expect(client.gameId == nil)
+        #expect(client.playerId == nil)
+        #expect(client.navigationState == .start)
+
+        client.gameId = "deadbeef"
+        client.playerId = "player-1"
+        client.handleEvent(.wiped)
+        #expect(clearCount == 2)
+        #expect(client.gameId == nil)
+        #expect(client.playerId == nil)
+        #expect(client.navigationState == .start)
     }
 }
