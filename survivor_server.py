@@ -9,6 +9,8 @@ from functools import wraps
 from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
+from places import (DEFAULT_PLACE, PLACE_KEYS, PLACE_LABELS, place_policy,
+                    effective_place, voice_plan, validate_discord_user_id)
 import push_notify
 from interactions import interaction_engine
 import bots as bots_module
@@ -403,8 +405,13 @@ class GameState:
 
         return {"success": True, "message": f"{clean_name} can join."}
 
-    def add_player(self, gid, name, color=None):
-        """Adds a new player to a game. Returns the new player id, or None."""
+    def add_player(self, gid, name, color=None, discordUserId=None):
+        """
+        Adds a new player to a game. Returns the new player id, or None.
+
+        ``discordUserId`` is optional and only ever arrives from a human join —
+        computer players never carry one (they have no Discord presence).
+        """
         g = self.games.get(gid)
         if not g: return None
 
@@ -420,7 +427,11 @@ class GameState:
             'isEliminated': False, 'hasStolen': False, 'hasPlayed': False,
             'hasDrawn': False, 'hasVoted': False, 'extraVotes': 0,
             'characterCards': 2, 'isActive': True, 'isCouncilLeader': False,
-            'immunityPlayed': False
+            'immunityPlayed': False,
+            # Where they'd like to stand. The place they're actually standing in
+            # is derived from the phase — see places.effective_place().
+            'placeChoice': DEFAULT_PLACE,
+            'discordUserId': discordUserId,
         }
 
         # The first player to join becomes the council leader.
@@ -435,20 +446,64 @@ class GameState:
         self._save(gid)
         return player_id
     
-    def reconnect_player(self, gid, pid):
-        """Reconnects a player to a game, marking them as active."""
+    def reconnect_player(self, gid, pid, discordUserId=None):
+        """
+        Reconnects a player to a game, marking them as active.
+
+        A returning phone may bring a ``discordUserId`` with it (the join that
+        first created the record may predate the link). Passing None leaves any
+        existing link alone — reconnecting never clears it.
+        """
         g = self.games.get(gid)
-        if not g: 
+        if not g:
             return False
-        
+
         if pid not in g['players']:
             return False
-        
+
         # Mark the player as active
         g['players'][pid]['isActive'] = True
+        if discordUserId:
+            g['players'][pid]['discordUserId'] = discordUserId
         self._save(gid)
         return True
-    
+
+    def move_place(self, gid, playerId=None, place=None, **kwargs):
+        """
+        Walk to another part of camp.
+
+        Only the *choice* is stored; where the player is actually standing stays
+        derived from the phase (places.effective_place). Movement is refused
+        whenever the phase forces everyone into one place — during Tribal
+        Council nobody wanders off.
+        """
+        game = self.games.get(gid)
+        if not game:
+            return {"success": False, "message": "Game not found"}
+
+        player = game.get("players", {}).get(playerId)
+        if not player:
+            return {"success": False, "message": "Invalid player ID"}
+
+        if place not in PLACE_KEYS:
+            return {"success": False, "message": "There's no such place on this island"}
+
+        policy = place_policy(game)
+        if policy["forced"]:
+            return {"success": False,
+                    "message": f"Everyone is at {PLACE_LABELS[policy['forced']]} "
+                               f"right now — nobody wanders off"}
+        if place not in policy["open"]:
+            return {"success": False,
+                    "message": f"{PLACE_LABELS[place]} is closed right now"}
+
+        player["placeChoice"] = place
+        self._save(gid)
+        name = player.get("name", "Someone")
+        return {"success": True,
+                "message": f"{name} heads to {PLACE_LABELS[place]}",
+                "place": place}
+
     def start_full_game(self, gid, **kwargs):
         """
         Starts a full game, creating the deck and dealing cards.
@@ -538,6 +593,14 @@ class GameState:
             if isinstance(holder, dict):
                 for key in [k for k in holder if k.startswith("_")]:
                     del holder[key]
+        # Where everyone is standing, derived fresh from the phase. Clients read
+        # players[pid].place and never have to know about placeChoice — that
+        # keeps a stale choice from ever showing someone at the wrong place.
+        policy = place_policy(enriched_game)
+        enriched_game["placePolicy"] = policy
+        for player in enriched_game.get("players", {}).values():
+            player["place"] = effective_place(enriched_game, player)
+            player.setdefault("discordUserId", None)
         return enriched_game
     
     def _get_council_leader_id(self, game):
@@ -3247,7 +3310,8 @@ def handle(action, required):
         # name hidden cards that only the actor should see.
         if isinstance(result, dict) and result.get("message") \
                 and result.get("success", True) \
-                and action not in ('add_bot', 'remove_bot', 'rename_player'):
+                and action not in ('add_bot', 'remove_bot', 'rename_player',
+                                   'move_place'):
             log_list = game_state.games.get(gid, {}).setdefault("eventLog", [])
             log_msg = result.get("log_message") or result["message"]
             log_list.append({"t": time.time(), "msg": str(log_msg)[:200]})
@@ -3409,6 +3473,67 @@ def api_game_state(game_id):
     response.headers['Expires'] = '0'
     response.headers.pop('ETag', None)
 
+    return response
+
+@app.route('/api/voice/plan/<game_id>', methods=['GET'])
+@safe_api_call
+def api_voice_plan(game_id):
+    """
+    The Discord bot's poll endpoint: who is standing where, right now.
+
+    The bot mirrors these places onto voice channels, but it is strictly an
+    observer — the game plays out identically with no bot connected. Poll this,
+    compare ``version``, and only reshuffle channels when it changes.
+    """
+    game = game_state.games.get(game_id)
+    if not game:
+        return jsonify(success=False, message="Game not found"), 404
+
+    response = jsonify(voice_plan(game))
+
+    # Same reasoning as the state route: a cached plan would park people in the
+    # wrong voice channel. The `version` field is the cheap-poll mechanism here,
+    # not HTTP caching.
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.headers.pop('ETag', None)
+
+    return response
+
+@app.route('/api/voice/active', methods=['GET'])
+@safe_api_call
+def api_voice_active():
+    """
+    Which games the Discord bot should be mirroring right now.
+
+    The bot has no way to learn a game code on its own, and asking the host to
+    restart it every session would be its own kind of misery. So it asks: a
+    game is worth watching once someone in it has linked a Discord account and
+    the torches aren't all out yet.
+    """
+    now = time.time()
+    watching = []
+    for gid, game in game_state.games.items():
+        if game.get("phase") == "finished":
+            continue
+        # A game nobody has touched in a day is scenery, not a table.
+        if now - game.get("lastActivity", 0) > 24 * 3600:
+            continue
+        players = (game.get("players") or {}).values()
+        if not any(p.get("discordUserId") for p in players if not p.get("isBot")):
+            continue
+        watching.append({
+            "gameId": gid,
+            "phase": game.get("phase"),
+            "linkedPlayers": sum(
+                1 for p in players if p.get("discordUserId") and not p.get("isBot")
+            ),
+        })
+
+    watching.sort(key=lambda entry: entry["gameId"])
+    response = jsonify(games=watching)
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     return response
 
 @app.route('/api/batch', methods=['POST'])
@@ -3777,8 +3902,18 @@ def api_join():
     if not check["success"]:
         return jsonify(success=False, message=check["message"]), 400
 
-    pid=game_state.add_player(gid, name, d.get('color'))
+    # Optional: link this castaway to a Discord account so a voice bot can move
+    # them with the tribe. Absent means "not linked", which is the normal case.
+    # A malformed link is reported, never fatal: losing your seat at the fire
+    # over a mistyped optional field — with an error that doesn't even name the
+    # setting — is a punishment wildly out of proportion to the mistake.
+    discord_id, discord_error = validate_discord_user_id(d.get('discordUserId'))
+
+    pid=game_state.add_player(gid, name, d.get('color'), discordUserId=discord_id)
     if not pid: return jsonify(success=False,message="Failed to add player."),400
+
+    if discord_error:
+        logger.info(f"Join accepted with an unusable Discord link: {discord_error}")
 
     # Emit narrator event for player joining
     g = game_state.games[gid]
@@ -3788,18 +3923,28 @@ def api_join():
     })
 
     socketio.emit('state_update',game_state.get_game_state(gid),to=gid)
-    return jsonify(success=True,playerId=pid,gameState=game_state.get_game_state(gid))
+    return jsonify(success=True,playerId=pid,gameState=game_state.get_game_state(gid),
+                   discordLinkWarning=discord_error)
 
 @app.route('/api/player/rejoin',methods=['POST'])
 def api_rejoin():
     d=request.get_json(silent=True) or {}
     gid = d.get('gameId')
     pid = d.get('playerId')
-    if not game_state.reconnect_player(gid, pid):
+    # A phone coming back may bring a Discord link the original join didn't have.
+    # Same rule as join: a bad link is ignored, never a locked door.
+    discord_id, discord_error = validate_discord_user_id(d.get('discordUserId'))
+    if not game_state.reconnect_player(gid, pid, discordUserId=discord_id):
         return jsonify(success=False,message="Could not reconnect. Invalid game or player ID."),400
     g=game_state.games[gid]
-    return jsonify(success=True,gameState=g,playerName=g["players"][pid]["name"])
+    # Hand back the same enriched, hidden-info-stripped state every other route
+    # serves — a reconnecting phone needs places and derived counters too.
+    return jsonify(success=True,gameState=game_state.get_game_state(gid),
+                   playerName=g["players"][pid]["name"],
+                   discordLinkWarning=discord_error)
 
+@app.route('/api/place/move',methods=['POST'])
+def api_move_place(): return handle('move_place',['playerId','place'])
 @app.route('/api/vote/start',methods=['POST'])
 def api_start():   return handle('start_voting',['voteType'])
 @app.route('/api/vote/cast',methods=['POST'])

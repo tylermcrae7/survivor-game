@@ -152,6 +152,10 @@ def main():
         {
             'file': 'tests/test_push_notifications.py',
             'description': 'Turn Notifications — VAPID keys, subscriptions, turn/tribal sends, graceful failure'
+        },
+        {
+            'file': 'tests/test_places.py',
+            'description': 'Places — derived camp locations, movement policy, voice plan for the Discord bot (53 tests)'
         }
     ]
     
