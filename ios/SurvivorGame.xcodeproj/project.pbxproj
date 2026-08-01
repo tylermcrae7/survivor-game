@@ -44,6 +44,7 @@
 		63FB9311FDCAA0E0EBC3A8CF /* FlameEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A00B4F7F52DF16D539B5C8 /* FlameEffects.swift */; };
 		6588210FEAEEB4108AD7AFC7 /* MockGameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB96FC8285F596A14C699518 /* MockGameClient.swift */; };
 		66970C6962DCA3843B7D9FC6 /* VotingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEAA0AF59E6324AA323F21F /* VotingView.swift */; };
+		70469E5FCAC802E6B6C1F68D /* QASweepUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8896770D35DF7BAE9B3C2E78 /* QASweepUITests.swift */; };
 		727FBFD5CDA13F859F0681A4 /* legacy_no_settings.json in Resources */ = {isa = PBXBuildFile; fileRef = 94C17E55F46E2B7F3ADF0577 /* legacy_no_settings.json */; };
 		76E7B99479024C447BD3D6F8 /* StorySoFarDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */; };
 		796171B19E1C7D9B77015169 /* GameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBD5FAB075FC347AA744261 /* GameClient.swift */; };
@@ -172,6 +173,7 @@
 		83D622DB77EF0845785DBEA0 /* SurvivorGameUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SurvivorGameUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84F96BD40E277FCDEDDA6955 /* PlayerSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSetupView.swift; sourceTree = "<group>"; };
 		853B0306B3185B9F7644BD64 /* SocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketClient.swift; sourceTree = "<group>"; };
+		8896770D35DF7BAE9B3C2E78 /* QASweepUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QASweepUITests.swift; sourceTree = "<group>"; };
 		8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
 		8E7B73810847FA907FA26FD4 /* AppSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsSheet.swift; sourceTree = "<group>"; };
 		8F89BCE4A1A46E58A64C7516 /* TurnIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnIndicatorView.swift; sourceTree = "<group>"; };
@@ -360,6 +362,7 @@
 			children = (
 				19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */,
 				F1797EAE3C43C28507E28012 /* ChallengeUITests.swift */,
+				8896770D35DF7BAE9B3C2E78 /* QASweepUITests.swift */,
 				1AE837EA8BBB0B435CEFD146 /* README.md */,
 			);
 			path = SurvivorGameUITests;
@@ -794,6 +797,7 @@
 			files = (
 				39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */,
 				3D7A9908750FD004221479A1 /* ChallengeUITests.swift in Sources */,
+				70469E5FCAC802E6B6C1F68D /* QASweepUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
