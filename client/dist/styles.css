@@ -938,6 +938,120 @@
     color: var(--torch);
   }
 
+  /* ── Places (playing screen) — where around camp everyone is standing ──
+     Same row language as the tribe panel, stacked so the name chips can
+     breathe. An open place invites a tap; a forced place reads plainly shut. */
+  .places-panel { margin-top: var(--spacing-md); }
+  .places-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: var(--spacing-md);
+  }
+
+  .place-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: var(--touch-target-min);
+    padding: 0.7rem 0.8rem;
+    background: var(--surface-sunken);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    transition: border-color 200ms ease, box-shadow 200ms ease, opacity 300ms ease;
+  }
+
+  .place-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .place-name {
+    font-family: var(--font-label);
+    font-size: var(--font-size-base);
+    font-weight: 700;
+    letter-spacing: var(--track-label);
+    color: var(--parchment);
+  }
+  .place-tag {
+    margin-left: auto;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: var(--font-label);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    letter-spacing: var(--track-label);
+    color: var(--text-secondary);
+  }
+  .place-tag .icon { width: 0.95em; height: 0.95em; }
+  .place-tag.go { color: var(--torch); }
+  .place-tag.here { color: var(--success); }
+  .place-tag.locked { color: var(--text-faint); }
+
+  .place-people {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .place-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 100%;
+    padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-full);
+  }
+  .place-chip .lives-dot { width: 24px; height: 24px; font-size: 0.78rem; }
+  .place-chip-name {
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .place-chip .bot-badge .icon { width: 0.85rem; height: 0.85rem; }
+  .place-chip.is-me { border-color: var(--line-strong); box-shadow: var(--glow-torch); }
+  .place-chip.is-out { opacity: 0.45; }
+  .place-chip.is-out .place-chip-name { text-decoration: line-through; }
+
+  .place-empty {
+    font-family: var(--font-label);
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--track-label);
+    color: var(--text-faint);
+  }
+
+  /* Open, and not the one you are standing in — a real tap target */
+  .place-row.is-open { cursor: pointer; }
+  .place-row.is-open:hover,
+  .place-row.is-open:focus-visible {
+    border-color: oklch(0.70 0.165 60 / 0.5);
+    box-shadow: var(--glow-torch);
+  }
+  .place-row.is-open:active { transform: scale(0.99); }
+
+  /* Where you already are — marked, and inert */
+  .place-row.is-here {
+    border-color: var(--line-strong);
+    background: var(--surface);
+    cursor: default;
+  }
+
+  /* Forced together (Tribal Council) — dimmed shut, nothing to tap */
+  .place-row.is-locked {
+    opacity: 0.5;
+    cursor: default;
+    border-style: dashed;
+  }
+  .place-row.is-locked .place-name { color: var(--text-secondary); }
+
+  .places-hint { margin: 0.5rem 0 0; }
+
   /* ── Turn ribbon: STEAL → PLAY → DRAW ── */
   .turn-ribbon { text-align: center; }
   .turn-who {

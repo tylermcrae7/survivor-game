@@ -5,9 +5,9 @@
 
 // Bump these on every client change — the static cache is cache-first, so a stale
 // cache name means installed PWAs keep running the old game.js/ui.js/styles.css.
-const CACHE_NAME = 'survivor-v3.11.2';
-const STATIC_CACHE = 'survivor-static-v3.11.2';
-const DYNAMIC_CACHE = 'survivor-dynamic-v3.11.2';
+const CACHE_NAME = 'survivor-v3.12.0';
+const STATIC_CACHE = 'survivor-static-v3.12.0';
+const DYNAMIC_CACHE = 'survivor-dynamic-v3.12.0';
 
 // Assets to cache immediately
 const STATIC_ASSETS = [

@@ -24,6 +24,7 @@
         defaultBotStyle: 'normal',
         identityName: '',
         identityColor: '',
+        discordUserId: '',
         keepAwake: true,
         historyLength: 'all',
         turnNotifications: false
@@ -67,6 +68,17 @@
 
     function hapticsOn() { return !!get('haptics'); }
     function soundOn() { return !!get('sound'); }
+
+    /**
+     * The saved Discord user ID, but only if it still looks like a snowflake.
+     * The server rejects a malformed one with a 400 that fails the whole join,
+     * so a value saved by an older build must never be allowed to lock this
+     * device out of the game. Empty string means "not linked".
+     */
+    function discordUserId() {
+        const value = String(get('discordUserId') || '').trim();
+        return /^[0-9]{15,25}$/.test(value) ? value : '';
+    }
 
     function motionReduced() {
         const v = get('reduceMotion');
@@ -112,7 +124,7 @@
 
     window.SurvivorSettings = {
         get, set, reset, apply, toastMs, hapticsOn, soundOn, motionReduced,
-        setWakeWanted, DEFAULTS, TOAST_MS
+        discordUserId, setWakeWanted, DEFAULTS, TOAST_MS
     };
 
     apply();

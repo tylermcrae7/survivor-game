@@ -682,12 +682,23 @@ const GameAPI = {
         return apiCall('/game/create', { deckMode, expansion });
     },
     
-    async joinGame(gameId, name, color) {
-        return apiCall('/player/join', { gameId, name, color });
+    async joinGame(gameId, name, color, discordUserId) {
+        // discordUserId is optional and only sent when this device has one, so
+        // a server that predates places sees exactly the old payload. Defaults
+        // to whatever is saved in settings.
+        const body = { gameId, name, color };
+        const discord = discordUserId ?? window.SurvivorSettings?.discordUserId?.() ?? '';
+        if (discord) body.discordUserId = discord;
+        return apiCall('/player/join', body);
     },
-    
+
     async rejoinGame(gameId, playerId) {
-        return apiCall('/player/rejoin', { gameId, playerId });
+        // A phone coming back carries its Discord link along — that is how an
+        // ID typed into settings AFTER joining ever reaches the server.
+        const body = { gameId, playerId };
+        const discord = window.SurvivorSettings?.discordUserId?.() || '';
+        if (discord) body.discordUserId = discord;
+        return apiCall('/player/rejoin', body);
     },
     
     async startGame(gameId) {
@@ -711,6 +722,12 @@ const GameAPI = {
     
     async advanceTurn(gameId) {
         return apiCall('/turn/advance', { gameId });
+    },
+
+    // Places — walk yourself to another spot around camp. The server refuses
+    // when a place is forced (Tribal Council) or is not in placePolicy.open.
+    async movePlace(gameId, playerId, place) {
+        return apiCall('/place/move', { gameId, playerId, place }, 'POST', { retries: 0 });
     },
 
     // Let's Go To Rocks challenges

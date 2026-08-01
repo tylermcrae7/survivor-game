@@ -615,7 +615,12 @@ async function joinGame() {
     if (!color) { toast('Please select a color', 'warning'); return; }
 
     console.log('Joining game:', gameId);
-    const result = await safeApiCall('/player/join', { gameId, name, color });
+    // A saved Discord user ID rides along so the island can find you in voice.
+    // Omitted entirely when blank — the join payload stays exactly as it was.
+    const joinBody = { gameId, name, color };
+    const discordUserId = window.SurvivorSettings?.discordUserId?.() || '';
+    if (discordUserId) joinBody.discordUserId = discordUserId;
+    const result = await safeApiCall('/player/join', joinBody);
 
     if (result && result.success) {
         if (window.SurvivorGame) {
@@ -829,7 +834,7 @@ function startNewGame() {
 // Export functions for use in other modules
 window.SurvivorGame = {
     // State
-    APP_VERSION: '3.11.2',
+    APP_VERSION: '3.12.0',
     localGameState,
     fullGameState,
     SURVIVOR_CARDS,

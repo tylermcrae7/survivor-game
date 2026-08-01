@@ -903,6 +903,167 @@ function renderLivesTracker(gameState) {
     });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PLACES — where around camp everyone is standing
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// While the game is in play the tribe drifts between camp places, and who
+// slipped off with whom is meant to be PUBLIC — that is the whole drama. At
+// Tribal Council the server forces everyone into one place and this panel
+// locks shut. A Discord bot may later mirror places onto voice channels; this
+// panel has to be the whole story on its own without one.
+
+const PLACE_LABELS = {
+    camp_fire: 'Camp Fire',
+    the_beach: 'The Beach',
+    the_water_well: 'The Water Well',
+    tribal_council: 'Tribal Council'
+};
+
+/** Known places get their proper name; anything new gets a readable fallback. */
+function placeLabel(place) {
+    if (PLACE_LABELS[place]) return PLACE_LABELS[place];
+    const words = String(place || '').split('_').filter(Boolean);
+    if (!words.length) return 'Somewhere';
+    return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** One player as a name/color chip — the tribe panel's dot, at chip scale. */
+function renderPlaceChip(player, isMe) {
+    const classes = ['place-chip', player.isEliminated ? 'is-out' : '', isMe ? 'is-me' : '']
+        .filter(Boolean).join(' ');
+    const initial = escapeHtml(String(player.name || '?').charAt(0).toUpperCase());
+    return `<span class="${classes}">
+        <span class="lives-dot" style="background: ${escapeHtml(player.color || '#666')}">${initial}</span>
+        <span class="place-chip-name">${escapeHtml(formatPlayerName(player, 12))}</span>
+        ${player.isBot ? `<span class="bot-badge">${icon('bot')}</span>` : ''}
+    </span>`;
+}
+
+/**
+ * One place: its name, who is standing there, and — when it is open and you
+ * are not already in it — a tap target that walks you over.
+ */
+function renderPlaceRow({ place, members, myId, locked, here }) {
+    const label = placeLabel(place);
+    const chips = members.length
+        ? members.map(([id, player]) => renderPlaceChip(player, id === myId)).join('')
+        : `<span class="place-empty">Nobody</span>`;
+
+    const tappable = !locked && !here;
+    const classes = ['place-row', locked ? 'is-locked' : '', here ? 'is-here' : '', tappable ? 'is-open' : '']
+        .filter(Boolean).join(' ');
+
+    let tag;
+    if (locked) tag = `<span class="place-tag locked">${icon('lock')} Closed</span>`;
+    else if (here) tag = `<span class="place-tag here">${icon('check')} You are here</span>`;
+    else tag = `<span class="place-tag go">${icon('swap')} Go there</span>`;
+
+    let attrs;
+    if (tappable) attrs = `data-place-move="${escapeHtml(place)}" role="button" tabindex="0" aria-label="Walk over to ${escapeHtml(label)}"`;
+    else if (locked) attrs = 'aria-disabled="true"';
+    else attrs = 'aria-current="true"';
+
+    return `
+        <div class="${classes}" data-place="${escapeHtml(place)}" ${attrs}>
+            <div class="place-head">
+                <span class="place-name">${escapeHtml(label)}</span>
+                ${tag}
+            </div>
+            <div class="place-people">${chips}</div>
+        </div>
+    `;
+}
+
+/** One move at a time — a double-tap must not race two walks to the server. */
+let placeMoveInFlight = false;
+
+function renderPlacesPanel(gameState) {
+    const container = document.getElementById('placesPanel');
+    if (!container) return;
+
+    const hide = () => { container.style.display = 'none'; container.innerHTML = ''; };
+
+    // A server that predates places sends no policy — then say nothing at all
+    // rather than inventing a camp that the server will not honour.
+    const policy = gameState && gameState.placePolicy;
+    if (!policy || !gameState.players) return hide();
+
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    const myPlace = gameState.players[myId]?.place || null;
+
+    // Turn order keeps the chips in the same familiar sequence as the tribe panel
+    const order = gameState.turnOrder && gameState.turnOrder.length
+        ? gameState.turnOrder.filter(id => gameState.players[id])
+        : Object.keys(gameState.players);
+    const everyone = order.map(id => [id, gameState.players[id]]);
+    const membersAt = (place) => everyone.filter(([, player]) => player.place === place);
+
+    let rows;
+    let hint;
+
+    if (policy.forced) {
+        // Called together: one row, everybody in it, nothing to tap.
+        let members = membersAt(policy.forced);
+        if (!members.length) members = everyone;   // server state still catching up
+        rows = renderPlaceRow({ place: policy.forced, members, myId, locked: true,
+                                here: myPlace === policy.forced });
+        hint = `<p class="panel-sub places-hint">${icon('lock')} The tribe has been called together — nobody wanders off now.</p>`;
+    } else {
+        const open = Array.isArray(policy.open) ? policy.open.filter(Boolean) : [];
+        if (!open.length) return hide();
+        rows = open.map(place => renderPlaceRow({
+            place,
+            members: membersAt(place),
+            myId,
+            locked: false,
+            here: myPlace === place
+        })).join('');
+        hint = `<p class="panel-sub places-hint">Tap a place to walk over. The whole tribe can see where you went.</p>`;
+    }
+
+    container.style.display = '';
+    container.innerHTML = `
+        <p class="tribe-label">${icon('users')} Around camp</p>
+        <div class="places-strip">${rows}</div>
+        ${hint}
+    `;
+
+    container.querySelectorAll('[data-place-move]').forEach(row => {
+        const act = () => movePlaceTo(row.dataset.placeMove);
+        row.addEventListener('click', act);
+        row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); }
+        });
+    });
+}
+
+/** Walk to a place. The server is the authority on whether you may. */
+async function movePlaceTo(place) {
+    if (!place || placeMoveInFlight) return;
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const playerId = window.SurvivorGame?.localGameState?.playerId;
+    const api = window.SurvivorNetwork?.GameAPI;
+    if (!gameId || !playerId || !api?.movePlace) return;
+
+    placeMoveInFlight = true;
+    hapticFeedback('light');
+    try {
+        const result = await api.movePlace(gameId, playerId, place);
+        if (result?.gameState && window.updateGameState) {
+            window.updateGameState(result.gameState);
+        }
+        announce(`You moved to ${placeLabel(place)}`);
+    } catch (error) {
+        // apiCall has already toasted the reason — a forced place, a closed
+        // place, or a server with no /api/place/move yet. Swallow it here so a
+        // refused walk never becomes an unhandled rejection.
+        console.warn('Place move refused:', error?.message || error);
+    } finally {
+        placeMoveInFlight = false;
+    }
+}
+
 function createPlayerActions(player) {
     // Stealing is a turn action — it lives on the playing screen's tribe panel,
     // never in the lobby. The lobby only offers leadership handoff.
@@ -2235,6 +2396,13 @@ function updateFromDiff(diff) {
     if (diff.players) {
         renderPlayerList(window.SurvivorGame.fullGameState);
         renderLivesTracker(window.SurvivorGame.fullGameState);
+        // A player object changing may mean somebody walked off — redraw places
+        renderPlacesPanel(window.SurvivorGame.fullGameState);
+    }
+
+    // The camp opening up or being called together
+    if (diff.placePolicy !== undefined) {
+        renderPlacesPanel(window.SurvivorGame.fullGameState);
     }
 
     if (diff.phase) {
@@ -2637,6 +2805,7 @@ function updateCurrentScreen(gameState) {
             renderTurnInfo(gameState);
             updatePhaseIndicator(gameState);
             renderLivesTracker(gameState);
+            renderPlacesPanel(gameState);
             renderPlayerHand(gameState);
             renderChallengePanel(gameState);
             break;
@@ -3417,6 +3586,14 @@ function settingsSpec() {
             { key: 'identityName', label: 'Your name', type: 'text',
               sub: 'Prefills the join form on this device' },
             { key: 'identityColor', label: 'Your buff', type: 'colors' },
+            // Checked here as well as on the server: a bad value would otherwise
+            // sit in settings and fail the NEXT join with a message nobody would
+            // connect back to this box.
+            { key: 'discordUserId', label: 'Discord user ID', type: 'text',
+              placeholder: '123456789012345678',
+              sub: 'Optional — lets the island follow you into Discord voice. In Discord: Settings → Advanced → turn on Developer Mode, then right-click (or long-press) your own name and choose Copy User ID.',
+              validate: (value) => (!value || /^[0-9]{15,25}$/.test(value)) ? null
+                  : "A Discord user ID is all digits — copy it with Copy User ID rather than typing your username" },
         ]},
         { title: 'Device', rows: [
             { key: 'keepAwake', label: 'Keep the screen awake during games', type: 'toggle' },
@@ -3511,7 +3688,17 @@ function bindSettingsControls(body) {
     });
 
     body.querySelectorAll('[data-set-text]').forEach(input => {
-        input.addEventListener('change', () => S.set(input.dataset.setKey, input.value.trim()));
+        input.addEventListener('change', () => {
+            const key = input.dataset.setKey;
+            const value = input.value.trim();
+            const error = findSettingsRow(key)?.validate?.(value);
+            if (error) {
+                showToast(error, 'warning');
+                input.value = S.get(key) || '';   // put the last good value back
+                return;
+            }
+            S.set(key, value);
+        });
     });
 
     body.querySelector('[data-housekeeping="leave"]')?.addEventListener('click', () => {
@@ -3534,13 +3721,18 @@ function bindSettingsControls(body) {
     });
 }
 
-function findSettingsRowOnChange(key) {
+/** The spec row for a settings key — carries onChange, validate, options, ... */
+function findSettingsRow(key) {
     for (const section of settingsSpec()) {
         for (const row of section.rows) {
-            if (row.key === key) return row.onChange || null;
+            if (row.key === key) return row;
         }
     }
     return null;
+}
+
+function findSettingsRowOnChange(key) {
+    return findSettingsRow(key)?.onChange || null;
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -3891,6 +4083,9 @@ window.SurvivorUI = {
     toggleLeaderboardEdit,
     renderLives,
     renderLivesTracker,
+    renderPlacesPanel,
+    movePlaceTo,
+    placeLabel,
     renderChallengePanel,
     renderTribalCeremony,
     renderFinalTribal,
