@@ -244,3 +244,125 @@ struct StateDecodingTests {
         #expect(state.isCurrentTurn(for: "p2") == false)
     }
 }
+
+// MARK: - Places
+
+struct PlaceTests {
+
+    /// The exact four keys the server writes, and the exact labels the UI
+    /// (and later the Discord channel names) must show for them.
+    @Test func everyServerKeyMapsToItsLabel() {
+        let expected: [(String, String)] = [
+            ("camp_fire", "Camp Fire"),
+            ("the_beach", "The Beach"),
+            ("the_water_well", "The Water Well"),
+            ("tribal_council", "Tribal Council"),
+        ]
+        for (key, label) in expected {
+            #expect(Place(rawValue: key)?.label == label, "wrong label for \(key)")
+            #expect(Place.label(for: key) == label)
+        }
+        #expect(Place.allCases.count == expected.count)
+        #expect(Set(Place.allCases.map(\.key)) == Set(expected.map(\.0)))
+    }
+
+    /// A place this build has never heard of is titleised, never dropped or
+    /// shown raw — the server may open new ground before the app ships again.
+    @Test func unknownKeysStillReadAsPlaces() {
+        #expect(Place.label(for: "the_shipwreck") == "The Shipwreck")
+        #expect(Place.symbolName(for: "the_shipwreck") == "mappin.and.ellipse")
+    }
+
+    @Test func decodesPlaceAndDiscordIdOnAPlayer() throws {
+        let json = """
+        {"id": "p1", "name": "Coconut", "color": "#FF6B6B",
+         "place": "the_beach", "discordUserId": "123456789012345678"}
+        """
+        let player = try JSONDecoder().decode(PlayerState.self, from: Data(json.utf8))
+        #expect(player.place == "the_beach")
+        #expect(player.placeKey == "the_beach")
+        #expect(player.discordUserId == "123456789012345678")
+    }
+
+    /// A player from before places existed stands at the fire rather than
+    /// vanishing from every row.
+    @Test func playerWithoutAPlaceFallsBackToTheFire() throws {
+        let json = """
+        {"id": "p1", "name": "Coconut", "color": "#FF6B6B"}
+        """
+        let player = try JSONDecoder().decode(PlayerState.self, from: Data(json.utf8))
+        #expect(player.place == nil)
+        #expect(player.discordUserId == nil)
+        #expect(player.placeKey == Place.campFire.key)
+    }
+
+    @Test func decodesPlacePolicy() throws {
+        let json = """
+        {"open": ["camp_fire", "the_beach", "the_water_well"], "forced": null}
+        """
+        let policy = try JSONDecoder().decode(PlacePolicy.self, from: Data(json.utf8))
+        #expect(policy.open == ["camp_fire", "the_beach", "the_water_well"])
+        #expect(policy.forced == nil)
+        #expect(policy.isForced == false)
+        #expect(policy.visibleKeys == policy.open)
+    }
+
+    @Test func aForcedPolicyShowsOnlyTheForcedPlace() throws {
+        let json = """
+        {"open": [], "forced": "tribal_council"}
+        """
+        let policy = try JSONDecoder().decode(PlacePolicy.self, from: Data(json.utf8))
+        #expect(policy.isForced)
+        #expect(policy.visibleKeys == ["tribal_council"])
+        // The ceremony is not optional: nothing is tappable, not even the
+        // place everyone is already standing in.
+        #expect(policy.canMove(to: "tribal_council", from: "tribal_council") == false)
+        #expect(policy.canMove(to: "the_beach", from: "tribal_council") == false)
+    }
+
+    @Test func movementIsGatedByTheOpenList() {
+        let policy = PlacePolicy(open: ["camp_fire", "the_beach"])
+        #expect(policy.canMove(to: "the_beach", from: "camp_fire"))
+        // Already there — marked, not tappable.
+        #expect(policy.canMove(to: "camp_fire", from: "camp_fire") == false)
+        // Not open — the server would refuse it anyway.
+        #expect(policy.canMove(to: "the_water_well", from: "camp_fire") == false)
+    }
+
+    /// A state with no policy at all must decode fine (the UI hides itself);
+    /// a malformed one must not brick the whole snapshot either.
+    @Test func absentOrBrokenPolicyNeverBricksTheState() throws {
+        let base = """
+        {"id": "x", "phase": "playing",
+         "players": {"p1": {"id": "p1", "name": "Ana", "color": "#FF6B6B"}},
+         "turnOrder": ["p1"], "currentTurnIndex": 0
+        """
+        let without = try JSONDecoder().decode(GameState.self, from: Data((base + "}").utf8))
+        #expect(without.placePolicy == nil)
+
+        let broken = try JSONDecoder().decode(
+            GameState.self, from: Data((base + #", "placePolicy": "nonsense"}"#).utf8))
+        #expect(broken.placePolicy == nil)
+        #expect(broken.players.count == 1)
+    }
+
+    /// Occupancy is what the whole feature shows: alive players only, in turn
+    /// order, with the no-place fallback folded in.
+    @Test func occupancyGroupsLivePlayersByPlaceInTurnOrder() {
+        let state = GameState(
+            id: "g", phase: .playing,
+            players: [
+                "p1": PlayerState(id: "p1", name: "Ana", color: "#FF6B6B", place: "the_beach"),
+                "p2": PlayerState(id: "p2", name: "Bo", color: "#4ECDC4", place: "the_beach"),
+                "p3": PlayerState(id: "p3", name: "Cy", color: "#45B7D1"),
+                "p4": PlayerState(id: "p4", name: "Dee", color: "#96CEB4",
+                                  isEliminated: true, place: "the_beach"),
+            ],
+            turnOrder: ["p1", "p2", "p3", "p4"], currentTurnIndex: 0,
+            placePolicy: PlacePolicy(open: ["camp_fire", "the_beach"])
+        )
+        #expect(state.players(at: "the_beach").map(\.id) == ["p1", "p2"])
+        #expect(state.players(at: "camp_fire").map(\.id) == ["p3"])
+        #expect(state.players(at: "the_water_well").isEmpty)
+    }
+}

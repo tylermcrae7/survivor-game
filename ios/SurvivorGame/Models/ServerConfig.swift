@@ -13,18 +13,25 @@ final class ServerConfig {
     var preferredColor: String?
     var lastGameId: String?
     var lastPlayerId: String?
+    /// The player's own Discord snowflake, sent on join so a bot can move them
+    /// between voice channels. Optional, so SwiftData migrates existing stores
+    /// in place — `loadDefault` returns the same "default" row either way, and
+    /// an install that predates this field simply reads nil.
+    var discordUserId: String?
 
     init(
         // Production installs use the public HTTPS island. Simulator and local
         // development can override this with SURVIVOR_SERVER_URL.
         baseURL: URL = ServerConfig.publicIslandURL,
         playerName: String = "",
-        preferredColor: String? = nil
+        preferredColor: String? = nil,
+        discordUserId: String? = nil
     ) {
         self.id = "default"
         self.baseURL = baseURL
         self.playerName = playerName
         self.preferredColor = preferredColor
+        self.discordUserId = discordUserId
     }
 
     static func loadDefault(from context: ModelContext) -> ServerConfig {

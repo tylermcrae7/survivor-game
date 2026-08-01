@@ -5,6 +5,9 @@ import Foundation
 final class PlayingViewModel {
     var error: ViewModelError?
     var isPerformingAction = false
+    /// Kept apart from `isPerformingAction`: wandering off to the beach must
+    /// not grey out the draw button mid-turn.
+    var isMovingPlace = false
     var selectedStealTarget: String?
     var showStealPicker = false
 
@@ -44,6 +47,11 @@ final class PlayingViewModel {
     var myHand: [CardInstance] { myPlayer?.hand ?? [] }
     var deckCount: Int { gameState?.deckCount ?? 0 }
 
+    // MARK: - Places
+
+    var placePolicy: PlacePolicy? { gameState?.placePolicy }
+    var myPlace: String? { gameClient.myPlace }
+
     // MARK: - Actions
 
     func steal(targetId: String) async {
@@ -79,6 +87,19 @@ final class PlayingViewModel {
 
         do {
             _ = try await gameClient.drawCard()
+        } catch {
+            self.error = .from(error)
+        }
+    }
+
+    func moveToPlace(_ place: String) async {
+        guard placePolicy?.canMove(to: place, from: myPlace) == true else { return }
+        isMovingPlace = true
+        defer { isMovingPlace = false }
+
+        do {
+            try await gameClient.moveToPlace(place)
+            HapticEngine.selection()
         } catch {
             self.error = .from(error)
         }

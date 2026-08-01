@@ -99,6 +99,8 @@
 		E09735FE39F74855129DBFE5 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC5D2C9DAB382995407D3F5 /* CardView.swift */; };
 		E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1DB56CB9B0CE9F1744693EF /* TieBreakView.swift */; };
 		E6D6E0CF7829EEEEFAEAB3FA /* CardCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7060B4BFB85FE78AA190FD9A /* CardCatalog.swift */; };
+		24274DA2D76A49FAA469FE3C /* Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3847FDA078487FBD92094A /* Place.swift */; };
+		DD88A3A76F4C4CCDAF5CF526 /* PlacesBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C26D540DDCA45FAAD9F30B2 /* PlacesBar.swift */; };
 		ECB10D498CD44DEA3A3894DA /* PlayerStatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */; };
 		F30C219F782CDB1413CB8D9D /* SocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853B0306B3185B9F7644BD64 /* SocketClient.swift */; };
 		F4339C498EB09F44618E2802 /* CardDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FA1D6F26BC0F94002F4A81 /* CardDetailSheet.swift */; };
@@ -160,6 +162,8 @@
 		72402B76C4C264F0CFCEAEBB /* TribalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TribalViewModel.swift; sourceTree = "<group>"; };
 		72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorButton.swift; sourceTree = "<group>"; };
 		7358AA566FA334CD64594A21 /* PhaseProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhaseProgressView.swift; sourceTree = "<group>"; };
+		AA3847FDA078487FBD92094A /* Place.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Place.swift; sourceTree = "<group>"; };
+		5C26D540DDCA45FAAD9F30B2 /* PlacesBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesBar.swift; sourceTree = "<group>"; };
 		744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStatusBar.swift; sourceTree = "<group>"; };
 		75049F5671D0DF640BE3220F /* FinalTribalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinalTribalState.swift; sourceTree = "<group>"; };
 		7519B7FA5A92C991D2A06F0B /* CardAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardAnimations.swift; sourceTree = "<group>"; };
@@ -393,6 +397,7 @@
 		8C418A763DB09A8896276750 /* Playing */ = {
 			isa = PBXGroup;
 			children = (
+				5C26D540DDCA45FAAD9F30B2 /* PlacesBar.swift */,
 				744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */,
 				4F0C398C7CA94DAB86E5CED0 /* PlayingScreen.swift */,
 				C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */,
@@ -511,6 +516,7 @@
 		E99AF4495A01C3B6650B0804 /* State */ = {
 			isa = PBXGroup;
 			children = (
+				AA3847FDA078487FBD92094A /* Place.swift */,
 				0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */,
 				75049F5671D0DF640BE3220F /* FinalTribalState.swift */,
 				94828426CF60FB58932E318C /* GamePhase.swift */,
@@ -765,6 +771,8 @@
 				4DE93FA97429463B8E6D3B96 /* PlayerAvatarView.swift in Sources */,
 				3177AF8B866EB61DE708A021 /* PlayerSetupView.swift in Sources */,
 				DBC0D1C582276BEA9294C27D /* PlayerState.swift in Sources */,
+				24274DA2D76A49FAA469FE3C /* Place.swift in Sources */,
+				DD88A3A76F4C4CCDAF5CF526 /* PlacesBar.swift in Sources */,
 				ECB10D498CD44DEA3A3894DA /* PlayerStatusBar.swift in Sources */,
 				363E486B92D0F8ED41213292 /* PlayingScreen.swift in Sources */,
 				D9EEC9D120C0D13389A3751E /* PlayingViewModel.swift in Sources */,

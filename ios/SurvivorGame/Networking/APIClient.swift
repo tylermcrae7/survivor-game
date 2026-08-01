@@ -82,14 +82,23 @@ actor APIClient {
         return try await post(path: "/api/game/create", body: body)
     }
 
-    func joinGame(gameId: String, name: String, color: String?) async throws -> JoinGameResponse {
+    func joinGame(
+        gameId: String, name: String, color: String?, discordUserId: String? = nil
+    ) async throws -> JoinGameResponse {
         var body: [String: Any] = ["gameId": gameId, "name": name]
         if let color { body["color"] = color }
+        if let discordUserId { body["discordUserId"] = discordUserId }
         return try await post(path: "/api/player/join", body: body)
     }
 
-    func rejoinGame(gameId: String, playerId: String) async throws -> RejoinGameResponse {
-        try await post(path: "/api/player/rejoin", body: ["gameId": gameId, "playerId": playerId])
+    func rejoinGame(
+        gameId: String, playerId: String, discordUserId: String? = nil
+    ) async throws -> RejoinGameResponse {
+        // A returning phone may carry a Discord link the original join didn't
+        // have — the server accepts it here too and updates the player.
+        var body: [String: Any] = ["gameId": gameId, "playerId": playerId]
+        if let discordUserId { body["discordUserId"] = discordUserId }
+        return try await post(path: "/api/player/rejoin", body: body)
     }
 
     func startGame(gameId: String) async throws -> ActionResponse {
@@ -137,6 +146,16 @@ actor APIClient {
 
     func advanceTurn(gameId: String) async throws -> ActionResponse {
         try await post(path: "/api/turn/advance", body: ["gameId": gameId])
+    }
+
+    // MARK: - Places
+
+    /// Walk to a named place. The server refuses the move while a place is
+    /// forced, or when `place` isn't in the open list.
+    func movePlace(gameId: String, playerId: String, place: String) async throws -> ActionResponse {
+        try await post(path: "/api/place/move", body: [
+            "gameId": gameId, "playerId": playerId, "place": place
+        ])
     }
 
     // MARK: - Reactive

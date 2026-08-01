@@ -136,11 +136,14 @@ final class GameClient {
         return response.gameId
     }
 
-    func joinGame(gameId: String, name: String, color: String? = nil) async throws {
+    func joinGame(
+        gameId: String, name: String, color: String? = nil, discordUserId: String? = nil
+    ) async throws {
         isLoading = true
         defer { isLoading = false }
 
-        let response = try await apiClient.joinGame(gameId: gameId, name: name, color: color)
+        let response = try await apiClient.joinGame(
+            gameId: gameId, name: name, color: color, discordUserId: discordUserId)
         guard response.success else {
             throw GameClientError.operationFailed("Failed to join game")
         }
@@ -155,11 +158,14 @@ final class GameClient {
         socketClient.joinGame(gameId)
     }
 
-    func rejoinGame(gameId: String, playerId: String) async throws {
+    func rejoinGame(
+        gameId: String, playerId: String, discordUserId: String? = nil
+    ) async throws {
         isLoading = true
         defer { isLoading = false }
 
-        let response = try await apiClient.rejoinGame(gameId: gameId, playerId: playerId)
+        let response = try await apiClient.rejoinGame(
+            gameId: gameId, playerId: playerId, discordUserId: discordUserId)
         guard response.success else {
             throw GameClientError.operationFailed("Failed to rejoin game")
         }
@@ -239,6 +245,21 @@ final class GameClient {
         let response = try await apiClient.advanceTurn(gameId: gameId)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Advance failed")
+        }
+        applyState(response.gameState)
+    }
+
+    // MARK: - Places
+
+    /// Walk to a named place. The response carries fresh state, same as every
+    /// other action — a refusal (a forced place, or a place that isn't open)
+    /// comes back as `success: false` with the server's own wording.
+    func moveToPlace(_ place: String) async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.movePlace(
+            gameId: gameId, playerId: playerId, place: place)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "You can't go there right now")
         }
         applyState(response.gameState)
     }
@@ -679,6 +700,11 @@ extension GameClient {
         guard let playerId else { return false }
         return gameState?.isCurrentTurn(for: playerId) ?? false
     }
+
+    var placePolicy: PlacePolicy? { gameState?.placePolicy }
+
+    /// The place key you're standing in, or nil before you've joined.
+    var myPlace: String? { myPlayer?.placeKey }
 
     var isHost: Bool {
         guard let playerId, let turnOrder = gameState?.turnOrder else { return false }

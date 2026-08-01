@@ -103,6 +103,21 @@ struct DesignSystemTests {
         #expect(Torch.TextSize.xs == 11.5)
     }
 
+    // MARK: - Place icons
+
+    /// A place whose glyph doesn't exist on this OS renders as a silent blank,
+    /// which reads as a bug rather than a missing symbol. Every place must
+    /// resolve — including the beach, whose umbrella is an SF Symbols 4 glyph
+    /// and falls back to `water.waves` when absent.
+    @Test func everyPlaceIconResolvesOnThisOS() {
+        for place in Place.allCases {
+            #expect(UIImage(systemName: place.symbolName) != nil,
+                    "\(place.key) has no glyph for \(place.symbolName)")
+        }
+        #expect(UIImage(systemName: Place.symbolName(for: "an_unknown_place")) != nil)
+        #expect(["beach.umbrella.fill", "water.waves"].contains(Place.beachSymbol))
+    }
+
     // MARK: - Haptic patterns
 
     @MainActor @Test func hapticPatternsCompileWithoutThrowing() throws {

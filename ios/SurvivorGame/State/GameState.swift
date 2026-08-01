@@ -23,12 +23,15 @@ struct GameState: Codable, Equatable {
     var challenge: ChallengeState?
     var interaction: InteractionState?
     var pendingTheft: PendingTheftState?
+    /// Which places are open and whether the ceremony has forced everyone into
+    /// one. Absent on servers that predate places — the Places UI hides itself.
+    var placePolicy: PlacePolicy?
 
     enum CodingKeys: String, CodingKey {
         case id, phase, players, turnOrder, currentTurnIndex, deck, gameHistory
         case currentVote, jury, finalTribal, winner, createdAt, lastActivity
         case deckMode, expansion, necklaceHolder, eventLog, discard, settings
-        case challenge, interaction
+        case challenge, interaction, placePolicy
         case pendingTheft = "pending_theft"
     }
 
@@ -59,6 +62,7 @@ struct GameState: Codable, Equatable {
         challenge = try? c.decodeIfPresent(ChallengeState.self, forKey: .challenge)
         interaction = try? c.decodeIfPresent(InteractionState.self, forKey: .interaction)
         pendingTheft = try? c.decodeIfPresent(PendingTheftState.self, forKey: .pendingTheft)
+        placePolicy = try? c.decodeIfPresent(PlacePolicy.self, forKey: .placePolicy)
     }
 
     /// Designated memberwise init for tests and previews.
@@ -73,7 +77,7 @@ struct GameState: Codable, Equatable {
         necklaceHolder: String? = nil, eventLog: [EventLogEntry]? = nil,
         discard: [CardInstance]? = nil, settings: GameSettings? = nil,
         challenge: ChallengeState? = nil, interaction: InteractionState? = nil,
-        pendingTheft: PendingTheftState? = nil
+        pendingTheft: PendingTheftState? = nil, placePolicy: PlacePolicy? = nil
     ) {
         self.id = id
         self.phase = phase
@@ -97,6 +101,7 @@ struct GameState: Codable, Equatable {
         self.challenge = challenge
         self.interaction = interaction
         self.pendingTheft = pendingTheft
+        self.placePolicy = placePolicy
     }
 
     // MARK: - Derived Properties
@@ -146,6 +151,12 @@ struct GameState: Codable, Equatable {
 
     var sortedPlayers: [PlayerState] {
         turnOrder.compactMap { players[$0] }
+    }
+
+    /// Who is standing in `placeKey`, in turn order. Snuffed players have left
+    /// the island — their last place is not something anyone should still see.
+    func players(at placeKey: String) -> [PlayerState] {
+        sortedPlayers.filter { $0.isAlive && $0.placeKey == placeKey }
     }
 }
 

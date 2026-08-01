@@ -173,13 +173,31 @@ private struct PlayingContent: View {
                 .padding(.vertical, 8)
             }
 
+            // Who is where, pinned right beneath who is who: alliances form by
+            // wandering off together, and that has to stay on screen — not
+            // scroll away under the hand — for the table to see it happen.
+            if let policy = viewModel.placePolicy {
+                StaggeredRise(index: 3) {
+                    PlacesBar(
+                        policy: policy,
+                        players: viewModel.sortedPlayers,
+                        myPlayerId: viewModel.myPlayerId,
+                        isMoving: viewModel.isMovingPlace,
+                        onMove: { place in
+                            Task { await viewModel.moveToPlace(place) }
+                        }
+                    )
+                    .padding(.bottom, 8)
+                }
+            }
+
             hairline
 
             // Main content area — the lit action panel and the hand flow
             // together in ONE scroll region (the web's glanceable pattern).
             ScrollView {
                 VStack(spacing: Torch.Spacing.md) {
-                    StaggeredRise(index: 3) {
+                    StaggeredRise(index: 4) {
                         VStack(spacing: 16) {
                             // Action buttons (when it's your turn)
                             if viewModel.isMyTurn {
@@ -193,7 +211,7 @@ private struct PlayingContent: View {
                         .torchCard()
                     }
 
-                    StaggeredRise(index: 4) {
+                    StaggeredRise(index: 5) {
                         CardHandView()
                     }
                 }

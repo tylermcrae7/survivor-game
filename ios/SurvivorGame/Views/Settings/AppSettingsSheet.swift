@@ -13,6 +13,7 @@ struct AppSettingsSheet: View {
     @State private var serverURL = ""
     @State private var playerName = ""
     @State private var preferredColor: String?
+    @State private var discordUserId = ""
     @State private var statusMessage: String?
     @State private var showForgetConfirmation = false
     @State private var loaded = false
@@ -73,8 +74,37 @@ struct AppSettingsSheet: View {
                     TextField("Your name", text: $playerName)
                         .textInputAutocapitalization(.words)
                     BuffColorPicker(selectedColor: $preferredColor)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Discord user ID")
+                            .font(Torch.Font.label(Torch.TextSize.xs))
+                            .tracking(Torch.Track.label * Torch.TextSize.xs)
+                            .foregroundStyle(Torch.Color.textSecondary)
+                        TextField("000000000000000000", text: $discordUserId)
+                            .keyboardType(.numberPad)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .torchField()
+                            .accessibilityLabel("Discord user ID")
+                            // A pasted ID often arrives wrapped in spaces or
+                            // angle brackets; keep only what the server accepts.
+                            .onChange(of: discordUserId) { _, value in
+                                let digits = value.filter(\.isNumber)
+                                if digits != value { discordUserId = digits }
+                            }
+                        // The server refuses a malformed ID outright — and it
+                        // does so on JOIN, where the failure would read as "the
+                        // island turned me away". Say it here instead.
+                        if !discordIdLooksRight {
+                            Text("A Discord user ID is a long run of digits — usually 18.")
+                                .font(Torch.Font.body(Torch.TextSize.xs))
+                                .foregroundStyle(Torch.Color.warning)
+                        }
+                    }
+                    .padding(.vertical, 4)
                 } header: {
                     sectionLabel("you")
+                } footer: {
+                    footerText("Optional. Lets the camp's Discord bot move you between voice channels as you change places. In Discord: Settings → Advanced → turn on Developer Mode, then press and hold your own name and tap Copy User ID.")
                 }
                 .listRowBackground(Torch.Color.surfaceSunken)
                 .listRowSeparatorTint(Torch.Color.line)
@@ -200,6 +230,14 @@ struct AppSettingsSheet: View {
             .foregroundStyle(Torch.Color.textFaint)
     }
 
+    /// Empty (not linked) or a plausible snowflake. Mirrors the server's own
+    /// 15–25 digit guard so the complaint lands next to the field, not on join.
+    private var discordIdLooksRight: Bool {
+        let trimmed = discordUserId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty
+            || trimmed.range(of: "^[0-9]{15,25}$", options: .regularExpression) != nil
+    }
+
     private var accessDescription: String {
         switch gameClient.accessState {
         case .checking: return "Checking…"
@@ -216,6 +254,7 @@ struct AppSettingsSheet: View {
         serverURL = config.baseURL.absoluteString
         playerName = config.playerName
         preferredColor = config.preferredColor
+        discordUserId = config.discordUserId ?? ""
     }
 
     private func applyServer() async {
@@ -262,6 +301,8 @@ struct AppSettingsSheet: View {
         let config = ServerConfig.loadDefault(from: modelContext)
         config.playerName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
         config.preferredColor = preferredColor
+        let trimmedDiscordId = discordUserId.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.discordUserId = trimmedDiscordId.isEmpty ? nil : trimmedDiscordId
         try? modelContext.save()
     }
 

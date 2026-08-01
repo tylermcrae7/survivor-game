@@ -7,6 +7,9 @@ import SwiftData
 final class StartViewModel {
     var playerName = ""
     var preferredColor: String?
+    /// Set in Settings, not here — carried along so every join tells the
+    /// server which Discord account to move between voice channels.
+    var discordUserId: String?
     var joinCode = ""
     var loadingState: LoadingState = .idle
     var error: ViewModelError?
@@ -26,6 +29,7 @@ final class StartViewModel {
         let config = ServerConfig.loadDefault(from: context)
         playerName = config.playerName
         preferredColor = config.preferredColor
+        discordUserId = config.discordUserId
         if let lastGameId = config.lastGameId, let lastPlayerId = config.lastPlayerId {
             joinCode = lastGameId
             savedGameId = lastGameId
@@ -60,7 +64,8 @@ final class StartViewModel {
             try await gameClient.joinGame(
                 gameId: gameId,
                 name: playerName.trimmingCharacters(in: .whitespaces),
-                color: preferredColor
+                color: preferredColor,
+                discordUserId: currentDiscordUserId
             )
             saveSession()
             loadingState = .loaded
@@ -86,7 +91,8 @@ final class StartViewModel {
             try await gameClient.joinGame(
                 gameId: normalizedCode,
                 name: playerName.trimmingCharacters(in: .whitespaces),
-                color: preferredColor
+                color: preferredColor,
+                discordUserId: currentDiscordUserId
             )
             joinCode = normalizedCode
             saveSession()
@@ -111,10 +117,22 @@ final class StartViewModel {
 
     // MARK: - Private
 
+    /// Read fresh at join time. The ID is edited in Settings, which writes
+    /// straight to the store, while this view model is built once per launch —
+    /// caching it would send a stale (usually nil) value forever after.
+    private var currentDiscordUserId: String? {
+        guard let modelContext else { return discordUserId }
+        return ServerConfig.loadDefault(from: modelContext).discordUserId
+    }
+
     private func tryRejoin(gameId: String, playerId: String) async {
         loadingState = .loading
         do {
-            try await gameClient.rejoinGame(gameId: gameId, playerId: playerId)
+            // Restoring a saved session is how most players enter a game after
+            // the first launch — a Discord ID set later would never reach the
+            // server if only the fresh-join path carried it.
+            try await gameClient.rejoinGame(
+                gameId: gameId, playerId: playerId, discordUserId: currentDiscordUserId)
             saveSession()
             loadingState = .loaded
         } catch {

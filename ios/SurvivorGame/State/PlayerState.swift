@@ -26,6 +26,17 @@ struct PlayerState: Codable, Identifiable, Equatable {
     var immunityIdolProtection: Bool
     var campRaidedBy: String?
     var inheritanceTarget: String?
+    /// Which named place this player is standing in (`camp_fire`, `the_beach`,
+    /// `the_water_well`, `tribal_council`). Always present on current servers;
+    /// optional here so an older state can't brick the decode.
+    var place: String?
+    /// The Discord account this player has claimed, for the voice-channel
+    /// mirror. Absent for anyone who never set one, and for every bot.
+    var discordUserId: String?
+
+    /// The place this player occupies, falling back to the fire when the
+    /// server said nothing.
+    var placeKey: String { place ?? Place.fallback.key }
 
     var swiftUIColor: Color {
         Color(hex: color) ?? .gray
@@ -48,7 +59,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         case hasStolen, hasPlayed, hasDrawn, hasVoted, extraVotes, characterCards
         case immunityPlayed, voteBanned, isBot, maxVotes, mandatoryVotes
         case goodwillVotes, drawBonus, stealBonus, immunityIdolProtection
-        case campRaidedBy, inheritanceTarget
+        case campRaidedBy, inheritanceTarget, place, discordUserId
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +88,8 @@ struct PlayerState: Codable, Identifiable, Equatable {
         immunityIdolProtection = try container.decodeIfPresent(Bool.self, forKey: .immunityIdolProtection) ?? false
         campRaidedBy = try container.decodeIfPresent(String.self, forKey: .campRaidedBy)
         inheritanceTarget = try container.decodeIfPresent(String.self, forKey: .inheritanceTarget)
+        place = try? container.decodeIfPresent(String.self, forKey: .place)
+        discordUserId = try? container.decodeIfPresent(String.self, forKey: .discordUserId)
     }
 
     /// Designated memberwise init for tests and previews (extension inits in
@@ -91,7 +104,8 @@ struct PlayerState: Codable, Identifiable, Equatable {
         maxVotes: Int? = nil, mandatoryVotes: Int? = nil, goodwillVotes: Int? = nil,
         drawBonus: Int? = nil, stealBonus: Int? = nil,
         immunityIdolProtection: Bool = false, campRaidedBy: String? = nil,
-        inheritanceTarget: String? = nil
+        inheritanceTarget: String? = nil, place: String? = nil,
+        discordUserId: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -117,6 +131,8 @@ struct PlayerState: Codable, Identifiable, Equatable {
         self.immunityIdolProtection = immunityIdolProtection
         self.campRaidedBy = campRaidedBy
         self.inheritanceTarget = inheritanceTarget
+        self.place = place
+        self.discordUserId = discordUserId
     }
 }
 
