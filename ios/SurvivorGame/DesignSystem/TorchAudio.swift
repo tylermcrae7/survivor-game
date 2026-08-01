@@ -110,8 +110,26 @@ actor TorchSound {
         started = false
     }
 
-    /// Route changes and media-server resets invalidate the running graph;
-    /// the next cue rebuilds it.
+    /// Everything the system can do to the graph behind our back. Each of
+    /// these leaves the engine stopped while `started` still reads `true`,
+    /// and that combination is silent death: `startIfNeeded()` takes its
+    /// `guard !started` fast path, then `scheduleBuffer`/`play()` run against
+    /// a stopped engine — every cue for the rest of the session is dropped
+    /// without an error, and `AVAudioPlayerNode.play()` on a non-running
+    /// engine can raise an ObjC exception that no Swift `catch` can see.
+    /// Interruptions (a phone or FaceTime call) are the common case: the
+    /// system deactivates our session and only a route change or a trip
+    /// through the background would otherwise ever rebuild it.
+    static let engineInvalidatingNotifications: [Notification.Name] = [
+        AVAudioSession.routeChangeNotification,
+        AVAudioSession.mediaServicesWereResetNotification,
+        AVAudioSession.interruptionNotification,
+    ]
+
+    /// Route changes, media-server resets, and interruptions invalidate the
+    /// running graph; the next cue rebuilds it. Both halves of an
+    /// interruption (`.began` and `.ended`) land here — invalidating twice
+    /// costs nothing, since rebuilding is lazy and only the next cue pays.
     private func invalidateEngine() {
         engine.stop()
         started = false
@@ -121,8 +139,7 @@ actor TorchSound {
         guard !observing else { return }
         observing = true
         let center = NotificationCenter.default
-        for name in [AVAudioSession.routeChangeNotification,
-                     AVAudioSession.mediaServicesWereResetNotification] {
+        for name in Self.engineInvalidatingNotifications {
             _ = center.addObserver(forName: name, object: nil, queue: nil) { _ in
                 Task { await TorchSound.shared.invalidateEngine() }
             }

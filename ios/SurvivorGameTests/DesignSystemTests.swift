@@ -153,6 +153,28 @@ struct DesignSystemTests {
         #expect(TorchCue.steal.duration == 0.15)
         #expect(TorchCue.notification.duration == 0.2)
     }
+
+    /// Regression: a phone call interrupts the session, the system stops the
+    /// engine, but `started` stays true — every later cue is silently eaten.
+    /// Interruptions must invalidate the engine exactly like route changes
+    /// and media-server resets already do.
+    @Test func interruptionsInvalidateTheEngineLikeRouteChanges() {
+        let invalidating = Set(TorchSound.engineInvalidatingNotifications)
+        #expect(invalidating.contains(AVAudioSession.interruptionNotification))
+        #expect(invalidating.contains(AVAudioSession.routeChangeNotification))
+        #expect(invalidating.contains(AVAudioSession.mediaServicesWereResetNotification))
+    }
+
+    /// The cues survive an interruption: posting one must not trap, and the
+    /// buffers the engine replays afterwards still render.
+    @Test func aCueStillRendersAfterAnInterruptionIsPosted() throws {
+        TorchSound.play(.notification)
+        for name in TorchSound.engineInvalidatingNotifications {
+            NotificationCenter.default.post(name: name, object: nil)
+        }
+        let buffer = try TorchSound.renderBuffer(for: .notification)
+        #expect(buffer.frameLength > 0)
+    }
 }
 
 /// Regression: a variation-axis font descriptor silently broke SwiftUI's
