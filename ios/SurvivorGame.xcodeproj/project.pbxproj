@@ -28,6 +28,7 @@
 		363E486B92D0F8ED41213292 /* PlayingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0C398C7CA94DAB86E5CED0 /* PlayingScreen.swift */; };
 		3748CEDB54ECF264ABC4743A /* lobby.json in Resources */ = {isa = PBXBuildFile; fileRef = 9E24B36808ACBE3C8AC5E22A /* lobby.json */; };
 		39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */; };
+		3D7A9908750FD004221479A1 /* ChallengeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1797EAE3C43C28507E28012 /* ChallengeUITests.swift */; };
 		3FB7989815C9A7AFE7F7AF00 /* GameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6CB5AAE841ACA3F75052A81 /* GameRecord.swift */; };
 		41E5F07EB8990425AF7B7EEF /* StartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BCCF6307C9DA7B40DC11FC /* StartViewModel.swift */; };
 		43CA90BC5E4FBACEF5B53D48 /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D6A9B48AC1F6B010C3DC27 /* ConnectionBanner.swift */; };
@@ -215,6 +216,7 @@
 		EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactiveTheftOverlay.swift; sourceTree = "<group>"; };
 		ECE14A68AE3FEDAD4CC62A30 /* StartScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartScreen.swift; sourceTree = "<group>"; };
 		EEFFF11354FE9CAD6EAE725A /* ImmunityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmunityView.swift; sourceTree = "<group>"; };
+		F1797EAE3C43C28507E28012 /* ChallengeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeUITests.swift; sourceTree = "<group>"; };
 		F438FC100DE10D7EA2EF6416 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		F68CD7E24847150FF4BBD2BE /* pending_theft_open.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = pending_theft_open.json; sourceTree = "<group>"; };
 		F96BEA35C4151773110A4463 /* EliminationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EliminationView.swift; sourceTree = "<group>"; };
@@ -357,6 +359,7 @@
 			isa = PBXGroup;
 			children = (
 				19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */,
+				F1797EAE3C43C28507E28012 /* ChallengeUITests.swift */,
 				1AE837EA8BBB0B435CEFD146 /* README.md */,
 			);
 			path = SurvivorGameUITests;
@@ -790,6 +793,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */,
+				3D7A9908750FD004221479A1 /* ChallengeUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
