@@ -75,16 +75,37 @@ struct ReactiveTheftOverlay: View {
                         Task { await playSorry() }
                     } label: {
                         if isActing { ProgressView().tint(.white) }
-                        else { Label("Sorry for you!", systemImage: "hand.raised.fill") }
+                        else {
+                            // One Text with the icon inline, NOT a
+                            // Label(_:systemImage:). SurvivorButton's style body
+                            // adds `.isButton`, and that trait propagates into a
+                            // Label's separate parts, so the title and the glyph
+                            // each published as their own button element
+                            // ("Sorry for you!" ×2 plus a stray "Block"). Only a
+                            // single Text collapses into the Button the way the
+                            // plain-string sibling below always has —
+                            // `.accessibilityElement(children:)` does not fix
+                            // it (`.combine` left two, `.ignore` added a third
+                            // wrapper), and `.accessibilityHidden` on a Button's
+                            // own label is ignored.
+                            Text(Image(systemName: "hand.raised.fill"))
+                                + Text("  Sorry for you!")
+                        }
                     }
                     .buttonStyle(.survivor)
                     .disabled(isActing)
+                    .accessibilityLabel("Sorry for you!")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Play Sorry For You and the raiders get nothing")
 
                     Button("Let them take it") {
                         Task { await letThemTakeIt() }
                     }
                     .buttonStyle(.survivor(color: .gray))
                     .disabled(isActing)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Let them take it")
+                    .accessibilityAddTraits(.isButton)
                 } else {
                     // No answer to give — acknowledge and the theft resolves
                     Button("Let them take it") {
@@ -92,6 +113,9 @@ struct ReactiveTheftOverlay: View {
                     }
                     .buttonStyle(.survivor(color: .gray))
                     .disabled(isActing)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Let them take it")
+                    .accessibilityAddTraits(.isButton)
                 }
             }
             .padding(24)

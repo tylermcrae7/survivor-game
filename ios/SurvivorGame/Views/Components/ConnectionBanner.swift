@@ -28,7 +28,11 @@ struct ConnectionBanner: View {
 
             Spacer()
         }
-        .padding(.top, 8)
+        // Clears the camp strip: PlayingScreen's FIRE game-code pill sits at
+        // the very top of the safe area, and an 8pt inset dropped this banner
+        // straight on top of it.
+        .padding(.top, 52)
+        .padding(.horizontal, 16)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 }

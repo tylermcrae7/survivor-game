@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct PlayerStatusBar: View {
+    @Environment(GameClient.self) private var gameClient
+
     let players: [PlayerState]
     let currentPlayerId: String?
     let myPlayerId: String?
@@ -12,7 +14,11 @@ struct PlayerStatusBar: View {
                     PlayerStatusCard(
                         player: player,
                         isCurrentTurn: player.id == currentPlayerId,
-                        isMe: player.id == myPlayerId
+                        isMe: player.id == myPlayerId,
+                        // The Challenge winner wears the Immunity Necklace
+                        // until the next Tribal Council spends it — until now
+                        // the app tracked it but never showed it.
+                        hasNecklace: player.id == gameClient.gameState?.necklaceHolder
                     )
                 }
             }
@@ -25,6 +31,7 @@ private struct PlayerStatusCard: View {
     let player: PlayerState
     let isCurrentTurn: Bool
     let isMe: Bool
+    var hasNecklace: Bool = false
 
     var body: some View {
         VStack(spacing: 6) {
@@ -59,6 +66,19 @@ private struct PlayerStatusCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isCurrentTurn ? .orange : .clear, lineWidth: 1)
         )
+        // A badge rather than a row: the necklace must not make one card
+        // taller than the rest of the strip. Drawn AFTER the clipShape —
+        // applied before it, the rounded corner shaved the shield.
+        .overlay(alignment: .topTrailing) {
+            if hasNecklace {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Torch.Color.juryGold)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+                    .padding(.top, 4)
+                    .accessibilityLabel("holds the Immunity Necklace")
+            }
+        }
         // The torchSnuff end state, held: a snuffed player reads as
         // extinguished — desaturated, dimmed, faded (web `.eliminated`).
         .saturation(player.isEliminated ? 0 : 1)
