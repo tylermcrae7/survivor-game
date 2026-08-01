@@ -89,6 +89,31 @@ def takeable_indices(hand: Optional[List[Dict[str, Any]]]) -> List[int]:
 	"""Indices of the cards in ``hand`` that a steal or take may remove."""
 	return [i for i, card in enumerate(hand or []) if is_takeable(card)]
 
+
+def tribal_elimination_type(card: Optional[Dict[str, Any]]) -> str:
+	"""
+	How many players a Tribal Council Card sends home: "single" or "double".
+
+	The card's TYPE is the authority. ``elimination_type`` is a convenience key
+	that only the deck builder writes — a compact ``{"type": "..."}`` card (the
+	shape saved games, discards and the test hooks use) loses it on the way
+	through ``resolve_card``, and reading the missing key with a "single"
+	default quietly demoted every Double Elimination to a single vote-out.
+	"""
+	card = card or {}
+	explicit = card.get("elimination_type")
+	if explicit in ("single", "double"):
+		return explicit
+	return "double" if card.get("type") == "tribal_council_double" else "single"
+
+
+def is_vote_blocked(player: Optional[Dict[str, Any]]) -> bool:
+	"""True if Block A Vote / Steal A Vote has taken this player out of the box.
+
+	A blocked player never places a ballot, so nothing may wait on one.
+	"""
+	return bool((player or {}).get("voteBanned", False))
+
 # Let's Go To Rocks expansion — the 5 Orange Challenge Cards (Phase 4).
 CHALLENGE_CARD_TYPES = (
     "challenge_lowest_score_loses",
@@ -1207,6 +1232,51 @@ class SurvivorRulesEngine:
 	# TRIBAL ELIMINATION RESOLUTION (F9) — official tie & double-elimination cascade
 	# ═══════════════════════════════════════════════════════════════════════════════════
 
+	def elimination_ladder(
+		self,
+		game: Dict[str, Any],
+		vote_counts: Optional[Dict[str, int]] = None,
+		protected_players=None,
+		idol_players=None,
+		picks_needed: int = 1,
+		exclude=(),
+	) -> List[str]:
+		"""
+		The official "Unclear who is voted out?" priority ladder, in order:
+
+		  1. non-immune players who got votes (most votes first)
+		  2. non-immune players who got no votes
+		  3. players who played Immunity Idols (or wear the Necklace)
+
+		Tiers are added whole and the walk stops at the first tier that can
+		supply ``picks_needed`` candidates, so the Council Leader never chooses
+		from a lower tier while a higher one still has someone in it.
+		"""
+		protected_players = set(protected_players or ())
+		idol_players = set(idol_players or ())
+		players = game.get("players", {})
+		counts = {pid: n for pid, n in (vote_counts or {}).items() if n > 0}
+
+		alive = [pid for pid, p in players.items() if not p.get("isEliminated", False)]
+		safe = protected_players | idol_players
+		non_immune = [pid for pid in alive if pid not in safe]
+
+		tiers = (
+			sorted([pid for pid in non_immune if counts.get(pid, 0) > 0],
+			       key=lambda pid: -counts[pid]),
+			[pid for pid in non_immune if counts.get(pid, 0) == 0],
+			[pid for pid in alive if pid in safe],
+		)
+
+		out: List[str] = []
+		for tier in tiers:
+			for pid in tier:
+				if pid not in out and pid not in exclude:
+					out.append(pid)
+			if len(out) >= picks_needed:
+				break
+		return out
+
 	def resolve_tribal_eliminations(
 		self,
 		game: Dict[str, Any],
@@ -1273,18 +1343,12 @@ class SurvivorRulesEngine:
 			[pid for pid in non_immune if counts.get(pid, 0) > 0],
 			key=lambda pid: -counts[pid],
 		)
-		without_votes = [pid for pid in non_immune if counts.get(pid, 0) == 0]
-		last_resort = [pid for pid in alive if pid in safe]
 
 		def ladder(picks_needed: int, exclude=()) -> List[str]:
-			out: List[str] = []
-			for tier in (with_votes, without_votes, last_resort):
-				for pid in tier:
-					if pid not in out and pid not in exclude:
-						out.append(pid)
-				if len(out) >= picks_needed:
-					break
-			return out
+			return self.elimination_ladder(
+				game, counts, protected_players=protected_players,
+				idol_players=idol_players, picks_needed=picks_needed,
+				exclude=exclude)
 
 		# (The official 3-players-left rule is applied AFTER vote resolution, to
 		#  the players actually voted out — see the guard at the bottom. A
@@ -1336,18 +1400,24 @@ class SurvivorRulesEngine:
 			return result
 
 		# ── Double elimination ──
-		if len(tied_first) >= 3:
+		# The Leader only chooses when MORE players are tied than there are
+		# vote-outs to hand out. Tie exactly as many (or fewer) as the council
+		# owes and every one of them goes — there is nothing to decide.
+		if len(tied_first) > needed:
 			result["tieBreakNeeded"] = True
 			result["tiedPlayers"] = tied_first
 			result["reason"] = (
 				f"{len(tied_first)} players tied with {top_votes} votes — "
-				"Council Leader decides which 2 are voted out"
+				f"Council Leader decides which {needed} are voted out"
 			)
 			return self._apply_three_left_rule(result, players, alive)
 
-		if len(tied_first) == 2:
+		if len(tied_first) == needed:
 			result["eliminated"] = list(tied_first)
-			result["reason"] = f"2 players tied with {top_votes} votes — both are voted out"
+			result["reason"] = (
+				f"{len(tied_first)} players tied with {top_votes} votes — "
+				"both are voted out"
+			)
 			return self._apply_three_left_rule(result, players, alive)
 
 		# Exactly one player has the most votes; resolve second place.
@@ -1578,6 +1648,10 @@ class SurvivorRulesEngine:
 		Guide: the taker "gets nothing from you and must discard 1 card" — and
 		when a card let more than one player take from you, "each of those
 		players gets nothing, and must EACH discard 1 card instead."
+
+		The Vote Card is not part of the hand the card economy can touch (see
+		UNTAKEABLE_CARD_TYPES): a thief holding nothing but Vote Cards discards
+		nothing rather than losing the ballot they are required to cast.
 		"""
 		thief_ids = params.get("thiefIds") or ([params["thiefId"]] if params.get("thiefId") else [])
 		thief_ids = [t for t in thief_ids if t in game["players"]]
@@ -1587,10 +1661,15 @@ class SurvivorRulesEngine:
 		lines = []
 		for tid in thief_ids:
 			thief = game["players"][tid]
-			if thief.get("hand"):
-				discarded = thief["hand"].pop()
+			hand = thief.get("hand") or []
+			discardable = takeable_indices(hand)
+			if discardable:
+				# Same card the blind pop() used to take: the last one they hold
+				discarded = hand.pop(discardable[-1])
 				game.setdefault("discard", []).append(discarded)
 				lines.append(f"{thief['name']} discarded {discarded.get('name', 'a card')}")
+			elif hand:
+				lines.append(f"{thief['name']} holds only their Vote Card — nothing to discard")
 			else:
 				lines.append(f"{thief['name']} had nothing to discard")
 		return {"message": f"Sorry for you! The raid fails — {'; '.join(lines)}"}

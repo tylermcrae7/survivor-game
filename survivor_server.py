@@ -6,7 +6,8 @@ import uuid, time, os, json, socket, re, sys, threading, random, hmac, hashlib
 import logging
 from pathlib import Path
 from functools import wraps
-from rules_engine import SurvivorRulesEngine, TribalPhase, takeable_indices, VOTE_CARD_TYPES
+from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
+                          tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 import push_notify
 from interactions import interaction_engine
@@ -911,9 +912,17 @@ class GameState:
         # Advance to reveal phase
         current_vote["phase"] = "reveal"
 
+        # Remember who Block A Vote shut out before the post-tribal reset clears
+        # the flag — the ceremony has to be able to say why their ballot is
+        # missing, and the tally must treat them as having cast nothing.
+        blocked_voters = self._blocked_voters(game)
+        current_vote["blockedVoters"] = blocked_voters
+
         # Tally all votes
         vote_counts = {}
         for voter_id, vote_targets in current_vote["votes"].items():
+            if voter_id in blocked_voters:
+                continue  # a blocked ballot never reaches the box
             for target_id, vote_count in vote_targets.items():
                 vote_counts[target_id] = vote_counts.get(target_id, 0) + vote_count
 
@@ -976,6 +985,16 @@ class GameState:
             f"tie-break needed: {current_vote['tieBreakNeeded']} ({outcome['reason']})"
         )
 
+        # "X was blocked from voting" belongs in the reveal — otherwise a
+        # missing ballot reads like a bug at the table.
+        blocked_note = ""
+        if blocked_voters:
+            names = ", ".join(game["players"][pid].get("name", pid)
+                              for pid in blocked_voters)
+            was = "was" if len(blocked_voters) == 1 else "were"
+            # outcome["reason"] carries no trailing stop, so supply one here
+            blocked_note = f". {names} {was} blocked from voting."
+
         if current_vote["tieBreakNeeded"]:
             picks_left = outcome["eliminationsNeeded"] - len(outcome["eliminated"])
             return {
@@ -983,14 +1002,20 @@ class GameState:
                 "message": (
                     f"Votes revealed - Council Leader must choose {picks_left} of "
                     f"{len(current_vote['tiedPlayers'])} players. {outcome['reason']}"
+                    f"{blocked_note}"
                 ),
                 "resolution": outcome["reason"],
+                "blockedVoters": blocked_voters,
             }
         else:
             return {
                 "success": True,
-                "message": f"Votes revealed - {len(current_vote['eliminated'])} players voted out. {outcome['reason']}",
+                "message": (
+                    f"Votes revealed - {len(current_vote['eliminated'])} players voted out. "
+                    f"{outcome['reason']}{blocked_note}"
+                ),
                 "resolution": outcome["reason"],
+                "blockedVoters": blocked_voters,
             }
 
     def tie_break(self, gid, leaderId=None, chosenId=None, chosenIds=None, **kwargs):
@@ -1072,6 +1097,27 @@ class GameState:
         current_vote["tieBreakResolvedBy"] = leaderId
 
         picks_left = eliminations_needed - len(eliminated)
+        if picks_left > 0 and not tied_players:
+            # A Double Elimination owes 2 vote-outs. If breaking the tie used up
+            # every tied player and the council still owes one, the choice moves
+            # down the "unclear who is voted out" ladder rather than quietly
+            # completing a double with a single flip.
+            tied_players = self.rules_engine.elimination_ladder(
+                game,
+                current_vote.get("voteResults") or {},
+                protected_players=current_vote.get("protectedPlayers") or [],
+                picks_needed=picks_left,
+                exclude=tuple(eliminated),
+            )
+            if 0 < len(tied_players) <= picks_left:
+                # No choice left to make — everyone still standing on the ladder goes
+                eliminated.extend(tied_players)
+                tied_players = []
+                picks_left = eliminations_needed - len(eliminated)
+            current_vote["eliminated"] = eliminated
+
+        current_vote["tiedPlayers"] = tied_players
+
         if picks_left > 0 and tied_players:
             current_vote["tieBreakNeeded"] = True
             self._save(gid)
@@ -1460,12 +1506,25 @@ class GameState:
         }
 
     def _ballot_box_missing(self, game):
-        """Names of living players who haven't voted or passed yet ('' = full box)."""
+        """Names of living players who haven't voted or passed yet ('' = full box).
+
+        Block A Vote takes its target out of the Voting Box entirely — they are
+        never handed it, so the box is full without them. Counting a blocked
+        player as "still to vote" wedged the council forever: cast_vote refuses
+        their ballot (even an empty one), so nothing could ever fill the gap.
+        """
         current_vote = game.get("currentVote") or {}
-        living = [pid for pid, p in game["players"].items()
-                  if not p.get("isEliminated", False)]
-        missing = [pid for pid in living if pid not in (current_vote.get("votes") or {})]
+        cast = current_vote.get("votes") or {}
+        missing = [pid for pid, p in game["players"].items()
+                   if not p.get("isEliminated", False)
+                   and not is_vote_blocked(p)
+                   and pid not in cast]
         return ", ".join(game["players"][pid].get("name", pid) for pid in missing)
+
+    def _blocked_voters(self, game):
+        """Living players Block A Vote / Steal A Vote shut out of this council."""
+        return [pid for pid, p in game["players"].items()
+                if not p.get("isEliminated", False) and is_vote_blocked(p)]
 
     def advance_tribal_phase(self, gid, target_phase=None, **kwargs):
         """
@@ -2208,7 +2267,7 @@ class GameState:
         if card.get("category") == "tribal_council":
             self._trigger_tribal_council(
                 game,
-                card.get("elimination_type", "single"),
+                tribal_elimination_type(card),
                 drawer_id=player_id,
             )
 
@@ -2510,7 +2569,7 @@ class GameState:
                 # player who drew the card becomes the Tribal Council Leader.
                 self._trigger_tribal_council(
                     game,
-                    resolved_card.get("elimination_type", "single"),
+                    tribal_elimination_type(resolved_card),
                     drawer_id=player_id,
                 )
                 drawn_cards.append(resolved_card)

@@ -281,6 +281,144 @@ class TieBreakCascadeTest(unittest.TestCase):
         self.assertFalse(current_vote["tieBreakNeeded"])
         self.assertCountEqual(current_vote["eliminated"], [a, b])
 
+    def test_double_elimination_card_survives_the_compact_card_shape(self):
+        """
+        A Tribal Council Card's TYPE decides how many go home. Saved games,
+        discards and the deck-stacking test hook all carry the compact
+        ``{"type": ...}`` shape, which loses the ``elimination_type`` key on the
+        way through resolve_card — and reading that missing key with a "single"
+        default silently demoted every Double Elimination to one vote-out.
+        """
+        drawer = self.game["turnOrder"][self.game.get("currentTurnIndex", 0)]
+        self.game["players"][drawer]["hasStolen"] = True
+        self.game["players"][drawer]["hasPlayed"] = True
+        self.game["deck"].insert(0, {"type": "tribal_council_double"})
+
+        result = self.gs.draw_card(self.game_id, drawer)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.game["currentVote"]["type"], "double")
+        self.assertEqual(self.game["currentVote"]["eliminationsNeeded"], 2)
+
+    def test_double_two_way_tie_eliminates_both_end_to_end(self):
+        """A 2-2 tie in a Double Elimination is not a tie-break — both go."""
+        a, b = self.pids[0], self.pids[1]
+        leader = self.pids[4]
+        self.gs._trigger_tribal_council(self.game, "double", drawer_id=leader)
+        self.gs.start_voting(self.game_id, "elimination")
+
+        ballots = {self.pids[0]: b, self.pids[1]: a, self.pids[2]: a,
+                   self.pids[3]: b, leader: self.pids[2]}
+        for voter, target in ballots.items():
+            res = self.gs.cast_vote(self.game_id, voter,
+                                    [{"targetId": target, "votes": 1}])
+            self.assertTrue(res["success"], res.get("message"))
+
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+        current_vote = self.game["currentVote"]
+        self.assertFalse(current_vote["tieBreakNeeded"], current_vote["resolution"])
+        self.assertCountEqual(current_vote["eliminated"], [a, b])
+        self.assertEqual(current_vote["eliminationsNeeded"], 2)
+
+        done = self.gs.complete_tribal(self.game_id)
+        self.assertTrue(done["success"], done.get("message"))
+        self.assertCountEqual(done["votedOut"], [a, b])
+        self.assertEqual(self.game["players"][a]["characterCards"], 1)
+        self.assertEqual(self.game["players"][b]["characterCards"], 1)
+
+    def test_double_three_way_tie_resolves_to_exactly_two_eliminations(self):
+        """3 tied for 2 slots: the Leader picks, and BOTH vote-outs happen."""
+        a, b, c = self.pids[0], self.pids[1], self.pids[2]
+        leader = self.pids[4]
+        self.gs._trigger_tribal_council(self.game, "double", drawer_id=leader)
+        current_vote = self.game["currentVote"]
+        current_vote["phase"] = "voting"
+        current_vote["votes"] = {
+            self.pids[3]: {a: 1}, leader: {b: 1}, a: {c: 1}, b: {}, c: {},
+        }
+
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+        self.assertTrue(current_vote["tieBreakNeeded"])
+        self.assertCountEqual(current_vote["tiedPlayers"], [a, b, c])
+        self.assertEqual(current_vote["eliminationsNeeded"], 2)
+
+        # One pick is not enough — the council still owes a second vote-out
+        first = self.gs.tie_break(self.game_id, leaderId=leader, chosenId=a)
+        self.assertTrue(first["success"], first.get("message"))
+        self.assertTrue(current_vote["tieBreakNeeded"])
+        self.assertEqual(first["picksRemaining"], 1)
+        blocked = self.gs.complete_tribal(self.game_id)
+        self.assertFalse(blocked["success"])
+
+        second = self.gs.tie_break(self.game_id, leaderId=leader, chosenId=b)
+        self.assertTrue(second["success"], second.get("message"))
+        self.assertFalse(current_vote["tieBreakNeeded"])
+        self.assertCountEqual(current_vote["eliminated"], [a, b])
+
+        done = self.gs.complete_tribal(self.game_id)
+        self.assertTrue(done["success"], done.get("message"))
+        self.assertEqual(len(done["votedOut"]), 2)
+
+    def test_a_double_never_completes_short_when_the_tie_runs_dry(self):
+        """
+        Whatever the Leader picks, a Double Elimination owes 2 vote-outs. If the
+        tied list empties first the choice drops to the next rung of the
+        unclear-who-is-voted-out ladder instead of quietly stopping at 1.
+        """
+        a, b, c = self.pids[0], self.pids[1], self.pids[2]
+        leader = self.pids[4]
+        self.gs._trigger_tribal_council(self.game, "double", drawer_id=leader)
+        current_vote = self.game["currentVote"]
+        current_vote["phase"] = "reveal"
+        # A hand-built council whose tied list is one name short of the 2 the
+        # Double Elimination owes — the old code completed with a single flip.
+        # Only b is left on the ladder's top rung, so there is nothing to decide.
+        current_vote.update({
+            "eliminated": [], "tieBreakNeeded": True, "tiedPlayers": [a],
+            "eliminationsNeeded": 2, "voteResults": {a: 2, b: 1},
+            "protectedPlayers": [],
+        })
+
+        result = self.gs.tie_break(self.game_id, leaderId=leader, chosenId=a)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertFalse(current_vote["tieBreakNeeded"])
+        self.assertCountEqual(current_vote["eliminated"], [a, b])
+
+        done = self.gs.complete_tribal(self.game_id)
+        self.assertTrue(done["success"], done.get("message"))
+        self.assertEqual(len(done["votedOut"]), 2)
+        self.assertEqual(len(self.game["gameHistory"][-1]["voted_out"]), 2)
+
+    def test_a_dry_tie_with_several_candidates_asks_the_leader_again(self):
+        """Refilling from the ladder is still a CHOICE when more than one name
+        qualifies — the Leader picks, and only then does the council close."""
+        a, b, c = self.pids[0], self.pids[1], self.pids[2]
+        leader = self.pids[4]
+        self.gs._trigger_tribal_council(self.game, "double", drawer_id=leader)
+        current_vote = self.game["currentVote"]
+        current_vote["phase"] = "reveal"
+        current_vote.update({
+            "eliminated": [], "tieBreakNeeded": True, "tiedPlayers": [a],
+            "eliminationsNeeded": 2, "voteResults": {a: 2, b: 1, c: 1},
+            "protectedPlayers": [],
+        })
+
+        first = self.gs.tie_break(self.game_id, leaderId=leader, chosenId=a)
+        self.assertTrue(first["success"], first.get("message"))
+        self.assertTrue(current_vote["tieBreakNeeded"])
+        self.assertEqual(first["picksRemaining"], 1)
+        self.assertCountEqual(current_vote["tiedPlayers"], [b, c])
+
+        second = self.gs.tie_break(self.game_id, leaderId=leader, chosenId=c)
+        self.assertTrue(second["success"], second.get("message"))
+        self.assertFalse(current_vote["tieBreakNeeded"])
+        self.assertCountEqual(current_vote["eliminated"], [a, c])
+
+        done = self.gs.complete_tribal(self.game_id)
+        self.assertTrue(done["success"], done.get("message"))
+        self.assertEqual(len(done["votedOut"]), 2)
+
     def test_enhanced_tie_break_accepts_both_picks_at_once(self):
         a, b, c = self.pids[0], self.pids[1], self.pids[2]
         leader = self.pids[4]

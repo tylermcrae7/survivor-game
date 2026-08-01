@@ -464,6 +464,74 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertFalse(game["players"][target2_id]["isEliminated"])
         self.assertEqual(len([p for p in game["players"].values() if not p["isEliminated"]]), 6)
         
+    def test_block_a_vote_council_still_reaches_reveal_and_completes(self):
+        """
+        Block A Vote takes its target out of the Voting Box. The server refuses
+        their ballot — even an empty one — so the council must not wait on it.
+        Counting a blocked player as "still to vote" wedged Tribal forever:
+        neither the idol window nor the reveal could ever open.
+        """
+        game = self.gs.games[self.game_id]
+        blocker, blocked = self.player_ids[0], self.player_ids[3]
+
+        self.gs._trigger_tribal_council(game, "single", drawer_id=blocker)
+        game["players"][blocker]["hand"].append({"type": "block_vote"})
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        played = self.gs.play_tribal_advantage(
+            self.game_id, playerId=blocker, advantageType="block_vote",
+            targetId=blocked)
+        self.assertTrue(played["success"], played.get("message"))
+        self.assertTrue(game["players"][blocked]["voteBanned"])
+
+        self.gs.advance_tribal_phase(self.game_id, "discussion")
+        self.gs.start_voting(self.game_id, "elimination")
+
+        # The banned player is refused even with an empty ballot...
+        refused = self.gs.cast_vote(self.game_id, blocked, [])
+        self.assertFalse(refused["success"])
+        self.assertIn("banned from voting", refused["message"])
+
+        # ...and the box is full without them
+        for voter_id in self.player_ids[:3]:
+            res = self.gs.cast_vote(self.game_id, voter_id,
+                                    [{"targetId": blocked, "votes": 1}])
+            self.assertTrue(res["success"], res.get("message"))
+        self.assertEqual(self.gs._ballot_box_missing(game), "")
+
+        # The idol window opens, and so does the box
+        self.assertTrue(self.gs.advance_tribal_phase(self.game_id, "immunity"))
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+        self.assertEqual(game["currentVote"]["eliminated"], [blocked])
+        self.assertEqual(game["currentVote"]["voteResults"], {blocked: 3})
+        # ...and the reveal says why a ballot is missing
+        self.assertEqual(reveal["blockedVoters"], [blocked])
+        self.assertIn("was blocked from voting", reveal["message"])
+
+        done = self.gs.complete_tribal(self.game_id)
+        self.assertTrue(done["success"], done.get("message"))
+        self.assertEqual(game["players"][blocked]["characterCards"], 1)
+        # The ban lifts with the council
+        self.assertFalse(game["players"][blocked].get("voteBanned", False))
+
+    def test_a_blocked_ballot_never_reaches_the_tally(self):
+        """A ban landing after a ballot was cast still counts as nothing."""
+        game = self.gs.games[self.game_id]
+        banned, target = self.player_ids[0], self.player_ids[3]
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+        for voter_id in self.player_ids:
+            vote_for = target if voter_id != target else self.player_ids[1]
+            self.gs.cast_vote(self.game_id, voter_id,
+                              [{"targetId": vote_for, "votes": 1}])
+
+        game["players"][banned]["voteBanned"] = True
+        reveal = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(reveal["success"], reveal.get("message"))
+        # 3 ballots named the target; the banned one is not among them
+        self.assertEqual(game["currentVote"]["voteResults"].get(target), 2)
+
     def test_tribal_council_reset(self):
         """Test resetting tribal council back to discussion phase"""
         game = self.gs.games[self.game_id]

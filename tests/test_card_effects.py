@@ -735,6 +735,42 @@ class TestVoteCardIsNotStealable(CardEffectTestBase):
         self.assertEqual(self.hand_types(thief), ["vote"])
         self.assertEqual(self.hand_types(victim), [])
 
+    def test_sorry_for_you_discard_never_takes_the_thiefs_vote_card(self):
+        """
+        "They get nothing from you and must discard 1 card" — but the Vote Card
+        is not part of the hand the card economy can touch. The forced discard
+        used to pop the LAST card blindly, which cost a thief the ballot they
+        are required to cast at the next Tribal Council.
+        """
+        thief, target = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [{"type": "sorry_for_you"}, {"type": "vote"}]
+        # Vote Card sits LAST — exactly where the blind pop() reached
+        self.hand(thief)[:] = [{"type": "camp_raid"}, {"type": "vote"}]
+
+        self.gs.steal_card(self.game_id, thief, target)
+        result = self.gs.handle_reactive_card_play(self.game_id, target, 0, {})
+
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.hand_types(thief), ["vote"])
+        self.gs.rules_engine.sync_vote_counters(self.game)
+        self.assertEqual(self.game["players"][thief]["voteCards"], 1)
+        self.assertIn("camp_raid", [c.get("type") for c in self.game.get("discard", [])])
+
+    def test_sorry_for_you_discards_nothing_from_a_votes_only_hand(self):
+        thief, target = self.player_ids[0], self.player_ids[1]
+        self.game["players"][thief]["hasStolen"] = False
+        self.hand(target)[:] = [{"type": "sorry_for_you"}, {"type": "vote"}]
+        self.hand(thief)[:] = [{"type": "vote"}]
+
+        self.gs.steal_card(self.game_id, thief, target)
+        result = self.gs.handle_reactive_card_play(self.game_id, target, 0, {})
+
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.hand_types(thief), ["vote"])
+        # ...and the log copy stays honest about why nothing was discarded
+        self.assertIn("only their Vote Card", result["message"])
+
 
 class TestHiddenInfoStaysOutOfTheLog(CardEffectTestBase):
     """

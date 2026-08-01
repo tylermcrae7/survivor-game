@@ -276,8 +276,11 @@ def _human_move(gs, gid, human, rng):
                 gs.advance_tribal_phase(gid, phase=transitions[vph])
                 return True
             if vph == "voting":
+                # A vote-banned player never places a ballot — the box is full
+                # without them (Block A Vote).
                 alive = [p for p in game["turnOrder"]
-                         if not players[p].get("isEliminated")]
+                         if not players[p].get("isEliminated")
+                         and not players[p].get("voteBanned")]
                 if len(cv.get("votes") or {}) >= len(alive):
                     gs.reveal_votes(gid)
                     return True
@@ -461,6 +464,127 @@ def test_bot_draw_logs_a_redacted_entry():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _bot_led_council(gs, gid, human, human_hand):
+    """Stage a bot-led Tribal Council with every ballot in and a scripted human hand."""
+    game = gs.games[gid]
+    leader = next(p for p in game["turnOrder"] if game["players"][p].get("isBot"))
+    gs._trigger_tribal_council(game, "single", drawer_id=leader)
+    gs.start_voting(gid, "elimination")
+
+    for pid in game["turnOrder"]:
+        game["players"][pid]["hand"] = [{"type": "vote"}]
+    game["players"][human]["hand"] = list(human_hand)
+    gs.rules_engine.sync_vote_counters(game)
+
+    for pid in game["turnOrder"]:
+        target = next(p for p in game["turnOrder"] if p != pid)
+        mandatory = max(0, game["players"][pid].get("mandatoryVotes", 0))
+        votes = [{"targetId": target, "votes": mandatory}] if mandatory else []
+        res = gs.cast_vote(gid, voterId=pid, votesData=votes)
+        assert res["success"], res.get("message")
+    return game, leader
+
+
+def test_bot_leader_opens_the_idol_window_for_a_human():
+    """
+    A Hidden Immunity Idol is playable only AFTER everyone has voted. A bot
+    Council Leader used to reveal straight out of the voting phase, so a human
+    holding an idol never got a window in a bot-led council.
+    """
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing the bot leader's idol window ===")
+        gid = gs.create_game()
+        human = gs.add_player(gid, "Tyler", "red")
+        for _ in range(3):
+            assert gs.add_bot(gid)["success"]
+        gs.start_full_game(gid)
+
+        game, leader = _bot_led_council(
+            gs, gid, human, [{"type": "immunity_idol"}, {"type": "vote"}])
+        assert game["currentVote"]["phase"] == "voting"
+
+        runner = BotRunner(gs, rng=random.Random(11))
+        assert runner.step(gid) is True
+        assert game["currentVote"]["phase"] == "immunity", \
+            f"bot leader skipped the idol window: {game['currentVote']['phase']}"
+
+        # The human can actually use the window
+        played = gs.play_immunity(gid, playerId=human, targetId=human)
+        assert played["success"], played.get("message")
+        assert game["players"][human].get("immunityIdolProtection")
+
+        # ...and the leader still closes the ceremony from the immunity phase
+        assert runner.step(gid) is True
+        assert game["currentVote"]["phase"] == "reveal", game["currentVote"]["phase"]
+        assert game["currentVote"]["voteResults"] is not None
+        print("✅ bot leaders give humans a real idol window!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_bot_leader_skips_the_idol_window_when_no_human_holds_one():
+    """No idol at a human seat, no ceremony to sit through."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing the idol window stays skipped when idle ===")
+        gid = gs.create_game()
+        human = gs.add_player(gid, "Tyler", "red")
+        for _ in range(3):
+            assert gs.add_bot(gid)["success"]
+        gs.start_full_game(gid)
+
+        game, leader = _bot_led_council(gs, gid, human, [{"type": "vote"}])
+        runner = BotRunner(gs, rng=random.Random(11))
+        assert runner.step(gid) is True
+        assert game["currentVote"]["phase"] == "reveal", game["currentVote"]["phase"]
+        print("✅ an idle idol window is still skipped!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_bots_never_wait_on_a_vote_banned_player():
+    """Block A Vote takes its target out of the box — bots must not stall on it."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing bots and Block A Vote ===")
+        gid = gs.create_game()
+        human = gs.add_player(gid, "Tyler", "red")
+        for _ in range(3):
+            assert gs.add_bot(gid)["success"]
+        gs.start_full_game(gid)
+        game = gs.games[gid]
+
+        leader = next(p for p in game["turnOrder"] if game["players"][p].get("isBot"))
+        banned = next(p for p in game["turnOrder"]
+                      if game["players"][p].get("isBot") and p != leader)
+        gs._trigger_tribal_council(game, "single", drawer_id=leader)
+        gs.start_voting(gid, "elimination")
+        for pid in game["turnOrder"]:
+            game["players"][pid]["hand"] = [{"type": "vote"}]
+        gs.rules_engine.sync_vote_counters(game)
+        game["players"][banned]["voteBanned"] = True
+
+        # A banned bot is never asked to vote, and never blocks the reveal
+        runner = BotRunner(gs, rng=random.Random(5))
+        for _ in range(20):
+            if game["currentVote"]["phase"] != "voting":
+                break
+            if not runner.step(gid):
+                # only the human's ballot is left to place
+                gs.cast_vote(gid, voterId=human,
+                             votesData=[{"targetId": leader, "votes": 1}])
+        assert banned not in (game["currentVote"].get("votes") or {})
+        assert game["currentVote"]["phase"] == "reveal", game["currentVote"]["phase"]
+        assert game["currentVote"]["blockedVoters"] == [banned]
+        print("✅ bots resolve a council with a blocked player!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_lost_timer_self_heals():
     """A spawn_later timer that never fires must not wedge the game forever.
 
@@ -511,6 +635,9 @@ if __name__ == "__main__":
         test_decision_basics()
         test_refusal_circuit_breaker()
         test_bot_draw_logs_a_redacted_entry()
+        test_bot_leader_opens_the_idol_window_for_a_human()
+        test_bot_leader_skips_the_idol_window_when_no_human_holds_one()
+        test_bots_never_wait_on_a_vote_banned_player()
         test_full_game_official()
         test_full_game_extended_expansion()
         test_lost_timer_self_heals()

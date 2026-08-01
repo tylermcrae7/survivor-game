@@ -120,6 +120,18 @@ def _find_card(game, pid, card_type):
     return None
 
 
+def _vote_blocked(game, pid):
+    """True if Block A Vote / Steal A Vote shut this player out of the box."""
+    return bool(game.get("players", {}).get(pid, {}).get("voteBanned"))
+
+
+def _human_idol_holders(game):
+    """Living humans holding a Hidden Immunity Idol (same test windows_for uses)."""
+    return [pid for pid, p in game.get("players", {}).items()
+            if not p.get("isBot") and not p.get("isEliminated")
+            and any(c.get("type") == "immunity_idol" for c in (p.get("hand") or []))]
+
+
 def _act(method, delay_class="normal", **kwargs):
     """An action plan: which GameState method to call and with what."""
     return {"method": method, "kwargs": kwargs, "delay_class": delay_class}
@@ -407,7 +419,10 @@ def _tribal_action(game, age, rng):
 
     if vph == "voting":
         votes = cv.get("votes") or {}
-        for pid in alive:
+        # Block A Vote takes its target out of the Voting Box: the server refuses
+        # their ballot, so a bot must neither try to cast one nor wait for it.
+        expected = [pid for pid in alive if not _vote_blocked(game, pid)]
+        for pid in expected:
             if pid in votes or not is_bot(game, pid):
                 continue
             mandatory = max(0, game["players"][pid].get("mandatoryVotes", 1))
@@ -419,21 +434,32 @@ def _tribal_action(game, age, rng):
             return _act("cast_vote", voterId=pid,
                         votesData=[{"targetId": target, "votes": mandatory}])
         # Everyone (humans included) must be in before a bot leader reveals
-        if leader_is_bot and len(votes) >= len(alive):
+        if leader_is_bot and all(pid in votes for pid in expected):
+            # A Hidden Immunity Idol is playable only AFTER the box is full, so
+            # a bot Leader owes any human holding one a real window before the
+            # tally. Bot-only tables keep skipping straight to the reveal.
+            if _human_idol_holders(game):
+                return _act("advance_tribal_phase", phase="immunity",
+                            playerId=leader)
             return _act("reveal_votes")
         return None
 
     if vph == "immunity":
-        # A human leader opened the idol window — threatened bots respond
+        # The idol window is open — threatened bots respond
         hand_leader = _biggest_threat(game, "")   # the table's card leader
         for pid in alive:
             if not is_bot(game, pid) or pid != hand_leader:
                 continue
+            # One idol per player per council — a bot holding a second one must
+            # not keep offering it to a server that will refuse every time.
+            if game["players"][pid].get("immunityPlayed"):
+                continue
             if _find_card(game, pid, "immunity_idol") is not None:
-                # Playing it consumes the card, so this fires at most once
                 return _act("play_immunity", playerId=pid, targetId=pid)
         if leader_is_bot and age(("tribal", "immunity")) >= w["immunity"]:
-            return _act("advance_tribal_phase", phase="reveal", playerId=leader)
+            # reveal_votes tallies from the immunity phase; merely advancing the
+            # phase to "reveal" would leave the box unopened and wedge tribal.
+            return _act("reveal_votes")
         return None
 
     # reveal / results: tie-break, then close the ceremony

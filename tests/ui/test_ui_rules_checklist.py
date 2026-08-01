@@ -225,8 +225,13 @@ def run_checks():
               wait_for(lambda: active_screen(ben) == 'playingScreen') is not None)
 
         # Deterministic hands for the scenario
+        # Ana keeps a spare Action Card at the back: Sorry For You forces her to
+        # discard 1, and it always comes off her non-Vote cards (the Vote Card is
+        # out of the card economy's reach). The spare is what she pays, so the
+        # three cards the later checks click on all survive.
         api("/api/test/set_hand", {"gameId": gid, "playerId": ana_id,
-            "hand": ["camp_raid", "the_spy_shack", "immunity_idol", "vote"]})
+            "hand": ["camp_raid", "the_spy_shack", "immunity_idol",
+                     "inheritance", "vote"]})
         api("/api/test/set_hand", {"gameId": gid, "playerId": ben_id,
             "hand": ["sorry_for_you", "vote"]})
         api("/api/test/set_hand", {"gameId": gid, "playerId": bot_id, "hand": ["vote"]})

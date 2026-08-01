@@ -164,7 +164,8 @@ def test_sorry_for_you_gates_every_taking():
         # Spy Shack against an SFY holder opens the window; playing SFY costs
         # the spy a discard and the take never happens
         set_turn(game, ana)
-        game["players"][ana]["hand"] = [{"type": "the_spy_shack"}, {"type": "vote"}]
+        game["players"][ana]["hand"] = [{"type": "the_spy_shack"},
+                                        {"type": "camp_raid"}, {"type": "vote"}]
         game["players"][ben]["hand"] = [{"type": "immunity_idol"}, {"type": "sorry_for_you"}]
         r = gs.play_card(gid, playerId=ana, cardIdx=0, params={"targetId": ben, "takeIndex": 0})
         assert r["success"] is True, r.get("message")
@@ -176,16 +177,19 @@ def test_sorry_for_you_gates_every_taking():
         assert r["success"] is True, r.get("message")
         assert "immunity_idol" in hand_types(game, ben)      # kept their card
         assert "immunity_idol" not in hand_types(game, ana)  # spy got nothing
-        assert "vote" not in hand_types(game, ana)           # and paid a discard
+        assert "camp_raid" not in hand_types(game, ana)      # and paid a discard
+        assert "vote" in hand_types(game, ana)               # ...never the Vote Card
         assert not game.get("pending_theft")
 
         # A blocked card effect does NOT consume the thief's steal step
         assert game["players"][ana]["hasStolen"] is True  # set_turn set it; unchanged
 
-        # Alliance: one SFY answers BOTH takers — each discards 1
+        # Alliance: one SFY answers BOTH takers — each discards 1 (but the Vote
+        # Card is out of the card economy's reach, so it is never the one paid)
         set_turn(game, ana, played=False)
-        game["players"][ana]["hand"] = [{"type": "lets_form_an_alliance"}, {"type": "vote"}]
-        game["players"][cam]["hand"] = [{"type": "vote"}]
+        game["players"][ana]["hand"] = [{"type": "lets_form_an_alliance"},
+                                        {"type": "camp_raid"}, {"type": "vote"}]
+        game["players"][cam]["hand"] = [{"type": "camp_raid"}, {"type": "vote"}]
         game["players"][ben]["hand"] = [{"type": "immunity_idol"}, {"type": "sorry_for_you"}]
         r = gs.play_card(gid, playerId=ana, cardIdx=0,
                          params={"allyId": cam, "victimId": ben})
@@ -195,8 +199,8 @@ def test_sorry_for_you_gates_every_taking():
         sfy_idx = hand_types(game, ben).index("sorry_for_you")
         r = gs.handle_reactive_card_play(gid, ben, sfy_idx, {})
         assert r["success"] is True
-        assert hand_types(game, ana) == []   # discarded their last card
-        assert hand_types(game, cam) == []   # the ally paid too
+        assert hand_types(game, ana) == ["vote"]   # discarded their last Action Card
+        assert hand_types(game, cam) == ["vote"]   # the ally paid too
         assert "immunity_idol" in hand_types(game, ben)
 
         # Declining executes the held take (Knowledge Is Power path)
