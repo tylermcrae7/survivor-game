@@ -218,13 +218,13 @@ private struct LeaderActionsBar: View {
 
             case .advantagePlay:
                 Button("Advance to Discussion") {
-                    Task { await viewModel.advancePhase(to: "tribal_discussion") }
+                    Task { await viewModel.advancePhase(to: "discussion") }
                 }
                 .buttonStyle(.torchGlow)
 
             case .discussion:
                 Button("Advance to Immunity") {
-                    Task { await viewModel.advancePhase(to: "tribal_immunity") }
+                    Task { await viewModel.advancePhase(to: "immunity") }
                 }
                 .buttonStyle(.torchGlow)
 
