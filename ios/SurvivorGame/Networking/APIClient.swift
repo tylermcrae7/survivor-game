@@ -269,20 +269,20 @@ actor APIClient {
 
     // MARK: - Challenges & Interactions (Let's Go To Rocks)
 
-    func challengeAction(gameId: String, playerId: String, action: String, value: Any?) async throws -> ActionResponse {
+    func challengeAction(gameId: String, playerId: String, action: String, value: ChallengeValue?) async throws -> ActionResponse {
         // value is an Int for pulls/bids, a player id String for steals
         var body: [String: Any] = [
             "gameId": gameId, "playerId": playerId, "action": action
         ]
-        if let value { body["value"] = value }
+        if let value { body["value"] = value.jsonValue }
         return try await post(path: "/api/challenge/action", body: body)
     }
 
-    func interactionAct(gameId: String, playerId: String, action: String, value: Any?) async throws -> ActionResponse {
+    func interactionAct(gameId: String, playerId: String, action: String, value: ChallengeValue?) async throws -> ActionResponse {
         var body: [String: Any] = [
             "gameId": gameId, "playerId": playerId, "action": action
         ]
-        if let value { body["value"] = value }
+        if let value { body["value"] = value.jsonValue }
         return try await post(path: "/api/interaction/act", body: body)
     }
 
@@ -333,6 +333,26 @@ actor APIClient {
             throw APIError.invalidResponse
         }
         return json
+    }
+}
+
+// MARK: - Challenge/Interaction values
+
+/// The payload of a challenge or interaction action — exactly the two JSON
+/// shapes the server accepts (an Int for pulls/bids/finger counts, a String
+/// for steal targets and RPS throws). Typed end to end so no `Any?` bridging
+/// ever sits between a tapped button and the wire.
+enum ChallengeValue: Sendable, Equatable {
+    case int(Int)
+    case string(String)
+
+    /// The JSON-safe object for the request body. Only ever unwrapped inside
+    /// the APIClient actor, right before serialization.
+    var jsonValue: Any {
+        switch self {
+        case .int(let number): return number
+        case .string(let text): return text
+        }
     }
 }
 

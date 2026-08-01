@@ -93,7 +93,7 @@ struct InteractionScreen: View {
             ForEach(Array(hand.enumerated()), id: \.offset) { index, card in
                 let locked = card.type == "vote"
                 Button {
-                    act("give", value: index)
+                    act("give", value: .int(index))
                 } label: {
                     HStack {
                         Text(card.displayName)
@@ -120,7 +120,7 @@ struct InteractionScreen: View {
             Text("Steal 2 cards from…").font(.headline)
             ForEach(victims) { player in
                 Button {
-                    act("steal_from", value: player.id)
+                    act("steal_from", value: .string(player.id))
                 } label: {
                     HStack {
                         Circle().fill(player.swiftUIColor).frame(width: 12, height: 12)
@@ -167,7 +167,7 @@ struct InteractionScreen: View {
 
     private func throwButton(_ choice: String, symbol: String) -> some View {
         Button {
-            act("pick", value: choice)
+            act("pick", value: .string(choice))
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: symbol).font(.title2)
@@ -187,7 +187,7 @@ struct InteractionScreen: View {
             HStack(spacing: 10) {
                 ForEach(Array(range), id: \.self) { number in
                     Button {
-                        act("pick", value: number)
+                        act("pick", value: .int(number))
                     } label: {
                         Text("\(number)")
                             .font(.title2.bold().monospacedDigit())
@@ -216,7 +216,7 @@ struct InteractionScreen: View {
         .padding(.vertical, 12)
     }
 
-    private func act(_ action: String, value: (any Sendable)?) {
+    private func act(_ action: String, value: ChallengeValue?) {
         isActing = true
         Task {
             defer { isActing = false }

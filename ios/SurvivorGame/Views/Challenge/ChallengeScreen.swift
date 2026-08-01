@@ -98,7 +98,7 @@ struct ChallengeScreen: View {
                     }
                     .onAppear { pullCount = min(pullCount, ceiling) }
                     Button("Reach into the bag") {
-                        act("pull", value: pullCount)
+                        act("pull", value: .int(pullCount))
                     }
                     .buttonStyle(.survivor)
                 } else {
@@ -114,7 +114,7 @@ struct ChallengeScreen: View {
                     Text("Bid \(bidAmount)").font(.headline)
                 }
                 Button("Place the bid") {
-                    act("bid", value: bidAmount)
+                    act("bid", value: .int(bidAmount))
                 }
                 .buttonStyle(.survivor)
             }
@@ -134,7 +134,7 @@ struct ChallengeScreen: View {
                     ForEach(targets, id: \.self) { targetId in
                         if let target = players[targetId] {
                             Button {
-                                act("steal", value: targetId)
+                                act("steal", value: .string(targetId))
                             } label: {
                                 HStack {
                                     Circle().fill(target.swiftUIColor)
@@ -197,7 +197,7 @@ struct ChallengeScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private func act(_ action: String, value: (any Sendable)?) {
+    private func act(_ action: String, value: ChallengeValue?) {
         isActing = true
         Task {
             defer { isActing = false }

@@ -495,26 +495,24 @@ final class GameClient {
         applyState(response.gameState)
     }
 
-    nonisolated func challengeAction(_ action: String, value: (any Sendable)? = nil) async throws {
+    nonisolated func challengeAction(_ action: String, value: ChallengeValue? = nil) async throws {
         let gameId = await self.gameId
         let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        nonisolated(unsafe) let valueCopy: Any? = value
         let response = try await apiClient.challengeAction(
-            gameId: gameId, playerId: playerId, action: action, value: valueCopy)
+            gameId: gameId, playerId: playerId, action: action, value: value)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Challenge refused that")
         }
         await applyState(response.gameState)
     }
 
-    nonisolated func interactionAct(_ action: String, value: (any Sendable)? = nil) async throws {
+    nonisolated func interactionAct(_ action: String, value: ChallengeValue? = nil) async throws {
         let gameId = await self.gameId
         let playerId = await self.playerId
         guard let gameId, let playerId else { throw GameClientError.noGame }
-        nonisolated(unsafe) let valueCopy: Any? = value
         let response = try await apiClient.interactionAct(
-            gameId: gameId, playerId: playerId, action: action, value: valueCopy)
+            gameId: gameId, playerId: playerId, action: action, value: value)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "That move was refused")
         }
