@@ -61,6 +61,7 @@
 		9AC75944CC05B37E57093136 /* pending_theft_open.json in Resources */ = {isa = PBXBuildFile; fileRef = F68CD7E24847150FF4BBD2BE /* pending_theft_open.json */; };
 		9BD8D4B3208CEB5FEC078A00 /* interaction_active.json in Resources */ = {isa = PBXBuildFile; fileRef = 5D3F46EFB9F7ED22BAB45256 /* interaction_active.json */; };
 		9C9B02BD119CE0A0AEA9186B /* ConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62E87D253D9ED2756DC0392 /* ConnectionState.swift */; };
+		9CF23191EE542CBEF5445CF5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D7AD8E0129EF71CD4C25C41D /* PrivacyInfo.xcprivacy */; };
 		9F0FB44D1289128C78EF57BE /* tribal_immunity.json in Resources */ = {isa = PBXBuildFile; fileRef = C8F4EFC64C011461248D2CEB /* tribal_immunity.json */; };
 		A838EE2CB80C1A2F2C8E5B0C /* InteractionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30AB7B5618AD538B1000A2F /* InteractionScreen.swift */; };
 		A8D88EDDD19265E64E1BF7EC /* tribal_announcement.json in Resources */ = {isa = PBXBuildFile; fileRef = 67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */; };
@@ -209,6 +210,7 @@
 		D1DB56CB9B0CE9F1744693EF /* TieBreakView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TieBreakView.swift; sourceTree = "<group>"; };
 		D2DA824F484802DBF9FB2199 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		D6E944AC0AA65EDD422017EA /* CardHandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardHandView.swift; sourceTree = "<group>"; };
+		D7AD8E0129EF71CD4C25C41D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		DAAEB936E963F73666532373 /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
 		DBC87F57450786729E8E86B2 /* PlayingViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingViewModelTests.swift; sourceTree = "<group>"; };
 		E0D6A9B48AC1F6B010C3DC27 /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
@@ -536,6 +538,7 @@
 			isa = PBXGroup;
 			children = (
 				4C6C157EA402C9C0508A1015 /* Assets.xcassets */,
+				D7AD8E0129EF71CD4C25C41D /* PrivacyInfo.xcprivacy */,
 				7A28D71C09386EDFF87566C8 /* survivor_cards.json */,
 				6E614A12EAAC8CFBF578A254 /* Fonts */,
 			);
@@ -695,6 +698,7 @@
 				CA12C96490BA7B73FF7061A6 /* Fraunces-Italic-Variable.ttf in Resources */,
 				C075F08125AF87186C01E9E5 /* Fraunces-Variable.ttf in Resources */,
 				99B656C30772580AD847E2A3 /* OFL.txt in Resources */,
+				9CF23191EE542CBEF5445CF5 /* PrivacyInfo.xcprivacy in Resources */,
 				DF3A2759B5C79FE061E34B34 /* survivor_cards.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

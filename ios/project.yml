@@ -22,6 +22,12 @@ targets:
     resources:
       - path: SurvivorGame/Resources
         buildPhase: resources
+      # Apple's required-reason API manifest (user defaults, CA92.1). It is
+      # named here as well as swept up by the rule above so that narrowing
+      # that rule can never quietly ship a build without a manifest — the
+      # flattening puts it at the bundle root, where validation looks.
+      - path: SurvivorGame/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     info:
       path: SurvivorGame/App/Info.plist
       properties:

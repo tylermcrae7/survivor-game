@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The island's privacy manifest. The resources phase flattens Resources into
+  the bundle root, which is exactly where Apple looks for this file.
+
+  Audited against all five required-reason categories. Only user defaults is
+  reached: TorchAudio (soundEnabled, narratorMuted), HapticEngine
+  (hapticsEnabled), ServerConfig's one-shot legacy-LAN migration flag,
+  SurvivorGameApp's lastAccessResetToken, StartViewModel's lobby defaults,
+  and the @AppStorage settings behind them. All of it is this app's own
+  standard suite — no app group, no suite name, nothing another app wrote —
+  so CA92.1 is the reason. Nothing here touches file timestamps, system boot
+  time, disk space, or the active keyboard list; adding any of those means
+  adding a category below.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
