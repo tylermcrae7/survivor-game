@@ -4,6 +4,64 @@ The bot mirrors the game server's places into the four Discord voice channels.
 It is a separate process from `survivor_server.py`; the game keeps working if
 the bot is stopped.
 
+## Current production deployment
+
+These identifiers are configuration, not credentials, and are safe to keep in
+the repository. The bot token, island access code, and individual player user
+IDs are deliberately **not** recorded here.
+
+| Item | Production value |
+|---|---|
+| Discord application | `Survivor Game` |
+| Application / bot ID | `1533280135451639869` |
+| Bot username | `Jeff` (verified as `Jeff#7376` on August 1, 2026) |
+| Discord portal Public Bot setting | On |
+| Discord server | `Survivor: The Tribe Has Spoken` |
+| Guild ID | `1533248320154370259` |
+| Camp Fire | `🔥 Camp Fire` — `1533248321244758219` |
+| Beach | `🏝 The Beach` — `1533248684148658276` |
+| Water Well | `💧The Water Well` — `1533249063934234805` |
+| Tribal Council | `🗳 Tribal Council` — `1533249111233527969` |
+| Survivor server | `https://survivor.mctech.biz` |
+| LaunchAgent label | `com.survivor-game.discord-bot` |
+| Installed plist | `~/Library/LaunchAgents/com.survivor-game.discord-bot.plist` |
+| Dedicated Python | `~/Library/Application Support/SurvivorGame/discord-venv/bin/python` |
+| Deployed code | `~/srv/survivor-game/discord_bot.py` |
+| Logs | `/tmp/survivor-game-discord.log` and `/tmp/survivor-game-discord.err` |
+| Voting mute | Off (`DISCORD_MUTE_DURING_VOTING=false`) |
+
+The installed plist is mode `0600`. It contains the current Discord token and
+island access code, while the repository plist remains a placeholder-only
+template. Never copy the installed plist into Git. If either credential is ever
+exposed, rotate it rather than trying to hide the old value in Git history.
+
+The production service was verified end to end on August 1, 2026: Jeff logged
+in to Discord, authenticated with the live Survivor server, resolved all four
+voice channels, found no channel user limits or category-level Connect denies,
+and entered the idle polling state. The startup warnings about PyNaCl and DAVE
+are harmless for this bot: Jeff moves members through Discord's API but never
+joins a voice channel, receives audio, or records anyone.
+
+The Discord Developer Portal's **Public Bot** setting is currently enabled.
+This does not expose Jeff's token, but it allows another server administrator
+with an installation link to add Jeff to another server. Turn it off under
+**Bot → Public Bot** if installation should be restricted to the current owner.
+
+### Player setup
+
+1. In Discord, enable **User Settings → Advanced → Developer Mode**.
+2. Right-click your own name on one of your messages and choose **Copy User ID**.
+3. In Survivor, open **Settings → Discord user ID**, paste the digit string, and
+   save it.
+4. If you were already in a game when you saved the ID, relaunch or leave and
+   rejoin so the join request synchronizes the link.
+5. Join **Camp Fire** voice manually. Jeff can move a connected member, but
+   Discord will not let a bot pull someone into voice from a disconnected state.
+
+The Discord user ID is not the username, display name, guild ID, or channel ID.
+It is a 15–25 digit value unique to that player and should remain a string when
+sent through JSON.
+
 ## One-time installation
 
 Use Python 3.11 or 3.12 for the bot. Keep its environment outside the deployed
