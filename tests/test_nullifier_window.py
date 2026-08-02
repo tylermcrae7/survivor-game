@@ -246,3 +246,97 @@ class NullifierWindowTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class NullifierCannotFreezeTheCouncilTest(NullifierWindowTest):
+    """The two locks that shut a real council down.
+
+    Reported from a live game: an idol on the table, the phone showing "Your
+    idol is on the table — waiting to see if it stands…", and nothing anybody
+    could do about it. The player who laid the idol was also the only person
+    at the table holding a nullifier, so they were the sole responder to a
+    window their own screen never offers them — it tells them to wait.
+    """
+
+    def test_the_idol_player_is_not_asked_to_answer_their_own_idol(self):
+        """It is not a move. You would simply not play the idol."""
+        self._to_immunity(idol_holder=self.ids[0], nullifier_holders=(self.ids[0],))
+        result = self.gs.play_immunity(self.gid, playerId=self.ids[0], targetId=self.ids[0])
+
+        self.assertTrue(result["success"])
+        self.assertFalse(result.get("nullifierWindowOpen"),
+                         "the only holder was the idol's own player")
+        self.assertIsNone(self.window)
+        # ...and the ceremony moves on rather than waiting for nobody.
+        self.assertTrue(self.gs.reveal_votes(self.gid)["success"])
+
+    def test_holding_both_cards_still_lets_others_answer(self):
+        """Excluding yourself must not excuse everybody else."""
+        self._to_immunity(idol_holder=self.ids[0],
+                          nullifier_holders=(self.ids[0], self.ids[1]))
+        self.gs.play_immunity(self.gid, playerId=self.ids[0], targetId=self.ids[0])
+
+        self.assertEqual(self.window["_responderIds"], [self.ids[1]],
+                         "the other holder is still asked")
+        self.assertFalse(self.gs.reveal_votes(self.gid)["success"])
+
+    def test_an_idol_played_for_someone_else_still_excludes_only_the_player(self):
+        """Protection can be granted; the exclusion follows who played it."""
+        self._to_immunity(idol_holder=self.ids[0],
+                          nullifier_holders=(self.ids[0], self.ids[2]))
+        self.gs.play_immunity(self.gid, playerId=self.ids[0], targetId=self.ids[1])
+
+        self.assertEqual(self.window["_responderIds"], [self.ids[2]])
+
+    def test_a_leader_holding_a_nullifier_can_still_call_time(self):
+        """The second lock.
+
+        The Leader's power to end the wait used to be refused whenever the
+        Leader happened to hold a nullifier — which handed the one player who
+        could end it the one reason they could not.
+        """
+        leader = self.game["turnOrder"][0]
+        others = [p for p in self.ids if p != leader]
+        self._to_immunity(idol_holder=others[0],
+                          nullifier_holders=(leader, others[1]))
+        self.gs.play_immunity(self.gid, playerId=others[0], targetId=others[0])
+
+        actual_leader = self.game["currentVote"]["councilLeaderId"]
+        self.assertIn(actual_leader, self.window["_responderIds"],
+                      "this test is only meaningful if the Leader holds one")
+
+        called = self.gs.decline_nullifier(self.gid, playerId=actual_leader)
+        self.assertTrue(called["success"], called.get("message"))
+        self.assertTrue(called["windowClosed"], "the Leader ends the wait")
+        self.assertIsNone(self.window)
+        self.assertTrue(self.gs.reveal_votes(self.gid)["success"])
+
+    def test_the_leaders_own_decline_still_counts_as_an_answer(self):
+        """Calling time IS declining — it must not also nullify anything."""
+        self._to_immunity(idol_holder=self.ids[3],
+                          nullifier_holders=(self.ids[0], self.ids[1], self.ids[2]))
+        self.gs.play_immunity(self.gid, playerId=self.ids[3], targetId=self.ids[3])
+        actual_leader = self.game["currentVote"]["councilLeaderId"]
+
+        self.gs.decline_nullifier(self.gid, playerId=actual_leader)
+
+        self.assertIsNone(self.window)
+        self.assertFalse(self.game["players"][self.ids[3]].get("idolNullified"),
+                         "the idol stands; calling time is not a nullification")
+        self.assertTrue(self.game["players"][self.ids[3]].get("immunityIdolProtection"))
+
+    def test_the_last_ordinary_decline_still_closes_it_without_a_leader(self):
+        """The normal path must survive the reordering."""
+        self._to_immunity(idol_holder=self.ids[0],
+                          nullifier_holders=(self.ids[1], self.ids[2]))
+        self.gs.play_immunity(self.gid, playerId=self.ids[0], targetId=self.ids[0])
+        leader = self.game["currentVote"]["councilLeaderId"]
+        responders = list(self.window["_responderIds"])
+        non_leaders = [p for p in responders if p != leader]
+        if len(non_leaders) < 2:
+            self.skipTest("the Leader holds one this deal; covered elsewhere")
+
+        self.assertFalse(self.gs.decline_nullifier(
+            self.gid, playerId=non_leaders[0])["windowClosed"])
+        self.assertTrue(self.gs.decline_nullifier(
+            self.gid, playerId=non_leaders[1])["windowClosed"])

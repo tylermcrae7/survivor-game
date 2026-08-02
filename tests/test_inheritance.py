@@ -337,12 +337,13 @@ class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
 
         heir, dead = self.ids[0], self.ids[1]
         seat = seats.seat_of(self.game["players"][dead])
+        # Take the healed card for that colour out of wherever the deal put it
+        # — which may well be a hand, so find it *before* clearing them.
+        card = dict(next(c for c in _iter_game_cards(self.game)
+                         if c.get("type") == f"inheritance_{seat}"))
         for pid in self.ids:
             self.game["players"][pid]["hand"] = []
-        # Take the healed card for that colour out of wherever it landed.
-        card = next(c for c in _iter_game_cards(self.game)
-                    if c.get("type") == f"inheritance_{seat}")
-        self.game["players"][heir]["hand"] = [dict(card)]
+        self.game["players"][heir]["hand"] = [card]
         self.game["players"][dead]["hand"] = [{"type": "camp_raid"}]
 
         messages = self.gs.rules_engine.process_elimination_inheritance(self.game, dead)

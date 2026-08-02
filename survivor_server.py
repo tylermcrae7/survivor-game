@@ -912,9 +912,17 @@ class GameState:
         # Unlike the Sorry For You gate this does NOT hold the idol back — the
         # protection applies immediately and the nullifier undoes it, because a
         # holder has to see the protection to target it.
+        #
+        # The player who laid the idol is not a responder. Nullifying your own
+        # idol is not a move anybody makes — you would simply not play the
+        # idol — and counting them froze the council outright: holding both
+        # cards made you the only person who could close a window the app
+        # never offers you, because to you the idol is yours and the screen
+        # says "waiting to see if it stands".
         responders = [
             pid for pid, p in game["players"].items()
-            if not p.get("isEliminated")
+            if pid != playerId
+            and not p.get("isEliminated")
             and any(self.rules_engine.resolve_card(c).get("type") == "idol_nullifier"
                     for c in (p.get("hand") or []))
         ]
@@ -1141,15 +1149,8 @@ class GameState:
         # "going once, going twice", and it mirrors the authority the Leader
         # already has over every other beat of the ceremony.
         leader_id = (game.get("currentVote") or {}).get("councilLeaderId")
-        if playerId == leader_id and playerId not in responders:
-            game.pop("pending_nullifier", None)
-            self._save(gid)
-            return {"success": True, "windowClosed": True,
-                    "message": "The Leader called time — the idol stands."}
 
-        if playerId not in responders:
-            return {"success": False, "message": "You have nothing to answer this idol with"}
-        if playerId not in answered:
+        if playerId in responders and playerId not in answered:
             answered.append(playerId)
             window["_answered"] = answered
 
@@ -1161,6 +1162,20 @@ class GameState:
             game.pop("pending_nullifier", None)
             self._save(gid)
             return {"success": True, "message": "The idol stands.", "windowClosed": True}
+
+        # The Leader calls time on whoever is still holding out — including
+        # themselves, since asking to move on IS declining. This used to be
+        # refused whenever the Leader happened to hold a nullifier, which
+        # handed the one player who could end the wait the one reason they
+        # could not.
+        if playerId == leader_id:
+            game.pop("pending_nullifier", None)
+            self._save(gid)
+            return {"success": True, "windowClosed": True,
+                    "message": "The Leader called time — the idol stands."}
+
+        if playerId not in responders:
+            return {"success": False, "message": "You have nothing to answer this idol with"}
 
         self._save(gid)
         return {"success": True, "message": "You held your peace.", "windowClosed": False}
@@ -4371,7 +4386,11 @@ def api_tribal_reset(): return handle('reset_tribal_council',[])
 @app.route('/api/tribal/advance',methods=['POST'])
 def api_advance_tribal(): return handle('advance_tribal_phase',['phase'])
 @app.route('/api/tribal/advantage',methods=['POST'])  
-def api_tribal_advantage(): return handle('play_tribal_advantage',['playerId','advantageType','targetId'])
+# `targetId` is NOT required here: I'm The Leader Now has no target, and
+# demanding the key made it unplayable from the phone — the client omits a nil
+# and the door answered "Missing fields: targetId". Which advantages need a
+# target is a property of the card, so the rules engine decides it.
+def api_tribal_advantage(): return handle('play_tribal_advantage',['playerId','advantageType'])
 @app.route('/api/tribal/tie_enhanced',methods=['POST'])
 def api_enhanced_tie_break(): return handle('enhanced_tie_break',['leaderId','chosenIds'])
 
