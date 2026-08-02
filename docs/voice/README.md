@@ -123,8 +123,9 @@ the buildable half.
 - ✅ Places model, policy, and both endpoints — `places.py`, `survivor_server.py`
 - ✅ iOS: places panel, Discord ID setting
 - ✅ Web: places panel, Discord ID setting
-- ⬜ The Discord bot — see `CODEX-DISCORD-BOT.md`
+- ✅ Discord bot and LaunchAgent operations — `discord_bot.py` and
+  `DISCORD-OPERATIONS.md`
 
-Before writing the bot, play one game with the four channels created and everyone
-hopping manually. If the room metaphor feels good, the bot is a weekend. If it
-doesn't, you've learned that for free.
+For the first live game, have everyone join Camp Fire manually and keep the bot
+logs open while players try Beach and Water Well moves. Discord cannot move a
+member who has not already joined voice.
