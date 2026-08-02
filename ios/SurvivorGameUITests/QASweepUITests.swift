@@ -596,8 +596,20 @@ final class QASweepUITests: XCTestCase {
             NSPredicate(format: "label == %@", "Reach into the bag")).count, 1,
                        "a plain survivor-styled button publishes once")
         saveShot("qa-06a-lowest-stepper")
+        // Deterministic, not best-effort. This was `if decrement.exists`, which
+        // silently did nothing whenever the stepper had not settled — the human
+        // then pulled 1 rock instead of 0 and the whole scenario drifted, with
+        // the failure surfacing several steps later as "only 7 rocks left".
         let decrement = camp.app.steppers.buttons["Decrement"].firstMatch
-        if decrement.exists { decrement.tap() }   // 1 → 0
+        XCTAssertTrue(decrement.waitForExistence(timeout: 8), "the pull stepper should offer Decrement")
+        decrement.tap()   // 1 → 0
+        // Read it back off the stepper rather than assuming. The scenario needs
+        // the human to pull ZERO; a silent miss here drifts the whole bag and
+        // surfaces several steps later as "only 7 rocks left".
+        let stepper = camp.app.steppers.firstMatch
+        let pullsZero = NSPredicate(format: "label CONTAINS '0' OR value CONTAINS '0'")
+        expectation(for: pullsZero, evaluatedWith: stepper)
+        waitForExpectations(timeout: 5)
         reach.tap()
         // Ally takes ALL 8 rocks (score −1 guaranteed), Bran pretends (0)
         try challengeAct(camp.allyIds[0], "pull", 8)
@@ -1104,7 +1116,8 @@ final class QASweepUITests: XCTestCase {
 
 // MARK: - Scratch-server orchestration (private copy for this file)
 
-private final class QAScratchAPI {
+/// Shared by the visual-audit suite too, so it is not file-private.
+final class QAScratchAPI {
     enum Failure: Error, CustomStringConvertible {
         case transport(String)
         case badStatus(Int, String)

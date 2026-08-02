@@ -41,8 +41,15 @@ struct ToastView: View {
                       ? Torch.Font.display(Torch.TextSize.sm, weight: 500, italic: true)
                       : Torch.Font.body(Torch.TextSize.sm))
                 .foregroundStyle(Torch.Color.parchment)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(type == .narration ? .center : .leading)
+                // Narration is a ticker, not a paragraph. One line keeps the
+                // strip a fixed height — a two-line line made the reserved
+                // space jump mid-burst, which shifts every control on the
+                // screen underneath it. Long card names shrink rather than
+                // wrap.
+                .lineLimit(type == .narration ? 1 : nil)
+                .minimumScaleFactor(type == .narration ? 0.7 : 1)
+                .fixedSize(horizontal: false, vertical: type != .narration)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -66,11 +73,26 @@ struct NarrationHost: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
+        // An overlay, pinned to the very top of the safe area — and emphatically
+        // NOT a safeAreaInset.
+        //
+        // Reserving space seemed tidier (the narrator can never hide the game)
+        // but it moves every control on the screen down and back on each line,
+        // and a tap aimed at a stepper during that animation lands somewhere
+        // else. That is the same defect as the rocks buttons: things must not
+        // move under a finger. Better to briefly cover something than to shift
+        // everything.
+        //
+        // Pinned to the top rather than offset because there is no offset that
+        // clears both screens — the camp has no navigation bar and the council
+        // does. Here it lands on the camp's game-code header and the council's
+        // navigation title, which are the two least costly things on either
+        // screen to lose for a second and a half. The camp's Steal → Play →
+        // Draw tracker and the council's phase tracker both stay visible.
         content.overlay(alignment: .top) {
             if let event = gameClient.narration.current {
                 ToastView(message: event.message, type: .narration)
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
                     .transition(reduceMotion
                                 ? .opacity
                                 : .move(edge: .top).combined(with: .opacity))

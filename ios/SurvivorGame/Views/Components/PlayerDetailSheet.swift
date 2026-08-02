@@ -96,7 +96,12 @@ struct PlayerDetailSheet: View {
             }
             .padding(Torch.Spacing.md)
         }
-        .background(CouncilBackground())
+        // The camp's night, not the council's red. This sheet opens from every
+        // screen, and CouncilBackground's low red fire made it look like a
+        // tribal council had leaked into the middle of an ordinary turn.
+        .background(TorchNightBackground(radialColor: Torch.Color.torch.opacity(0.14),
+                                         showEmbers: false)
+            .ignoresSafeArea())
     }
 
     private func badges(_ player: PlayerState,

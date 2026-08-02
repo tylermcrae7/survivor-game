@@ -64,9 +64,32 @@ struct PenaltyDiscardOverlay: View {
                     .tracking(Torch.Track.label * Torch.TextSize.xs)
                     .foregroundStyle(Torch.Color.torch)
 
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(Array(offerable), id: \.offset) { index, card in
+                // A ScrollView is greedy along its scroll axis, so a fixed
+                // maxHeight reserved all 260pt for three rows and left the
+                // dialog mostly empty. Take the natural height when it fits;
+                // scroll only when a big hand genuinely overflows.
+                ViewThatFits(in: .vertical) {
+                    cardList(offerable)
+                    ScrollView { cardList(offerable) }.frame(maxHeight: 300)
+                }
+
+                if isActing { ProgressView().tint(Torch.Color.torch) }
+            }
+            .padding(24)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .padding(28)
+            .errorAlert($error)
+        }
+        .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func cardList(
+        _ offerable: [(offset: Int, element: CardInstance)]
+    ) -> some View {
+        VStack(spacing: 8) {
+            ForEach(offerable, id: \.offset) { index, card in
                             let resolved = CardCatalog.shared.resolve(card)
                             Button {
                                 Task { await pay(index: index) }
@@ -92,20 +115,8 @@ struct PenaltyDiscardOverlay: View {
                             .accessibilityElement(children: .combine)
                             .accessibilityLabel("Discard \(resolved.displayName)")
                             .accessibilityAddTraits(.isButton)
-                        }
-                    }
-                }
-                .frame(maxHeight: 260)
-
-                if isActing { ProgressView().tint(Torch.Color.torch) }
             }
-            .padding(24)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .padding(28)
-            .errorAlert($error)
         }
-        .transition(.opacity)
     }
 
     // MARK: - Everyone else

@@ -106,6 +106,7 @@
 		DEFEFEA48DFBA0950729B94E /* MonogramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482BCD5B343FE8D5356071F9 /* MonogramTests.swift */; };
 		DF3A2759B5C79FE061E34B34 /* survivor_cards.json in Resources */ = {isa = PBXBuildFile; fileRef = 7A28D71C09386EDFF87566C8 /* survivor_cards.json */; };
 		E09735FE39F74855129DBFE5 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC5D2C9DAB382995407D3F5 /* CardView.swift */; };
+		E21783CF7A7692B9182021E6 /* VisualAuditUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBD7362A5CAE2807DEF33D2 /* VisualAuditUITests.swift */; };
 		E3973CA9889CB019F1741306 /* TieBreakView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1DB56CB9B0CE9F1744693EF /* TieBreakView.swift */; };
 		E6D6E0CF7829EEEEFAEAB3FA /* CardCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7060B4BFB85FE78AA190FD9A /* CardCatalog.swift */; };
 		ECB10D498CD44DEA3A3894DA /* PlayerStatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */; };
@@ -214,6 +215,7 @@
 		AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkingTests.swift; sourceTree = "<group>"; };
 		ACEAA0AF59E6324AA323F21F /* VotingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VotingView.swift; sourceTree = "<group>"; };
 		AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorTheme.swift; sourceTree = "<group>"; };
+		AEBD7362A5CAE2807DEF33D2 /* VisualAuditUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualAuditUITests.swift; sourceTree = "<group>"; };
 		B40AFB1785163AE1363F81EC /* NarrationEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NarrationEventTests.swift; sourceTree = "<group>"; };
 		B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfigTests.swift; sourceTree = "<group>"; };
 		BD2D04A008F1D6E86F0215A5 /* LobbyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyViewModel.swift; sourceTree = "<group>"; };
@@ -386,6 +388,7 @@
 				F1797EAE3C43C28507E28012 /* ChallengeUITests.swift */,
 				8896770D35DF7BAE9B3C2E78 /* QASweepUITests.swift */,
 				1AE837EA8BBB0B435CEFD146 /* README.md */,
+				AEBD7362A5CAE2807DEF33D2 /* VisualAuditUITests.swift */,
 			);
 			path = SurvivorGameUITests;
 			sourceTree = "<group>";
@@ -842,6 +845,7 @@
 				39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */,
 				3D7A9908750FD004221479A1 /* ChallengeUITests.swift in Sources */,
 				70469E5FCAC802E6B6C1F68D /* QASweepUITests.swift in Sources */,
+				E21783CF7A7692B9182021E6 /* VisualAuditUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

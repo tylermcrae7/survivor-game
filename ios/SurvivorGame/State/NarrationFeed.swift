@@ -31,6 +31,11 @@ final class NarrationFeed {
         self.gap = gap
     }
 
+    /// True from the first toast until the last one clears. The host reserves
+    /// its strip of screen against this rather than against `current`, which
+    /// blinks to nil between toasts and would bounce the whole layout.
+    var isNarrating: Bool { current != nil || !queue.isEmpty }
+
     /// Queue inspection, for tests only — the pacing rules are the whole point
     /// of this type and they are invisible from `current` alone.
     var queueDepthForTesting: Int { queue.count }
