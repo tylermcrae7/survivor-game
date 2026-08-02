@@ -310,6 +310,16 @@ def run_checks():
         ana.keyboard.press("Escape")
         time.sleep(0.3)
 
+        # Keep the three turn-ending draws deterministic. Coconut has Ana's
+        # Camp Raid in front of it; if its random draw is Sorry For You, the bot
+        # correctly answers the raid and waits for Ana to choose a penalty
+        # discard. That is a different flow from the unattended-bot assertion
+        # below and made this test depend on the shuffled deck.
+        api("/api/test/stack_deck", {
+            "gameId": gid,
+            "top": ["extra_vote", "extra_vote", "extra_vote"],
+        })
+
         # One draw ends the turn all by itself — the torch moves to Ben
         jsclick(ana, '[data-action="drawCard"]')
         check("turn: drawing ends the turn automatically",

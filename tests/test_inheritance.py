@@ -135,6 +135,10 @@ class InheritanceEstateTest(unittest.TestCase):
         taken = {seats.seat_of(p) for p in game["players"].values()}
         absent = next(k for k in seats.SEAT_KEYS if k not in taken)
         heir, dead = self.ids[0], self.ids[1]
+        # The shuffled setup hand may otherwise give another player the card
+        # matching `dead`, causing a legitimate but unrelated inheritance.
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
         self.game["players"][heir]["hand"] = [{"type": f"inheritance_{absent}"}]
         self.game["players"][dead]["hand"] = [{"type": "camp_raid"}]
 
@@ -164,6 +168,11 @@ class InheritanceEstateTest(unittest.TestCase):
     def test_an_eliminated_player_cannot_inherit(self):
         heir, dead = self.ids[0], self.ids[1]
         card = f"inheritance_{self.seat(dead)}"
+        # Isolate the eliminated heir. A random setup hand belonging to a
+        # different living player can contain the same colour-bound card and
+        # should not make this test fail for doing exactly what the rules say.
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
         self.game["players"][heir]["hand"] = [{"type": card}]
         self.game["players"][heir]["isEliminated"] = True
         self.game["players"][dead]["hand"] = [{"type": "camp_raid"}]
