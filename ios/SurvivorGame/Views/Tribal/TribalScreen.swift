@@ -190,6 +190,7 @@ private struct TribalContent: View {
 }
 
 private struct AnnouncementPhase: View {
+    @Environment(PlayerInspector.self) private var inspector
     let viewModel: TribalViewModel
 
     var body: some View {
@@ -213,7 +214,9 @@ private struct AnnouncementPhase: View {
                         .font(Torch.Font.label(Torch.TextSize.xs))
                         .tracking(Torch.Track.label * Torch.TextSize.xs)
                         .foregroundStyle(Torch.Color.textSecondary)
-                    PlayerAvatarView(player: leader, size: 32, showName: true)
+                    PlayerAvatarView(player: leader, size: 32, showName: true,
+                                     onTap: { inspector.playerId = leader.id })
+                        .frame(minWidth: 48, minHeight: 48)
                 }
             }
         }

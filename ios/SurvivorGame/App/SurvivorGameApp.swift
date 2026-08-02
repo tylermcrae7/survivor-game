@@ -8,6 +8,9 @@ struct SurvivorGameApp: App {
     
     @State private var gameClient: GameClient
     @State private var modelContainerError: Error?
+    /// Which player's card is open, if any. Owned at the root so the sheet is
+    /// mounted once and cannot be torn down by the screen underneath it.
+    @State private var playerInspector = PlayerInspector()
     @AppStorage("keepAwake") private var keepAwake = false
 
     init() {
@@ -85,6 +88,7 @@ struct SurvivorGameApp: App {
             ZStack {
                 ContentView()
                     .environment(gameClient)
+                    .environment(playerInspector)
                     .survivorScreen()
                 
                 // Show non-blocking warning if storage is in-memory only

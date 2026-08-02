@@ -177,9 +177,9 @@ final class ChallengeUITests: XCTestCase {
         XCTAssertTrue(steal.waitForExistence(timeout: 20), "The started game should open on the human's turn")
         steal.tap()
 
-        let botRow = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", botName)
-        ).firstMatch
+        // By identifier: the camp strip's status cards are buttons carrying the
+        // same player names and sit behind this sheet.
+        let botRow = app.buttons["steal-target-\(botName)"]
         XCTAssertTrue(botRow.waitForExistence(timeout: 8), "The steal picker should list the bots")
         botRow.tap()
 

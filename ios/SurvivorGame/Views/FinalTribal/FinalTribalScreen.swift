@@ -129,6 +129,7 @@ private struct FinalTribalContent: View {
 }
 
 private struct FinalistsRow: View {
+    @Environment(PlayerInspector.self) private var inspector
     let finalists: [PlayerState]
 
     var body: some View {
@@ -143,7 +144,8 @@ private struct FinalistsRow: View {
                     VStack(spacing: 8) {
                         // The avatar's own caption is suppressed — the serif
                         // title below is this finalist's single name.
-                        PlayerAvatarView(player: player, size: 56, showName: false)
+                        PlayerAvatarView(player: player, size: 56, showName: false,
+                                         onTap: { inspector.playerId = player.id })
                         Text(player.name)
                             .font(Torch.Font.display(Torch.TextSize.base, weight: 700))
                             .foregroundStyle(Torch.Color.parchment)

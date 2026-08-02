@@ -194,8 +194,10 @@ final class QASweepUITests: XCTestCase {
         let steal = app.buttons["Steal card from player"]
         XCTAssertTrue(steal.waitForExistence(timeout: 20), "human's turn should offer the steal")
         steal.tap()
-        let row = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", victimName)).firstMatch
+        // By identifier, not by label: the camp strip's status cards are
+        // buttons carrying the same player name, they sit behind this sheet,
+        // and firstMatch was picking one of those instead.
+        let row = app.buttons["steal-target-\(victimName)"]
         XCTAssertTrue(row.waitForExistence(timeout: 8), "steal picker should list \(victimName)")
         row.tap()
     }
@@ -358,8 +360,8 @@ final class QASweepUITests: XCTestCase {
         try interactionAct(camp.allyIds[1], "pick", 4)
 
         // Human showed the lowest unique number → choose a victim on-device.
-        let victimRow = camp.app.buttons.matching(
-            NSPredicate(format: "label CONTAINS 'Ally'")).firstMatch
+        // By identifier — see stealViaUI: the camp strip's cards carry names too.
+        let victimRow = camp.app.buttons["victim-Ally"]
         XCTAssertTrue(victimRow.waitForExistence(timeout: 10),
                       "winner's steal-2 victim picker should appear")
         saveShot("qa-01b-numbers-choose-victim")
@@ -398,8 +400,7 @@ final class QASweepUITests: XCTestCase {
         openAndPlayCard(camp.app, labelContains: "Do Or Die")
 
         // Card sheet collects target + secret throw
-        let targetRow = camp.app.buttons.matching(
-            NSPredicate(format: "label CONTAINS 'Ally'")).firstMatch
+        let targetRow = camp.app.buttons["target-Ally"]
         XCTAssertTrue(targetRow.waitForExistence(timeout: 8), "target picker should appear")
         targetRow.tap()
         let rock = camp.app.buttons["rock"]
@@ -437,8 +438,8 @@ final class QASweepUITests: XCTestCase {
 
         // Pair picker: choose both allies then call it
         for name in ["Ally", "Bran"] {
-            let row = camp.app.buttons.matching(
-                NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+            // By identifier — the camp strip carries these names too.
+            let row = camp.app.buttons["pair-\(name)"]
             XCTAssertTrue(row.waitForExistence(timeout: 8), "pair picker should list \(name)")
             row.tap()
         }
@@ -479,8 +480,7 @@ final class QASweepUITests: XCTestCase {
         stealViaUI(camp.app, victimName: botName)
         openAndPlayCard(camp.app, labelContains: "Do Or Die")
 
-        let targetRow = camp.app.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", botName)).firstMatch
+        let targetRow = camp.app.buttons["target-\(botName)"]
         XCTAssertTrue(targetRow.waitForExistence(timeout: 8))
         targetRow.tap()
         let rock = camp.app.buttons["rock"]
@@ -756,9 +756,8 @@ final class QASweepUITests: XCTestCase {
         XCTAssertTrue(stealHeader.waitForExistence(timeout: 15),
                       "steal option should render for the human")
         saveShot("qa-08a-pull-or-steal-options")
-        let targetRow = camp.app.buttons.matching(
-            NSPredicate(format: "label CONTAINS 'Ally'")).firstMatch
-        XCTAssertTrue(targetRow.exists, "steal target rows should list Ally")
+        let targetRow = camp.app.buttons["steal-rock-Ally"]
+        XCTAssertTrue(targetRow.waitForExistence(timeout: 8), "steal target rows should list Ally")
         targetRow.tap()
 
         // Ally (robbed) takes the next turn: pulls the last rock → reveal

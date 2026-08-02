@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(GameClient.self) private var gameClient
+    @Environment(PlayerInspector.self) private var inspector
 
     /// True while a Challenge / Reward Challenge screen is covering the table.
     /// A *complete* one counts: the server parks it until somebody dismisses
@@ -51,6 +52,20 @@ struct ContentView: View {
                     || (gameClient.connectionState == .disconnected && gameClient.gameState != nil) {
                     ConnectionBanner()
                 }
+            }
+        }
+        // Above every screen, hit-testing off — see NarrationHost.
+        .narrationHost()
+        // Mounted once at the root rather than per screen: the camp strip lives
+        // inside a ScrollView that can unmount its rows, and a sheet presented
+        // from a row that disappears goes with it.
+        .sheet(isPresented: Binding(
+            get: { inspector.playerId != nil },
+            set: { if !$0 { inspector.playerId = nil } }
+        )) {
+            if let id = inspector.playerId {
+                PlayerDetailSheet(playerId: id)
+                    .environment(gameClient)
             }
         }
         .animation(.default, value: gameClient.navigationState)

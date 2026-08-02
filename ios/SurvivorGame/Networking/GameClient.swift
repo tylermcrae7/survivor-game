@@ -13,6 +13,10 @@ final class GameClient {
     private(set) var isLoading = false
     private(set) var accessState: IslandAccessState = .checking
 
+    /// The narrator. Owned here so any screen can read it without a second
+    /// environment injection, and so it can be cleared on reset.
+    let narration = NarrationFeed()
+
     var gameId: String?
     var playerId: String?
     var playerName: String?
@@ -643,16 +647,26 @@ final class GameClient {
     func handleEvent(_ event: GameEvent) {
         switch event {
         case .reset:
+            // Nothing from the finished game should still be narrating itself
+            // over the lobby.
+            narration.reset()
             gameState?.phase = .lobby
             updateNavigationState()
         case .wiped:
+            narration.reset()
             // The server removed this game for everyone. Clear both the live
             // client and the persisted rejoin IDs so launch cannot pull the
             // player straight back into a dead session.
             leaveGame()
         case .error(let message):
             lastError = message
-        case .custom(let type, _):
+        case .custom(let type, let data):
+            // The server has always broadcast a running commentary; until now
+            // the phone dropped every line of it except player_joined, which is
+            // why a stolen card just silently disappeared from your hand.
+            if let event = NarrationEvent(type: type, data: data) {
+                narration.enqueue(event)
+            }
             if type == "player_joined" {
                 // Refresh state to get updated player list
                 Task { await syncState() }

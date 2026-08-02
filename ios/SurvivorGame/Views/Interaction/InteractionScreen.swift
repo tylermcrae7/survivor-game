@@ -260,6 +260,9 @@ struct InteractionScreen: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isActing)
+                // Stable handle — the camp strip behind this takeover has
+                // buttons carrying the same player names.
+                .accessibilityIdentifier("victim-\(player.name)")
             }
         }
     }

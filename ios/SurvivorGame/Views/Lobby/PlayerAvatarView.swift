@@ -5,17 +5,48 @@ struct PlayerAvatarView: View {
     var size: CGFloat = 48
     var showName: Bool = true
     var isCurrentPlayer: Bool = false
+    /// Opt-in, and it must stay opt-in: six of the thirteen call sites already
+    /// sit inside a Button that votes, steals or eliminates. Making every
+    /// avatar tappable would nest a button in a button — SwiftUI hands the tap
+    /// to the inner one and the outer action is swallowed.
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
+        if let onTap {
+            Button(action: onTap) { content }
+                // .plain, never .survivor: SurvivorButton's style body adds
+                // .isButton, and that trait propagates into a composed label's
+                // separate parts (see ReactiveTheftOverlay).
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityDescription)
+                .accessibilityAddTraits(isCurrentPlayer ? [.isButton, .isSelected] : [.isButton])
+                .accessibilityHint("Shows their lives, cards and where they're standing")
+        } else {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityDescription)
+                .accessibilityAddTraits(isCurrentPlayer ? [.isSelected] : [])
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 6) {
             ZStack {
                 Circle()
                     .fill(player.swiftUIColor)
                     .frame(width: size, height: size)
 
-                Text(player.name.prefix(1).uppercased())
-                    .font(.system(size: size * 0.4, weight: .bold))
+                Text(player.monogram)
+                    // Two characters need to be smaller than one to sit inside
+                    // the same disc — 32pt is the smallest circle in the app.
+                    .font(.system(size: size * (player.monogram.count > 1 ? 0.34 : 0.42),
+                                  weight: .bold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(width: size * 0.82)
 
                 if player.isEliminated {
                     Circle()
@@ -48,11 +79,8 @@ struct PlayerAvatarView: View {
                     .lineLimit(1)
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityDescription)
-        .accessibilityAddTraits(isCurrentPlayer ? [.isSelected] : [])
     }
-    
+
     private var accessibilityDescription: String {
         var description = player.name
         

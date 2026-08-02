@@ -291,6 +291,7 @@ struct ChallengeScreen: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("steal-rock-\(target.name)")
                         }
                     }
                 }

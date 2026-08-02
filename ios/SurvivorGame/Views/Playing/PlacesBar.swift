@@ -262,9 +262,17 @@ private struct OccupantChip: View {
             .fill(player.swiftUIColor)
             .frame(width: size, height: size)
             .overlay {
-                Text(player.name.prefix(1).uppercased())
-                    .font(.system(size: size * 0.45, weight: .bold))
+                // Same two-letter monogram the avatars use — a band showing
+                // "C, C, C" for Coconut, Cleo and Christopher identifies
+                // nobody, and this row exists precisely to say who wandered
+                // off with whom.
+                Text(player.monogram)
+                    .font(.system(size: size * (player.monogram.count > 1 ? 0.38 : 0.45),
+                                  weight: .bold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(width: size * 0.84)
             }
             .overlay {
                 Circle().strokeBorder(isMe ? Torch.Color.torch : .clear, lineWidth: 1.5)

@@ -31,6 +31,11 @@ struct StealTargetPicker: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // A stable handle for the row. Matching on "label contains the
+                // player's name" is ambiguous now that the camp strip's status
+                // cards are buttons carrying the same name — and the strip sits
+                // behind this sheet, so the wrong match is unhittable.
+                .accessibilityIdentifier("steal-target-\(player.name)")
             }
             .navigationTitle("Steal From")
             .navigationBarTitleDisplayMode(.inline)

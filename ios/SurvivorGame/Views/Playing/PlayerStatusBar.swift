@@ -28,12 +28,30 @@ struct PlayerStatusBar: View {
 }
 
 private struct PlayerStatusCard: View {
+    @Environment(PlayerInspector.self) private var inspector
+
     let player: PlayerState
     let isCurrentTurn: Bool
     let isMe: Bool
     var hasNecklace: Bool = false
 
     var body: some View {
+        // The whole card is the tap target, not the 40pt avatar inside it —
+        // 40 is under both the HIG minimum and this project's own 48pt token.
+        Button { inspector.playerId = player.id } label: { card }
+            .buttonStyle(.plain)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "\(isMe ? "You" : player.name), \(player.characterCards) of 2 torches lit, "
+                + "\(player.handCount) card\(player.handCount == 1 ? "" : "s")"
+                + (hasNecklace ? ", wears the Immunity Necklace" : "")
+                + (player.isEliminated ? ", eliminated" : ""))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Opens their details")
+    }
+
+    private var card: some View {
         VStack(spacing: 6) {
             PlayerAvatarView(
                 player: player,

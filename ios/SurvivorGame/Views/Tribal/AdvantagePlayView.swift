@@ -145,6 +145,9 @@ struct TargetPickerSheet: View {
                     }
                 }
                 .listRowBackground(CouncilPalette.surfaceSunken)
+                // Stable handle: the camp strip behind this sheet has buttons
+                // carrying the same player names.
+                .accessibilityIdentifier("target-\(player.name)")
             }
             .scrollContentBackground(.hidden)
             .background(CouncilBackground())

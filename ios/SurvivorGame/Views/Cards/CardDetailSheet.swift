@@ -249,6 +249,9 @@ struct CardDetailSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isPlaying)
+                // Stable handle — the camp strip behind this sheet has buttons
+                // carrying the same player names.
+                .accessibilityIdentifier("target-\(player.name)")
             }
         }
     }
@@ -277,6 +280,7 @@ struct CardDetailSheet: View {
                     .torchPickerRow()
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("pair-\(player.name)")
             }
             Button("call the power pair") {
                 Task { await play(params: ["targetIds": Array(pairSelection)]) }

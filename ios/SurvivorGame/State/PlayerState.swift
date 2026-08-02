@@ -136,6 +136,42 @@ struct PlayerState: Codable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Monogram
+
+extension PlayerState {
+    /// Up to two characters for the avatar circle.
+    var monogram: String { Self.monogram(for: name) }
+
+    /// Initials where there's a surname ("Tyler McRae" → TM), the first two
+    /// letters otherwise ("Tyler" → TY, "Tim" → TI). One letter was ambiguous
+    /// the moment two castaways shared an initial, and the camp strip truncates
+    /// names at 60pt, so the circle was often the only thing telling them apart.
+    ///
+    /// Scripts whose letters have no case — CJK, Arabic, Hebrew, Devanagari,
+    /// Thai — get a single grapheme. Two is not an abbreviation there, it's the
+    /// start of the word, and in a joining script the second glyph would render
+    /// in a form it never takes in isolation. Emoji stand alone for the same
+    /// reason: "🔥🎩" reads as noise, not initials.
+    static func monogram(for rawName: String) -> String {
+        let words = rawName.split(whereSeparator: \.isWhitespace)
+        guard let first = words.first?.first else { return "?" }
+
+        if words.count >= 2, let last = words.last?.first {
+            return cap(first) + cap(last)
+        }
+
+        let letters = Array(words[0])
+        guard first.isCased || first.isNumber, letters.count >= 2 else { return cap(first) }
+        return cap(first) + cap(letters[1])
+    }
+
+    /// One grapheme, uppercased. Uppercasing can lengthen a character ("ß"
+    /// becomes "SS"), so clamp back to one.
+    private static func cap(_ c: Character) -> String {
+        String(String(c).uppercased().prefix(1))
+    }
+}
+
 struct CardInstance: Codable, Equatable, Identifiable {
     let type: String
     var category: String?

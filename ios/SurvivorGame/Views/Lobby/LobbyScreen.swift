@@ -245,6 +245,7 @@ private struct LobbyContent: View {
 /// avatar. A player who joins after the screen is up gets the amber
 /// pulse-ring ping.
 private struct LobbyPlayerRow: View {
+    @Environment(PlayerInspector.self) private var inspector
     let player: PlayerState
     let isMe: Bool
     let isNew: Bool
@@ -253,7 +254,8 @@ private struct LobbyPlayerRow: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Torch.Radius.lg, style: .continuous)
         HStack(spacing: 12) {
-            PlayerAvatarView(player: player, size: 34, showName: false, isCurrentPlayer: isMe)
+            PlayerAvatarView(player: player, size: 34, showName: false, isCurrentPlayer: isMe,
+                             onTap: { inspector.playerId = player.id })
             Text(player.name)
                 .font(Torch.Font.body(weight: .semibold))
                 .foregroundStyle(Torch.Color.parchment)
