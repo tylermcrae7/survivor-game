@@ -26,6 +26,8 @@ struct GameState: Codable, Equatable {
     /// An Immunity Idol on the table, waiting to see whether a Nullifier
     /// answers it. Absent on servers that predate the window.
     var pendingNullifier: PendingNullifierState?
+    /// Raiders who owe a chosen discard after a Sorry For You.
+    var pendingDiscards: PendingDiscardsState?
     /// Which places are open and whether the ceremony has forced everyone into
     /// one. Absent on servers that predate places — the Places UI hides itself.
     var placePolicy: PlacePolicy?
@@ -37,6 +39,7 @@ struct GameState: Codable, Equatable {
         case challenge, interaction, placePolicy
         case pendingTheft = "pending_theft"
         case pendingNullifier = "pending_nullifier"
+        case pendingDiscards = "pending_discards"
     }
 
     /// Core keys decode strictly (they are always present); everything else is
@@ -68,6 +71,8 @@ struct GameState: Codable, Equatable {
         pendingTheft = try? c.decodeIfPresent(PendingTheftState.self, forKey: .pendingTheft)
         pendingNullifier = try? c.decodeIfPresent(PendingNullifierState.self,
                                                   forKey: .pendingNullifier)
+        pendingDiscards = try? c.decodeIfPresent(PendingDiscardsState.self,
+                                                 forKey: .pendingDiscards)
         placePolicy = try? c.decodeIfPresent(PlacePolicy.self, forKey: .placePolicy)
     }
 
@@ -84,7 +89,8 @@ struct GameState: Codable, Equatable {
         discard: [CardInstance]? = nil, settings: GameSettings? = nil,
         challenge: ChallengeState? = nil, interaction: InteractionState? = nil,
         pendingTheft: PendingTheftState? = nil, placePolicy: PlacePolicy? = nil,
-        pendingNullifier: PendingNullifierState? = nil
+        pendingNullifier: PendingNullifierState? = nil,
+        pendingDiscards: PendingDiscardsState? = nil
     ) {
         self.id = id
         self.phase = phase
@@ -110,6 +116,7 @@ struct GameState: Codable, Equatable {
         self.pendingTheft = pendingTheft
         self.placePolicy = placePolicy
         self.pendingNullifier = pendingNullifier
+        self.pendingDiscards = pendingDiscards
     }
 
     // MARK: - Derived Properties
@@ -235,6 +242,32 @@ struct PendingNullifierState: Codable, Equatable {
         idolPlayerId = try? c.decodeIfPresent(String.self, forKey: .idolPlayerId)
         targetId = try? c.decodeIfPresent(String.self, forKey: .targetId)
         reactiveWindowOpen = (try? c.decodeIfPresent(Bool.self, forKey: .reactiveWindowOpen)) ?? false
+    }
+}
+
+/// Raiders who still owe a chosen discard after a Sorry For You blocked them.
+///
+/// The raid is already cancelled — that deliberately does not wait on anyone
+/// answering, or a disconnect could resurrect a take the card has killed.
+struct PendingDiscardsState: Codable, Equatable {
+    var reason: String?
+    var defenderId: String?
+    var awaiting: [String]
+    /// When the server gives up waiting and takes a card for them. There is no
+    /// ticker for a human-only table, so an expired window resolves on the next
+    /// state read from any player.
+    var deadline: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case reason, defenderId, awaiting, deadline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+        defenderId = try? c.decodeIfPresent(String.self, forKey: .defenderId)
+        awaiting = (try? c.decodeIfPresent([String].self, forKey: .awaiting)) ?? []
+        deadline = try? c.decodeIfPresent(Double.self, forKey: .deadline)
     }
 }
 

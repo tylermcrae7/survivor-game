@@ -791,6 +791,10 @@ const GameAPI = {
     async declineNullifier(gameId, playerId) {
         return apiCall('/immunity/decline', { gameId, playerId });
     },
+
+    async choosePenaltyDiscard(gameId, playerId, cardIdx) {
+        return apiCall('/reactive/choose_discard', { gameId, playerId, cardIdx });
+    },
     
     async revealVotes(gameId) {
         return apiCall('/vote/reveal', { gameId });

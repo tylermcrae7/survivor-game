@@ -56,6 +56,11 @@ ALLOWED_ORIGINS = os.environ.get(
 # The cookie value is an HMAC derived from the code itself, so there is no
 # extra secret to manage and stale cookies die the moment the code changes.
 ACCESS_CODE = os.environ.get('SURVIVOR_ACCESS_CODE', '').strip()
+# How long a raider has to choose which card they give up before the game
+# picks for them. A blocking window with no way out is how the web app once
+# wedged a table forever; this is the way out.
+PENALTY_DISCARD_SECONDS = 45.0
+
 ACCESS_COOKIE = 'survivor_access'
 ACCESS_COOKIE_MAX_AGE = 90 * 24 * 3600  # one season
 _ACCESS_EXEMPT_PATHS = ('/api/access', '/api/access/check', '/api/ping')
@@ -580,6 +585,7 @@ class GameState:
 
     def get_game_state(self, gid):
         """Returns the complete state of a game (hidden challenge info stripped)."""
+        self._sweep_expired_discards(gid)
         game = self.games.get(gid)
         if not game: return None
         import copy
@@ -589,7 +595,7 @@ class GameState:
         # Strip hidden information (secret rock pulls, secret throws/fingers)
         # before it leaves the server — these keys reveal only at the reveal step.
         for hidden_holder in ("challenge", "interaction", "pending_theft",
-                              "pending_nullifier"):
+                              "pending_nullifier", "pending_discards"):
             holder = enriched_game.get(hidden_holder)
             if isinstance(holder, dict):
                 for key in [k for k in holder if k.startswith("_")]:
@@ -980,6 +986,96 @@ class GameState:
             "targetId": targetId,
             "nullifiedPlayer": target.get("name", "player")
         }
+
+    def choose_penalty_discard(self, gid, playerId=None, cardIdx=None, **kwargs):
+        """Pay the Sorry For You penalty with a card of your own choosing."""
+        if gid not in self.games:
+            return {"success": False, "message": "Game not found"}
+
+        game = self.games[gid]
+        self._sweep_expired_discards(gid)
+        window = game.get("pending_discards")
+        if not window:
+            return {"success": False, "message": "Nothing is waiting on a discard"}
+
+        awaiting = window.get("awaiting") or []
+        if playerId not in awaiting:
+            return {"success": False, "message": "You don't owe a discard"}
+
+        player = game["players"].get(playerId)
+        if not player:
+            return {"success": False, "message": "Invalid player ID"}
+
+        hand = player.get("hand") or []
+        reachable = takeable_indices(hand)
+        if not isinstance(cardIdx, int) or cardIdx not in reachable:
+            # Not clamped: an out-of-range index must not quietly resolve to a
+            # real card the player never chose.
+            return {"success": False, "message": "Choose a card you can actually give up"}
+
+        discarded = hand.pop(cardIdx)
+        game.setdefault("discard", []).append(discarded)
+        window["awaiting"] = [p for p in awaiting if p != playerId]
+        (window.setdefault("resolved", {}))[playerId] = discarded.get("type")
+
+        name = player.get("name", "Someone")
+        card_name = self.rules_engine.resolve_card(discarded).get("name", "a card")
+        if window["awaiting"]:
+            self._save(gid)
+            return {"success": True,
+                    "message": f"{name} discarded {card_name}",
+                    "log_message": f"{name} paid the penalty",
+                    "windowClosed": False}
+
+        self._close_pending_discards(gid)
+        return {"success": True,
+                "message": f"{name} discarded {card_name}",
+                "log_message": f"{name} paid the penalty",
+                "windowClosed": True}
+
+    def _close_pending_discards(self, gid):
+        """Clear the window and release whatever it was holding back."""
+        game = self.games[gid]
+        window = game.pop("pending_discards", None) or {}
+        if window.get("_end_turn_after") and game.get("phase") == "playing":
+            self.advance_turn(gid)
+        self._save(gid)
+
+    def _sweep_expired_discards(self, gid):
+        """Fall back to the old automatic pick once the clock runs out.
+
+        A blocking window with no way out is how the web app once wedged a game
+        forever. There is no ticker for a human-only table — the only threads
+        are the hourly GC and a bot heartbeat that skips games without bots — so
+        this runs on the READ path instead: any state fetch, from any player,
+        resolves an expired window. Somebody is always looking.
+        """
+        game = self.games.get(gid)
+        window = (game or {}).get("pending_discards")
+        if not window:
+            return False
+        if time.time() < window.get("deadline", 0):
+            return False
+
+        for pid in list(window.get("awaiting") or []):
+            player = game["players"].get(pid)
+            hand = (player or {}).get("hand") or []
+            reachable = takeable_indices(hand)
+            if reachable:
+                discarded = hand.pop(reachable[-1])
+                game.setdefault("discard", []).append(discarded)
+                (window.setdefault("resolved", {}))[pid] = discarded.get("type")
+        window["awaiting"] = []
+        logger.info(f"Penalty discard window expired in game {gid} — forfeited")
+        self._close_pending_discards(gid)
+        return True
+
+    def _discard_block_reason(self, game):
+        """Why the table is frozen, without naming anyone's hand."""
+        window = game.get("pending_discards")
+        if window and window.get("awaiting"):
+            return "The raid was blocked — waiting on the penalty to be paid"
+        return None
 
     def decline_nullifier(self, gid, playerId=None, **kwargs):
         """Hold your peace while an Immunity Idol stands.
@@ -2556,6 +2652,12 @@ class GameState:
             # Non-confirming: the block reason reaches whoever tried to act,
             # so it must not reveal what the victim is holding.
             return f"Waiting on {victim} - they may respond to the raid"
+        # A penalty still owed freezes the table too. It has to: the choice is
+        # an index into a hand of otherwise indistinguishable cards, so another
+        # take landing mid-decision would discard something else entirely.
+        owed = self._discard_block_reason(game)
+        if owed:
+            return owed
         challenge = game.get("challenge")
         if challenge and challenge.get("phase") not in (None, "complete"):
             return f"Resolve the active Challenge ({challenge.get('name')}) before continuing your turn"
@@ -3146,10 +3248,39 @@ class GameState:
         
         end_turn_after = bool(pending_theft.get("_end_turn_after"))
         if interrupt_result.get("success"):
-            # The played Sorry For You goes face up on the Discard Pile
-            game.setdefault("discard", []).append({"type": "sorry_for_you"})
+            # The played Sorry For You goes face up on the Discard Pile. Push
+            # the card that was actually played, not a synthesised twin — the
+            # discard is reshuffled into the Draw Pile when it empties.
+            game.setdefault("discard", []).append(played_card)
             # Close reactive window (execute_reactive_interrupt may already have)
             game.pop("pending_theft", None)
+
+            # Raiders who have a real choice of what to give up owe an answer.
+            # The raid itself is already cancelled — that must not depend on
+            # anybody answering, or a disconnect could resurrect a take the
+            # card has killed.
+            awaiting = (interrupt_result.get("card_effect") or {}).get("awaiting_discards") \
+                or interrupt_result.get("awaiting_discards") or []
+            if awaiting:
+                game["pending_discards"] = {
+                    "reason": "sorry_for_you",
+                    "defenderId": player_id,
+                    "awaiting": list(awaiting),
+                    "resolved": {},
+                    "openedAt": time.time(),
+                    "deadline": time.time() + PENALTY_DISCARD_SECONDS,
+                    # Carried across so a Camp-Raid-on-draw still ends its turn
+                    # once the penalty is paid.
+                    "_end_turn_after": end_turn_after,
+                }
+                self._save(gid)
+                return {
+                    "success": True,
+                    "message": interrupt_result.get("message", "Theft blocked by reactive card"),
+                    "reactive_interrupt": True,
+                    "awaitingDiscards": list(awaiting),
+                }
+
             # A draw ended this turn while the window was open — advance now
             if end_turn_after and game.get("phase") == "playing":
                 self.advance_turn(gid)
@@ -4122,6 +4253,8 @@ def api_cast():    return handle('cast_vote',['voterId','votesData'])
 def api_imm():     return handle('play_immunity',['playerId'])
 @app.route('/api/immunity/block',methods=['POST'])
 def api_block():   return handle('block_immunity',['targetId'])
+@app.route('/api/reactive/choose_discard',methods=['POST'])
+def api_choose_discard(): return handle('choose_penalty_discard',['playerId'])
 @app.route('/api/immunity/decline',methods=['POST'])
 def api_decline(): return handle('decline_nullifier',['playerId'])
 @app.route('/api/vote/reveal',methods=['POST'])

@@ -248,6 +248,24 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
             return _act("complete_pending_theft")
         return None  # a human decides
 
+    # ── Sorry For You penalty: raiders choose what they give up ──
+    # Placed above everything else it could collide with, for the same reason
+    # the theft gate is: the table is frozen until it is paid, so nothing else
+    # can legally happen anyway.
+    pd = game.get("pending_discards")
+    if pd and pd.get("awaiting"):
+        for pid in pd["awaiting"]:
+            if not is_bot(game, pid):
+                continue
+            hand = _hand(game, pid)
+            givable = [i for i, c in enumerate(hand) if c.get("type") != "vote"]
+            if givable:
+                # Give up the cheapest thing — the same rule the bot already
+                # applies when a Reward Challenge forces it to hand a card over.
+                return _act("choose_penalty_discard", playerId=pid,
+                            cardIdx=min(givable, key=lambda i: _card_value(hand[i])))
+        return None  # a human owes the penalty
+
     # ── Reward Challenge interaction (blocks everything else) ──
     it = game.get("interaction")
     if it:

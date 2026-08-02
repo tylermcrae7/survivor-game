@@ -1676,21 +1676,41 @@ class SurvivorRulesEngine:
 		if not thief_ids:
 			return {"message": "Sorry For You requires the thief's player ID"}
 
+		# A discard is chosen by the player making it — that is what "must
+		# discard 1 card" means at a table. This used to take the last takeable
+		# card in the raider's hand, silently, which made the Guide's own
+		# Inheritance advice impossible to follow: "It can be useful to have the
+		# Inheritance for a player that isn't in the game. You can discard it if
+		# someone plays a Sorry For You against you!" You cannot feed a dead
+		# card to a penalty that picks for you.
+		#
+		# Only a raider with a real choice is asked. One discardable card is not
+		# a decision, and no discardable cards is not a discard.
 		lines = []
+		awaiting = []
 		for tid in thief_ids:
 			thief = game["players"][tid]
 			hand = thief.get("hand") or []
 			discardable = takeable_indices(hand)
-			if discardable:
-				# Same card the blind pop() used to take: the last one they hold
-				discarded = hand.pop(discardable[-1])
+			if len(discardable) > 1:
+				awaiting.append(tid)
+			elif discardable:
+				discarded = hand.pop(discardable[0])
 				game.setdefault("discard", []).append(discarded)
 				lines.append(f"{thief['name']} discarded {discarded.get('name', 'a card')}")
 			elif hand:
 				lines.append(f"{thief['name']} holds only their Vote Card — nothing to discard")
 			else:
 				lines.append(f"{thief['name']} had nothing to discard")
-		return {"message": f"Sorry for you! The raid fails — {'; '.join(lines)}"}
+
+		if awaiting:
+			names = [game["players"][t]["name"] for t in awaiting]
+			lines.append(f"{' and '.join(names)} must choose a card to discard")
+
+		return {
+			"message": f"Sorry for you! The raid fails — {'; '.join(lines)}",
+			"awaiting_discards": awaiting,
+		}
 			
 	def _effect_the_spy_shack(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""
@@ -2020,7 +2040,11 @@ class SurvivorRulesEngine:
 		return {
 		"success": True,
 		"reactive_interrupt": True,
-		"message": effect_result.get("message", "Theft blocked by reactive card")
+		"message": effect_result.get("message", "Theft blocked by reactive card"),
+		# Raiders who still owe a chosen discard. Carried up explicitly: this
+		# return builds a fresh dict, so anything the effect added that isn't
+		# named here is dropped.
+		"awaiting_discards": effect_result.get("awaiting_discards") or [],
 		}
 		
 	def process_card_draw_effects(self, game: Dict[str, Any], player_id: str, drawn_cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

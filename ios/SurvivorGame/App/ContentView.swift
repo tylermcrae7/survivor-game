@@ -50,6 +50,8 @@ struct ContentView: View {
                 // its own black scrim, would be unreadable and unclosable.
                 if gameClient.gameState?.pendingTheft?.reactiveWindowOpen == true {
                     ReactiveTheftOverlay()
+                } else if gameClient.gameState?.pendingDiscards?.awaiting.isEmpty == false {
+                    PenaltyDiscardOverlay()
                 } else {
                     NullifierWindowOverlay()
                 }

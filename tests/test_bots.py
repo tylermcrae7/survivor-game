@@ -187,6 +187,19 @@ def _human_move(gs, gid, human, rng):
             return True
         return False
 
+    # A blocked raid leaves the raider owing a chosen discard, and the table is
+    # frozen until it is paid. A human who never answers would spin here
+    # forever — the real game has a forfeit clock, but a test loop runs faster
+    # than any wall-clock deadline.
+    pd = game.get("pending_discards")
+    if pd and human in (pd.get("awaiting") or []):
+        hand = players[human].get("hand") or []
+        givable = [i for i, c in enumerate(hand) if c.get("type") != "vote"]
+        if givable:
+            gs.choose_penalty_discard(gid, playerId=human, cardIdx=givable[0])
+            return True
+        return False
+
     it = game.get("interaction")
     if it:
         if it.get("phase") == "picking" and human in it.get("awaiting", []):

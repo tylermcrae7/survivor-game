@@ -158,6 +158,10 @@ def main():
             'description': 'Places — derived camp locations, movement policy, voice plan for the Discord bot (53 tests)'
         },
         {
+            'file': 'tests/test_penalty_discard.py',
+            'description': 'Sorry For You penalty — the raider chooses what they give up, and the table can never freeze on it'
+        },
+        {
             'file': 'tests/test_nullifier_window.py',
             'description': 'Idol Nullifier — the reactive window an idol opens, and every way it must not wedge a council'
         },

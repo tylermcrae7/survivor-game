@@ -685,7 +685,7 @@ window.playIdolNullifier = async function (targetId) {
     // without the check that the target actually holds protection, so this
     // used to let you burn the nullifier on somebody holding nothing — and
     // stamp them `idolNullified`, which then refused a later, real one.
-    await window.SurvivorNetwork.blockImmunity(
+    await window.SurvivorNetwork.GameAPI.blockImmunity(
         window.SurvivorGame.localGameState.gameId, targetId);
 };
 
@@ -2436,6 +2436,11 @@ function updateFromDiff(diff) {
         renderNullifierWindow(window.SurvivorGame.fullGameState);
     }
 
+    // A blocked raid leaves raiders owing a chosen discard
+    if (diff.pending_discards !== undefined) {
+        renderPendingDiscards(window.SurvivorGame.fullGameState);
+    }
+
     // Reward Challenge interaction state changes
     if (diff.interaction !== undefined) {
         renderInteraction(window.SurvivorGame.fullGameState);
@@ -2801,6 +2806,7 @@ function updateCurrentScreen(gameState) {
     // Reactive theft window (Sorry For You) — must render regardless of screen
     renderReactiveTheft(gameState);
     renderNullifierWindow(gameState);
+    renderPendingDiscards(gameState);
 
     // Reward Challenge interactions (Do Or Die / Power Pair / Numbers Game)
     renderInteraction(gameState);
@@ -2973,11 +2979,11 @@ function showNullifierDialog(pending, idolName, shieldedName) {
             // card the other way — which skipped the check that the target
             // actually holds protection, so a nullifier could be burned on
             // somebody holding nothing at all.
-            await window.SurvivorNetwork.blockImmunity(gameId, pending.targetId);
+            await window.SurvivorNetwork.GameAPI.blockImmunity(gameId, pending.targetId);
         }, { once: true });
         document.querySelector('[data-nullifier="allow"]')?.addEventListener('click', async () => {
             hideModal();
-            await window.SurvivorNetwork.declineNullifier(gameId, me);
+            await window.SurvivorNetwork.GameAPI.declineNullifier(gameId, me);
         }, { once: true });
     }, 0);
 }
@@ -3175,6 +3181,85 @@ function showInteractionGiveModal(gameState, it) {
                     .interactionAct(gameId, me, 'give', parseInt(btn.dataset.giveIndex))
                     .catch(e => showToast(e.message || 'That did not land', 'error'));
             });
+        });
+    }, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE SORRY FOR YOU PENALTY
+//
+// "…they get nothing from you and must discard 1 card." A discard is chosen by
+// the player making it, and until now the engine took the last takeable card in
+// the raider's hand without asking — which made the Guide's own advice
+// impossible to follow: hold an Inheritance for a colour nobody is playing and
+// feed it to a Sorry For You. You cannot feed a dead card to a penalty that
+// picks for you.
+//
+// Only a raider with a real choice sees this. One discardable card is not a
+// decision, and the server resolves it without opening a window at all.
+
+let pendingDiscardKey = null;
+
+function renderPendingDiscards(gameState) {
+    const window_ = gameState?.pending_discards;
+    const awaiting = window_?.awaiting || [];
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const key = awaiting.length ? awaiting.join(',') : null;
+
+    if (key === pendingDiscardKey) return;   // no change
+
+    if (pendingDiscardKey !== null) {
+        removeReactiveWaitBanner();
+        if (document.querySelector('.penalty-discard')) hideModal();
+    }
+    pendingDiscardKey = key;
+    if (!key) return;
+
+    if (awaiting.includes(me)) {
+        showPenaltyDiscardModal(gameState);
+    } else {
+        const names = awaiting
+            .map(id => gameState.players?.[id]?.name || 'someone')
+            .join(' and ');
+        showReactiveWaitBanner(names);
+    }
+}
+
+function showPenaltyDiscardModal(gameState) {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const hand = gameState.players?.[me]?.hand || [];
+    // The Vote Card is not part of the economy a penalty can touch.
+    const offerable = hand
+        .map((c, i) => ({ card: c, index: i }))
+        .filter(({ card }) => card.type !== 'vote');
+
+    const content = `
+        <div class="interaction-ui cardname-selection penalty-discard">
+            <p class="picker-hint">Your raid was blocked — choose the card you give up.</p>
+            <div class="cardname-grid">
+                ${offerable.map(({ card, index }) => {
+                    const info = window.SurvivorGame?.getCardInfo(card.type);
+                    return `
+                        <button class="cardname-option touch-target" data-penalty-index="${index}">
+                            <span class="cardname-cat">${escapeHtml(CATEGORY_LABELS[info?.category] || info?.category || '')}</span>
+                            <span class="cardname-name">${escapeHtml(info?.name || card.type)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+    showModal(content, { title: 'Sorry For You', showClose: false });
+
+    setTimeout(() => {
+        document.querySelectorAll('[data-penalty-index]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hideModal();
+                window.SurvivorNetwork?.GameAPI.choosePenaltyDiscard(
+                    gameId, me, parseInt(btn.dataset.penaltyIndex))
+                    .catch(e => showToast(e.message || 'That did not land', 'error'));
+            }, { once: true });
         });
     }, 0);
 }
@@ -4173,6 +4258,7 @@ window.SurvivorUI = {
     renderVoteTargets,
     renderReactiveTheft,
     renderNullifierWindow,
+    renderPendingDiscards,
     renderInteraction,
     beginCardPlay,
     openCampMenu,

@@ -26,6 +26,7 @@
 		3312584CA42387F6971DD8A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C6C157EA402C9C0508A1015 /* Assets.xcassets */; };
 		34B108E89F1AC173438D7A93 /* TribalVoteState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92456205F3671193A6B2CBB5 /* TribalVoteState.swift */; };
 		352A09ECE723366151C7DD04 /* IslandAccessScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0045BA401656BFAA514B6D63 /* IslandAccessScreen.swift */; };
+		35E1CF816FEECC7CAC4B7769 /* PenaltyDiscardOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F925110028562672B8F57 /* PenaltyDiscardOverlay.swift */; };
 		363E486B92D0F8ED41213292 /* PlayingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0C398C7CA94DAB86E5CED0 /* PlayingScreen.swift */; };
 		3748CEDB54ECF264ABC4743A /* lobby.json in Resources */ = {isa = PBXBuildFile; fileRef = 9E24B36808ACBE3C8AC5E22A /* lobby.json */; };
 		39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F20928EC681B13D065FE9C /* AuthenticationUITests.swift */; };
@@ -134,6 +135,7 @@
 
 /* Begin PBXFileReference section */
 		0045BA401656BFAA514B6D63 /* IslandAccessScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandAccessScreen.swift; sourceTree = "<group>"; };
+		048F925110028562672B8F57 /* PenaltyDiscardOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PenaltyDiscardOverlay.swift; sourceTree = "<group>"; };
 		083E4829752E7D45735E2195 /* LobbyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyScreen.swift; sourceTree = "<group>"; };
 		0DADDCA25868D3BFCF509268 /* TorchAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchAudio.swift; sourceTree = "<group>"; };
 		0DC5D2C9DAB382995407D3F5 /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
@@ -442,6 +444,7 @@
 				E0D6A9B48AC1F6B010C3DC27 /* ConnectionBanner.swift */,
 				68644E98FB21432FA5656F26 /* HapticEngine.swift */,
 				1A6EF60DE3F494E8424554EB /* NullifierWindowOverlay.swift */,
+				048F925110028562672B8F57 /* PenaltyDiscardOverlay.swift */,
 				7358AA566FA334CD64594A21 /* PhaseProgressView.swift */,
 				366803CEF79831FE786AE392 /* PlayerDetailSheet.swift */,
 				EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */,
@@ -790,6 +793,7 @@
 				45E753766209CEB20911E795 /* NarrationEvent.swift in Sources */,
 				440E22611B7632052C92CAB7 /* NarrationFeed.swift in Sources */,
 				CB3F86D3EA1637655282DF74 /* NullifierWindowOverlay.swift in Sources */,
+				35E1CF816FEECC7CAC4B7769 /* PenaltyDiscardOverlay.swift in Sources */,
 				C2ECBD539232E1B216A34178 /* PhaseProgressView.swift in Sources */,
 				865A288D747422539FEEC10B /* Place.swift in Sources */,
 				1BBEDBAB7B8AE6904A8C284E /* PlacesBar.swift in Sources */,

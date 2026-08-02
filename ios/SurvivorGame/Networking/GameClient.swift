@@ -441,6 +441,17 @@ final class GameClient {
         applyState(response.gameState)
     }
 
+    /// Pay a blocked raid's penalty with a card of your choosing.
+    func choosePenaltyDiscard(at index: Int) async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.choosePenaltyDiscard(
+            gameId: gameId, playerId: playerId, cardIdx: index)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "That card can't pay the penalty")
+        }
+        applyState(response.gameState)
+    }
+
     func changeLeader(newLeaderId: String) async throws {
         guard let gameId else { throw GameClientError.noGame }
         let response = try await apiClient.changeLeader(gameId: gameId, newLeaderId: newLeaderId)

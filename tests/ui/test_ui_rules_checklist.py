@@ -252,11 +252,29 @@ def run_checks():
         check("sorry-for-you: the defender's phone shows the raid dialog", bool(raid), raid)
         jsclick(ben, '[data-raid="play"]')
         wait_for(lambda: ben.locator('.raid-dialog').count() == 0)
+
+        # Ana owes the penalty, and she picks what pays it. The Guide's own
+        # advice: hold an Inheritance for a colour nobody is playing and feed
+        # it to a Sorry For You. That was impossible while the engine took the
+        # last takeable card without asking.
+        penalty = wait_for(lambda: ana.locator('.penalty-discard').count() and
+                           ana.locator('.penalty-discard').inner_text(),
+                           desc="penalty discard dialog")
+        check("sorry-for-you: the raider chooses which card they give up",
+              bool(penalty), penalty)
+        check("sorry-for-you: the Vote Card is never on the menu",
+              'Vote' not in (penalty or ''), penalty)
+        jsclick(ana, '.cardname-option', 'Inheritance')
+        wait_for(lambda: ana.locator('.penalty-discard').count() == 0)
+
         g = state(gid)
+        ana_hand = [c.get("type") for c in g["players"][ana_id]["hand"]]
         check("sorry-for-you: the block resolves — thief got nothing",
               not any(c.get("type") == "sorry_for_you"
                       for c in g["players"][ana_id]["hand"]),
-              [c.get("type") for c in g["players"][ana_id]["hand"]])
+              ana_hand)
+        check("sorry-for-you: the card she chose is the card she lost",
+              "inheritance" not in ana_hand and "camp_raid" in ana_hand, ana_hand)
         check("turn: steal step consumed, guidance moves to Play",
               wait_for(lambda: 'Play' in guidance(ana)) is not None, guidance(ana))
 

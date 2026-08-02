@@ -233,6 +233,13 @@ actor APIClient {
         ])
     }
 
+    func choosePenaltyDiscard(gameId: String, playerId: String,
+                              cardIdx: Int) async throws -> ActionResponse {
+        try await post(path: "/api/reactive/choose_discard", body: [
+            "gameId": gameId, "playerId": playerId, "cardIdx": cardIdx
+        ])
+    }
+
     func resetTribal(gameId: String, playerId: String) async throws -> ActionResponse {
         try await post(path: "/api/tribal/reset", body: ["gameId": gameId, "playerId": playerId])
     }
