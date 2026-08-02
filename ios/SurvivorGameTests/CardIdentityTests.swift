@@ -5,8 +5,12 @@ import Testing
 /// Cards can finally say which card they are.
 ///
 /// `CardInstance.id` used to be `type + name`, so two Vote Cards in one hand
-/// were the same identity — which is why the hand grid had to key off array
-/// position, which in turn is why it could never be reordered or animated.
+/// were the same identity and nothing could name one of them: no reordering,
+/// no animating a specific card, no Camp Raid marker on the card you drew.
+///
+/// The uid fixes that where the server sends one. It still falls back to
+/// `type + name`, so the id remains unsafe as a collection key — see
+/// `fallbackIdIsNotUnique`.
 @MainActor
 @Suite("Card identity")
 struct CardIdentityTests {
@@ -70,5 +74,32 @@ struct CardIdentityTests {
         let stub = CardInstance(type: "some_future_card", uid: "xyz789")
         let resolved = CardCatalog.shared.resolve(stub)
         #expect(resolved.uid == "xyz789")
+    }
+
+    /// Why the hand grid keys on position and not on `card.id`.
+    ///
+    /// Shipped as a build that talked to a server without uids, and the fallback
+    /// id collapsed a real six-card hand to four rendered cards with two blank
+    /// cells — SwiftUI drops duplicate ForEach ids. The client cannot assume the
+    /// server it reaches is the one it was built against, so the identity a view
+    /// keys on has to be unique for *any* payload.
+    @Test("Without uids the fallback id collides, so it is not a ForEach key")
+    func fallbackIdIsNotUnique() {
+        let handAsProductionSentIt = [
+            CardInstance(type: "vote"),
+            CardInstance(type: "block_a_vote"),
+            CardInstance(type: "vote"),
+            CardInstance(type: "hidden_immunity_idol"),
+            CardInstance(type: "reward_challenge_numbers"),
+            CardInstance(type: "vote"),
+        ]
+        #expect(handAsProductionSentIt.count == 6)
+        #expect(Set(handAsProductionSentIt.map(\.id)).count == 4,
+                "three Vote Cards share one id — this is the four-of-six bug")
+
+        // Position is unique whatever the server sends, which is the property
+        // the grid actually needs.
+        let byPosition = handAsProductionSentIt.enumerated().map(\.offset)
+        #expect(Set(byPosition).count == 6)
     }
 }

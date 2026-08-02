@@ -4106,6 +4106,14 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
         game = game_state.games.get(gid)
         if not game or pid not in game.get("players", {}) or not isinstance(hand, list):
             return jsonify(success=False, message="bad test hook call"), 400
+        # A mistyped card type used to sail through and stage a card the
+        # catalog has never heard of, which renders as a bare Action with a
+        # title-cased type for a name — a fake bug for a test to chase.
+        unknown = [c for c in hand if isinstance(c, str)
+                   and not game_state.rules_engine.get_card_definition(c)]
+        if unknown:
+            return jsonify(success=False,
+                           message=f"unknown card type(s): {', '.join(unknown)}"), 400
         game["players"][pid]["hand"] = [new_card(c) if isinstance(c, str) else c for c in hand]
         game_state.rules_engine.sync_vote_counters(game)
         game_state._save(gid)

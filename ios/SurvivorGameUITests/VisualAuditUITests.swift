@@ -12,7 +12,8 @@ final class VisualAuditUITests: XCTestCase {
     private static let accessCode = "torchtest2468"
     private static let playerName = "Tyler McRae"
     private static let shotDir =
-        "/private/tmp/claude-501/-Users-tylermcrae/d5ea8664-6416-4b12-8223-5eb4977a3928/scratchpad/visual"
+        ProcessInfo.processInfo.environment["SURVIVOR_SHOT_DIR"]
+        ?? "/private/tmp/survivor-shots/visual"
 
     private var api: QAScratchAPI!
     private var gid: String = ""
@@ -135,7 +136,7 @@ final class VisualAuditUITests: XCTestCase {
         // Me raiding into a Sorry For You, with a real choice of what to pay.
         try api.post("/api/test/set_hand",
                      ["gameId": gid, "playerId": camp.me,
-                      "hand": ["camp_raid", "inheritance", "the_spy_shack", "vote"]])
+                      "hand": ["camp_raid", "goodwill_gamble", "the_spy_shack", "vote"]])
         try api.post("/api/test/set_hand",
                      ["gameId": gid, "playerId": camp.allies[0],
                       "hand": ["sorry_for_you", "camp_raid"]])
@@ -153,6 +154,90 @@ final class VisualAuditUITests: XCTestCase {
         XCTAssertTrue(camp.app.staticTexts["Sorry For You"].waitForExistence(timeout: 12),
                       "the raider should be asked what they give up")
         shot("04-penalty-discard-picker")
+    }
+
+    // MARK: - The hand grid renders every card it counts
+
+    /// Reported from TestFlight as "4 shown with 6 in hand", with two empty
+    /// cells in the grid. The hand held three Vote Cards; the grid was keyed on
+    /// `CardInstance.id`, which collapses to the bare type when the server
+    /// sends no uid, and SwiftUI drops duplicate ForEach ids.
+    ///
+    /// Three of one type is the shape that broke it, so that is the shape to
+    /// stage. The header count and the rendered count have to agree.
+    @MainActor
+    func testHandRendersEveryCardItCounts() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+
+        // The reported hand: Vote, Block A Vote, Hidden Immunity Idol, a
+        // Reward Challenge — and the two Votes that never drew.
+        let hand = ["vote", "block_vote", "vote",
+                    "immunity_idol", "reward_challenge_its_a_numbers_game", "vote"]
+        try api.post("/api/test/set_hand",
+                     ["gameId": gid, "playerId": camp.me, "hand": hand])
+
+        XCTAssertTrue(camp.app.staticTexts["· \(hand.count)"].waitForExistence(timeout: 12),
+                      "the hand header should count all six")
+
+        // Every card is a button labelled "<name>, <category> card".
+        let votes = camp.app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH 'Vote, Vote card'"))
+        XCTAssertEqual(votes.count, 3,
+                       "all three Vote Cards must render, not collapse to one")
+
+        for name in ["Block A Vote", "Hidden Immunity Idol",
+                     "Reward Challenge: It's A Numbers Game"] {
+            XCTAssertTrue(camp.app.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch.exists,
+                          "\(name) should be in the grid")
+        }
+        shot("05-hand-grid-with-duplicates")
+    }
+
+    // MARK: - Torches on the ballot
+
+    /// "I want to see how many lives everyone has when voting." The slip you
+    /// write a name on is where that belongs, and the case worth looking at is
+    /// a table where somebody is one vote from the snuffer — the spent torch
+    /// has to read on cream paper, not vanish into it.
+    @MainActor
+    func testBallotShowsTorchesIncludingTheLastOne() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+
+        try api.post("/api/test/set_flags",
+                     ["gameId": gid, "playerId": camp.allies[0], "characterCards": 1])
+        for pid in [camp.me] + camp.allies {
+            try api.post("/api/test/set_hand", ["gameId": gid, "playerId": pid, "hand": ["vote"]])
+        }
+
+        // Straight to the ballot: the council itself is covered by QASweep.
+        // Whoever holds the turn draws the council card and so leads it — the
+        // seat order is dealt, not fixed, so read it rather than assume it.
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_single"]])
+        let before = try api.get("/api/game/\(gid)/state")
+        let order = try XCTUnwrap(before["turnOrder"] as? [String])
+        let onTurn = order[((before["currentTurnIndex"] as? Int) ?? 0) % order.count]
+        let victim = try XCTUnwrap(order.first { $0 != onTurn })
+        try api.post("/api/turn/steal",
+                     ["gameId": gid, "thiefId": onTurn, "targetId": victim])
+        try api.post("/api/turn/draw", ["gameId": gid, "playerId": onTurn])
+
+        let opened = try api.get("/api/game/\(gid)/state")
+        let leader = try XCTUnwrap(
+            (opened["currentVote"] as? [String: Any])?["councilLeaderId"] as? String)
+        try api.post("/api/tribal/advance", ["gameId": gid, "playerId": leader,
+                                             "phase": "discussion"])
+        try api.post("/api/vote/start", ["gameId": gid, "playerId": leader,
+                                         "voteType": "elimination"])
+
+        XCTAssertTrue(camp.app.staticTexts["one torch left"].waitForExistence(timeout: 15),
+                      "the player on their last torch must say so on the ballot")
+        XCTAssertTrue(camp.app.staticTexts["2 torches"].exists,
+                      "and everyone else's count must be on their slip too")
+        shot("06-ballot-torches")
     }
 
 }

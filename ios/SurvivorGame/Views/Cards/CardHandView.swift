@@ -48,7 +48,13 @@ private struct CardHandContent: View {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Torch.Spacing.sm),
                                     GridItem(.flexible(), spacing: Torch.Spacing.sm)],
                           spacing: Torch.Spacing.sm) {
-                    ForEach(Array(viewModel.hand.enumerated()), id: \.element.id) { index, card in
+                    // Keyed by position, not by `card.id`. A server that
+                    // predates uids sends three identical Vote Cards, whose
+                    // ids all collapse to "vote" — SwiftUI then renders the
+                    // duplicates as empty cells and the grid silently shows
+                    // four cards for a hand of six. Position is the only
+                    // identity that is unique no matter what arrives.
+                    ForEach(Array(viewModel.hand.enumerated()), id: \.offset) { index, card in
                         Button {
                             viewModel.selectCard(at: index)
                             HapticEngine.selection()

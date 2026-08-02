@@ -23,7 +23,8 @@ final class QASweepUITests: XCTestCase {
     private static let accessCode = "torchtest2468"
     private static let playerName = "Simulator Tyler"
     private static let shotDir =
-        "/private/tmp/claude-501/-Users-tylermcrae/d5ea8664-6416-4b12-8223-5eb4977a3928/scratchpad"
+        ProcessInfo.processInfo.environment["SURVIVOR_SHOT_DIR"]
+        ?? "/private/tmp/survivor-shots/qa"
 
     private var api: QAScratchAPI!
     private var gid: String = ""
