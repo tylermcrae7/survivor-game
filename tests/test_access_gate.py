@@ -98,6 +98,9 @@ class GateEnabledTest(unittest.TestCase):
             ('/api/game/create', 'POST', {}),
             ('/api/winners', 'GET', None),
             ('/api/game/deadbeef/state', 'GET', None),
+            # The Discord bot's poll endpoint is no more public than the rest
+            ('/api/voice/plan/deadbeef', 'GET', None),
+            ('/api/place/move', 'POST', {}),
         ]:
             response = (self.client.get(path) if method == 'GET'
                         else self.client.post(path, json=body))

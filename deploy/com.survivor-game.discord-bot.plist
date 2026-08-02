@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.survivor-game.discord-bot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{DISCORD_PYTHON}}</string>
+        <string>{{REPO_DIR}}/discord_bot.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{REPO_DIR}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/survivor-game-discord.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/survivor-game-discord.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>DISCORD_BOT_TOKEN</key>
+        <string>{{DISCORD_BOT_TOKEN}}</string>
+        <key>DISCORD_GUILD_ID</key>
+        <string>{{DISCORD_GUILD_ID}}</string>
+        <key>DISCORD_CAMP_FIRE_CHANNEL_ID</key>
+        <string>{{DISCORD_CAMP_FIRE_CHANNEL_ID}}</string>
+        <key>DISCORD_THE_BEACH_CHANNEL_ID</key>
+        <string>{{DISCORD_THE_BEACH_CHANNEL_ID}}</string>
+        <key>DISCORD_THE_WATER_WELL_CHANNEL_ID</key>
+        <string>{{DISCORD_THE_WATER_WELL_CHANNEL_ID}}</string>
+        <key>DISCORD_TRIBAL_COUNCIL_CHANNEL_ID</key>
+        <string>{{DISCORD_TRIBAL_COUNCIL_CHANNEL_ID}}</string>
+        <key>SURVIVOR_BASE_URL</key>
+        <string>{{SURVIVOR_BASE_URL}}</string>
+        <key>SURVIVOR_ACCESS_CODE</key>
+        <string>{{SURVIVOR_ACCESS_CODE}}</string>
+        <!-- Optional and intentionally off. If enabled, linked players are
+             server-muted only during the actual voting subphase. -->
+        <key>DISCORD_MUTE_DURING_VOTING</key>
+        <string>false</string>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

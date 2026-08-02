@@ -20,5 +20,8 @@ python-dotenv>=1.0.0,<2.0.0
 # Turn notifications over Web Push (VAPID keys auto-generate on first run)
 pywebpush>=2.0.0
 
+# Discord voice-channel mirror (runs as a separate process)
+discord.py>=2.7,<3
+
 # Development dependencies (optional)
 # pytest>=7.0.0  # For running tests
