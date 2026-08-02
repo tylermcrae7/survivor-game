@@ -84,8 +84,13 @@ struct AdvantagePlayView: View {
                     ForEach(Array(played.enumerated()), id: \.offset) { _, record in
                         let playerName = record.playerId
                             .flatMap { viewModel.gameState?.players[$0]?.name } ?? "Unknown"
-                        let advantage = (record.advantageType ?? "an advantage")
-                            .replacingOccurrences(of: "_", with: " ")
+                        // The card's printed name, not its wire key with the
+                        // underscores knocked out — that reads "im the leader
+                        // now" on the one screen where the card is the subject.
+                        let advantage = record.advantageType.map { type in
+                            CardCatalog.shared.info(for: type)?.name
+                                ?? type.replacingOccurrences(of: "_", with: " ")
+                        } ?? "an advantage"
                         HStack {
                             Text(playerName)
                                 .font(Torch.Font.body(Torch.TextSize.xs, weight: .bold))

@@ -1086,6 +1086,21 @@ class SurvivorRulesEngine:
 			if blocked:
 				return {"success": False, "message": blocked}
 
+		# Check the target BEFORE the card leaves the hand. The effects below
+		# report a missing target by returning a bare `{"message": ...}` with no
+		# `success` key, and the tail of this method reports success regardless
+		# — so a targetless Steal A Vote used to be discarded, do nothing, and
+		# announce that it had worked. Which card needs a target is the card's
+		# own business, so ask the definition rather than keep a list here.
+		definition = self.get_card_definition(advantage_type) or {}
+		if definition.get("requires_target"):
+			name = definition.get("name", advantage_type)
+			if not target_id or target_id not in game["players"]:
+				return {"success": False, "message": f"{name} needs a target player"}
+			if game["players"][target_id].get("isEliminated"):
+				return {"success": False,
+				        "message": f"{name} cannot target an eliminated player"}
+
 		# Remove the card from hand; it lands on the Discard Pile
 		# (Goodwill Gamble instead moves to its recipient)
 		advantage_card = hand.pop(tribal_card_idx)

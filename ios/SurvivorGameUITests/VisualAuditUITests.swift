@@ -240,4 +240,84 @@ final class VisualAuditUITests: XCTestCase {
         shot("06-ballot-torches")
     }
 
+    // MARK: - Playing a targeted advantage from the advantage window
+
+    /// Reported live: tapping Steal A Vote in the Advantage Play Phase answered
+    /// "Server Error — Missing fields: targetId", and the same card played fine
+    /// from the hand once the screen was left behind. So the row fired the card
+    /// without ever asking who it was aimed at.
+    @MainActor
+    func testTargetedAdvantageAsksWhoBeforeItFires() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+
+        for pid in [camp.me] + camp.allies {
+            try api.post("/api/test/set_hand", ["gameId": gid, "playerId": pid, "hand": ["vote"]])
+        }
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_single"]])
+        let before = try api.get("/api/game/\(gid)/state")
+        let order = try XCTUnwrap(before["turnOrder"] as? [String])
+        let onTurn = order[((before["currentTurnIndex"] as? Int) ?? 0) % order.count]
+        try api.post("/api/turn/steal",
+                     ["gameId": gid, "thiefId": onTurn,
+                      "targetId": try XCTUnwrap(order.first { $0 != onTurn })])
+        try api.post("/api/turn/draw", ["gameId": gid, "playerId": onTurn])
+        let opened = try api.get("/api/game/\(gid)/state")
+        let leader = try XCTUnwrap(
+            (opened["currentVote"] as? [String: Any])?["councilLeaderId"] as? String)
+        try api.post("/api/tribal/advance", ["gameId": gid, "playerId": leader,
+                                             "phase": "advantage_play"])
+
+        // Both shapes on one screen: one that needs a target, one that doesn't.
+        try api.post("/api/test/set_hand",
+                     ["gameId": gid, "playerId": camp.me,
+                      "hand": ["vote", "steal_vote", "im_the_leader_now"]])
+
+        let row = camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Steal A Vote'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 15),
+                      "the advantage window should offer Steal A Vote")
+        shot("07-advantage-window")
+        row.tap()
+
+        XCTAssertTrue(camp.app.navigationBars["Choose Target"].waitForExistence(timeout: 8),
+                      "a card that needs a target must ask before it fires")
+        XCTAssertFalse(camp.app.staticTexts["Server Error"].exists,
+                       "and it must not fire targetless on the way")
+        shot("08-advantage-target-picker")
+        camp.app.buttons["Cancel"].tap()
+
+        // The card that actually broke: no target, so the phone sent no
+        // targetId, and the door required the key regardless.
+        let untargeted = camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Leader Now'")).firstMatch
+        XCTAssertTrue(untargeted.waitForExistence(timeout: 8))
+        untargeted.tap()
+
+        XCTAssertFalse(camp.app.staticTexts["Server Error"]
+                        .waitForExistence(timeout: 4),
+                       "an advantage with no target must not be refused for want of one")
+        _ = try waitFor("the leadership changes hands", timeout: 12) { st in
+            ((st["currentVote"] as? [String: Any])?["councilLeaderId"] as? String) == camp.me
+        }
+        shot("09-advantage-untargeted-played")
+    }
+
+    /// Poll the server until `cond` holds, so a UI assertion is not racing a
+    /// socket round trip.
+    @discardableResult
+    private func waitFor(_ what: String, timeout: TimeInterval,
+                         until cond: ([String: Any]) -> Bool) throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(timeout)
+        var last: [String: Any] = [:]
+        while Date() < deadline {
+            last = try api.get("/api/game/\(gid)/state")
+            if cond(last) { return last }
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        XCTFail("server never reached: \(what)")
+        return last
+    }
+
 }
