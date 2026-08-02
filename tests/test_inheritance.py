@@ -244,3 +244,112 @@ class InheritanceEstateTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
+    """A game already in flight when the card changed.
+
+    Six copies of a type the catalogue no longer has is not a cosmetic
+    problem: they cannot be played, they cannot fire on an elimination, and
+    they are about an eighth of the draw pile.
+    """
+
+    def setUp(self):
+        self.original_cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.original_cwd, 'survivor_cards.json'), self.tmp)
+        os.chdir(self.tmp)
+        self.gs = GameState()
+        self.gid = self.gs.create_game()
+        self.ids = [self.gs.add_player(self.gid, n) for n in ("Ana", "Ben", "Cam", "Dee")]
+        self.gs.start_full_game(self.gid)
+        self.game = self.gs.games[self.gid]
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _make_legacy(self):
+        """Rewind the game to the pre-colour card: six bare `inheritance`."""
+        from rules_engine import _iter_game_cards
+        for card in _iter_game_cards(self.game):
+            if card.get("type", "").startswith("inheritance"):
+                card["type"] = "inheritance"
+
+    def all_inheritance(self):
+        from rules_engine import _iter_game_cards
+        return [c["type"] for c in _iter_game_cards(self.game)
+                if c.get("type", "").startswith("inheritance")]
+
+    def test_every_legacy_copy_gains_a_colour(self):
+        from rules_engine import ensure_seat_bound_inheritance
+        self._make_legacy()
+        self.assertEqual(self.all_inheritance(), ["inheritance"] * 6)
+
+        self.assertEqual(ensure_seat_bound_inheritance(self.game), 6)
+
+        bound = self.all_inheritance()
+        self.assertNotIn("inheritance", bound, "no legacy copy is left behind")
+        self.assertEqual(sorted(bound),
+                         sorted(f"inheritance_{k}" for k in seats.SEAT_KEYS),
+                         "one of each colour, exactly as printed")
+
+    def test_it_is_idempotent_and_never_duplicates_a_colour(self):
+        from rules_engine import ensure_seat_bound_inheritance
+        self._make_legacy()
+        ensure_seat_bound_inheritance(self.game)
+        first = sorted(self.all_inheritance())
+
+        self.assertEqual(ensure_seat_bound_inheritance(self.game), 0)
+        self.assertEqual(sorted(self.all_inheritance()), first)
+
+    def test_a_half_migrated_game_keeps_the_colours_it_has(self):
+        """A colour already dealt must not be minted a second time."""
+        from rules_engine import _iter_game_cards, ensure_seat_bound_inheritance
+        self._make_legacy()
+        # One card already made the jump; five are still legacy.
+        legacy = [c for c in _iter_game_cards(self.game)
+                  if c.get("type") == "inheritance"]
+        legacy[0]["type"] = "inheritance_red"
+
+        ensure_seat_bound_inheritance(self.game)
+
+        bound = self.all_inheritance()
+        self.assertEqual(bound.count("inheritance_red"), 1, "red is not duplicated")
+        self.assertEqual(sorted(bound),
+                         sorted(f"inheritance_{k}" for k in seats.SEAT_KEYS))
+
+    def test_uids_survive_the_relabel(self):
+        """Relabelling in place, not rebuilding — a new dict would orphan a
+        card mid-hand and hand SwiftUI two rows with the same identity."""
+        from rules_engine import _iter_game_cards, ensure_seat_bound_inheritance
+        self._make_legacy()
+        before = {c["uid"] for c in _iter_game_cards(self.game)
+                  if c.get("type") == "inheritance"}
+
+        ensure_seat_bound_inheritance(self.game)
+
+        after = {c["uid"] for c in _iter_game_cards(self.game)
+                 if c.get("type", "").startswith("inheritance_")}
+        self.assertEqual(before, after)
+
+    def test_the_healed_card_actually_fires(self):
+        """The point of the exercise: it inherits an estate afterwards."""
+        from rules_engine import _iter_game_cards, ensure_seat_bound_inheritance
+        self._make_legacy()
+        ensure_seat_bound_inheritance(self.game)
+
+        heir, dead = self.ids[0], self.ids[1]
+        seat = seats.seat_of(self.game["players"][dead])
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
+        # Take the healed card for that colour out of wherever it landed.
+        card = next(c for c in _iter_game_cards(self.game)
+                    if c.get("type") == f"inheritance_{seat}")
+        self.game["players"][heir]["hand"] = [dict(card)]
+        self.game["players"][dead]["hand"] = [{"type": "camp_raid"}]
+
+        messages = self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
+
+        self.assertTrue(messages)
+        self.assertIn("camp_raid", hand_types(self.game, heir))

@@ -299,6 +299,36 @@ def ensure_card_uids(game: Dict[str, Any]) -> int:
 	return minted
 
 
+def ensure_seat_bound_inheritance(game: Dict[str, Any]) -> int:
+	"""Relabel the old one-size-fits-all Inheritance card to a seat colour.
+
+	The printed card is six cards, one per colour. What shipped before was a
+	single card, six copies, played on your turn to mark anyone you liked. A
+	game saved under the old catalogue therefore holds six `inheritance` cards
+	that the new catalogue has never heard of — unplayable, unable to fire on
+	an elimination, and roughly an eighth of the draw pile turned to chaff.
+
+	So heal them on load, the same way uids are healed: hand each legacy copy
+	one of the colours the game does not already hold. Idempotent, and it
+	cannot mint a seventh card of a colour that already exists.
+	"""
+	import seats
+
+	taken = {c["type"] for c in _iter_game_cards(game)
+	         if isinstance(c.get("type"), str)
+	         and c["type"].startswith("inheritance_")}
+	free = [k for k in seats.SEAT_KEYS if f"inheritance_{k}" not in taken]
+	relabelled = 0
+	for card in _iter_game_cards(game):
+		if card.get("type") != "inheritance":
+			continue
+		if not free:
+			break            # more legacy copies than colours: leave the rest
+		card["type"] = f"inheritance_{free.pop(0)}"
+		relabelled += 1
+	return relabelled
+
+
 def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
                  source: str, spec: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
 	"""

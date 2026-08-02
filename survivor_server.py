@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from functools import wraps
 from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
-                          new_card, ensure_card_uids,
+                          new_card, ensure_card_uids, ensure_seat_bound_inheritance,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 import seats
@@ -292,6 +292,14 @@ class GameState:
                 minted = ensure_card_uids(game)
                 if minted:
                     logger.info(f"Backfilled {minted} card uid(s) in {gid}")
+                # Games in flight when the Inheritance card became six
+                # colour-bound cards are holding six of a type the catalogue
+                # no longer has. Give them colours rather than leave an
+                # eighth of the draw pile unplayable.
+                bound = ensure_seat_bound_inheritance(game)
+                if bound:
+                    logger.info(f"Bound {bound} legacy Inheritance card(s) "
+                                f"to seat colours in {gid}")
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading {self._FILE}: {e}")
             self._backup_and_reset()
