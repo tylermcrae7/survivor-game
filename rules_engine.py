@@ -11,6 +11,8 @@ import logging
 import random
 import uuid
 from pathlib import Path
+
+import seats
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 
@@ -1237,7 +1239,6 @@ class SurvivorRulesEngine:
 		"the_spy_shack": self._effect_the_spy_shack,
 		"knowledge_is_power": self._effect_knowledge_is_power,
 		"camp_raid": self._effect_camp_raid,
-		"inheritance": self._effect_inheritance,
 		"lets_form_an_alliance": self._effect_lets_form_an_alliance,
 		"reward_challenge_do_or_die": self._effect_reward_challenge_do_or_die,
 		"reward_challenge_power_pair": self._effect_reward_challenge_power_pair,
@@ -1581,9 +1582,7 @@ class SurvivorRulesEngine:
 			# Reset camp raid markers
 			player.pop("campRaidedBy", None)
 			
-			# Reset inheritance markers that may have been processed
-			player.pop("inheritanceProcessed", None)
-			
+
 		# Reset any global tribal flags. The real keys are snake_case — this
 		# line said "pendingTheft" and so had never removed anything in its
 		# life. A reactive window that leaked past a council would have gone on
@@ -1848,20 +1847,6 @@ class SurvivorRulesEngine:
 		return {"message": f"{player['name']} placed a Camp Raid in front of "
 		                   f"{target['name']} — their next drawn card belongs to {player['name']}"}
 			
-	def _effect_inheritance(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute Inheritance card effect."""
-		target_id = params.get("targetId")
-		if not target_id or target_id not in game["players"]:
-			return {"message": "Inheritance requires a valid target player"}
-			
-		player = game["players"][player_id]
-		target = game["players"][target_id]
-		
-		# Mark inheritance relationship
-		player["inheritanceTarget"] = target_id
-		
-		return {"message": f"{player['name']} will inherit {target['name']}'s cards when they are eliminated"}
-		
 	def _effect_lets_form_an_alliance(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""Execute Let's Form An Alliance card effect."""
 		ally_id = params.get("allyId")
@@ -2148,44 +2133,77 @@ class SurvivorRulesEngine:
 		return 1
 		
 	def process_elimination_inheritance(self, game: Dict[str, Any], eliminated_player_id: str) -> List[str]:
+		"""Settle the dead player's estate on whoever holds their colour.
+
+		  INHERITANCE (6 CARDS, 1 OF EACH COLOR)
+		  Each Inheritance Card targets a different color player. When that
+		  player is eliminated from the game (by having both of their Survivor
+		  Character Cards turned over), you can IMMEDIATELY play this card. You
+		  get all of the cards in their hand instead of their cards going in the
+		  Discard Pile.
+
+		The card is bound to a seat, not to a target you picked on your turn,
+		and it is spent when it fires. A card for a colour nobody is playing
+		never fires at all — which is not a flaw but the Guide's own advice:
+		"It can be useful to have the Inheritance for a player that isn't in the
+		game. You can discard it if someone plays a Sorry For You against you!"
+
+		One deliberate deviation: the printed card says you *may* play it, and
+		here it fires on its own. Declining a windfall — a whole hand, for one
+		card you are holding anyway — is a choice nobody makes, and buying it
+		would mean pausing an elimination mid-council on an answer that may
+		never come. The endgame freezing is a real cost; the choice is not.
 		"""
-		Process inheritance effects when a player is eliminated.
-		
-		Args:
-		game: Current game state
-		eliminated_player_id: Player being eliminated
-		
-		Returns:
-		List of messages about inheritance transfers
-		"""
-		inheritance_messages = []
+		inheritance_messages: List[str] = []
 		eliminated_player = game["players"].get(eliminated_player_id)
 		if not eliminated_player:
 			return inheritance_messages
-			
+
 		# A dead survivor's Vote Card (and any Goodwill Gamble bound to a
 		# council they'll never attend) goes back to the box, not to the heir —
-		# otherwise the heir votes twice at every council after this one.
+		# otherwise the heir votes twice at every council after this one. This
+		# runs whether or not anyone inherits.
 		eliminated_hand = [c for c in eliminated_player.get("hand", [])
 		                   if c.get("type") not in MANDATORY_VOTE_CARD_TYPES]
 		eliminated_player["hand"] = eliminated_hand
 		if not eliminated_hand:
 			return inheritance_messages
 
-		# Find players who have inheritance on this eliminated player
+		seat = seats.seat_of(eliminated_player)
+		if not seat:
+			# A game saved before seats existed, whose colour we cannot place.
+			# No card is bound to them, so the estate goes to the discard.
+			return inheritance_messages
+
+		card_type = f"inheritance_{seat}"
 		for player_id, player in game["players"].items():
-			if player.get("inheritanceTarget") == eliminated_player_id and not player.get("isEliminated"):
-				# Transfer all cards from eliminated player to inheritor
-				inheritor_cards = eliminated_hand.copy()
-				player["hand"].extend(inheritor_cards)
-				eliminated_player["hand"] = []
-				player["inheritanceTarget"] = None  # Use up the inheritance
-				
-				# The inheritor sees the cards in their hand; the table only
-				# hears how many changed hands.
-				message = f"{player.get('name', player_id)} inherited {len(inheritor_cards)} cards from {eliminated_player.get('name', eliminated_player_id)}"
-				inheritance_messages.append(message)
-				logger.info(f"Inheritance: {player_id} inherited {len(inheritor_cards)} cards from {eliminated_player_id}")
-				break  # Only one inheritance per eliminated player
-				
+			if player_id == eliminated_player_id or player.get("isEliminated"):
+				continue
+			hand = player.get("hand") or []
+			index = next((i for i, c in enumerate(hand)
+			              if c.get("type") == card_type), None)
+			if index is None:
+				continue
+
+			# The card is spent: face up on the Discard Pile like any other.
+			spent = hand.pop(index)
+			game.setdefault("discard", []).append(spent)
+
+			# A shallow list copy — the same card dicts move, so every uid
+			# survives and no card exists in two hands at once. Deep-copying
+			# here would mint duplicates.
+			estate = eliminated_hand.copy()
+			player["hand"].extend(estate)
+			eliminated_player["hand"] = []
+
+			# The heir sees the cards in their own hand; the table only hears
+			# how many changed hands.
+			message = (f"{player.get('name', player_id)} inherited "
+			           f"{len(estate)} cards from "
+			           f"{eliminated_player.get('name', eliminated_player_id)}")
+			inheritance_messages.append(message)
+			logger.info(f"Inheritance ({seat}): {player_id} inherited "
+			            f"{len(estate)} cards from {eliminated_player_id}")
+			break  # only one card per colour exists
+
 		return inheritance_messages

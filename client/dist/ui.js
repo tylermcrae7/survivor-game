@@ -3730,9 +3730,13 @@ function leaveLeaderboard() {
 // SETTINGS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The six seats. This offered eight, of which only three matched the server's
+// six — which is why 30 players in the saved games hold a colour that is not a
+// seat at all. Kept in step with seats.py; every game state also carries
+// `seatRoster`, so this is the pre-join fallback rather than a rival palette.
 const PLAYER_COLORS = [
-    ['#FF6B6B', 'Red'], ['#4ECDC4', 'Teal'], ['#45B7D1', 'Blue'], ['#96CEB4', 'Sage'],
-    ['#FFEAA7', 'Yellow'], ['#DDA0DD', 'Plum'], ['#98D8C8', 'Mint'], ['#F7DC6F', 'Gold'],
+    ['#FF6B6B', 'Red'], ['#4ECDC4', 'Teal'], ['#45B7D1', 'Blue'],
+    ['#F9844A', 'Orange'], ['#90BE6D', 'Green'], ['#F9C74F', 'Yellow'],
 ];
 
 function settingsSpec() {

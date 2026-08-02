@@ -90,10 +90,12 @@ class CardIdentityTest(unittest.TestCase):
 
     def test_inheritance_moves_cards_rather_than_copying_them(self):
         """A deep copy here would put one uid in two hands at once."""
+        import seats
         heir, dead = self.ids[0], self.ids[1]
+        seat = seats.seat_of(self.game["players"][dead])
         self.game["players"][dead]["hand"] = [new_card("camp_raid"), new_card("the_spy_shack")]
-        self.game["players"][heir]["hand"] = [new_card("vote")]
-        self.game["players"][heir]["inheritanceTarget"] = dead
+        self.game["players"][heir]["hand"] = [new_card("vote"),
+                                              new_card(f"inheritance_{seat}")]
         estate = {c["uid"] for c in self.game["players"][dead]["hand"]}
 
         self.gs.rules_engine.process_elimination_inheritance(self.game, dead)

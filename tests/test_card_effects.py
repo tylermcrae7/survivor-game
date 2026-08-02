@@ -294,53 +294,87 @@ class TestTurnActionCards(CardEffectTestBase):
         self.assertEqual(len(self.hand(ally)), before_ally + 1)
         self.assertEqual(len(self.hand(victim)), before_victim - 2)
 
-    def test_inheritance_marks_a_target_and_transfers_on_elimination(self):
+    def test_inheritance_is_bound_to_a_colour_not_to_a_choice(self):
         """
-        Survival Guide: inheritance pays out "When that player is eliminated from the
-        game (by having both of their Survivor Character Cards turned over)".
+        "6 CARDS, 1 OF EACH COLOR. Each Inheritance Card targets a different
+        color player." It is not a move you make on your turn — the card
+        answers an elimination.
         """
+        import seats
         heir, doomed = self.player_ids[0], self.player_ids[1]
+        seat = seats.seat_of(self.game["players"][doomed])
+        self.assertIsNotNone(seat, "every player holds a seat")
+        card = f"inheritance_{seat}"
+        self.give(heir, card)
 
-        result = self.play(heir, "inheritance", targetId=doomed)
-        self.assertTrue(result["success"], result.get("message"))
-        self.assertEqual(self.game["players"][heir]["inheritanceTarget"], doomed)
+        refused = self.play(heir, card, targetId=doomed)
+        self.assertFalse(refused["success"],
+                         "an Inheritance cannot be played on your turn")
 
-        # The estate transfers — but a dead survivor's Vote Card (and any
-        # Goodwill Gamble) returns to the box, or the heir votes twice forever.
-        doomed_estate = [c for c in self.hand(doomed)
-                         if c.get("type") not in ("vote", "goodwill_gamble")]
+    def test_the_estate_goes_to_whoever_holds_the_dead_players_colour(self):
+        """The Guide: you get all of the cards in their hand instead of their
+        cards going in the Discard Pile."""
+        import seats
+        heir, doomed = self.player_ids[0], self.player_ids[1]
+        seat = seats.seat_of(self.game["players"][doomed])
+        self.give(heir, f"inheritance_{seat}")
+
+        # A dead survivor's Vote Card (and any Goodwill Gamble) returns to the
+        # box, or the heir votes twice at every council afterwards.
+        estate = [c for c in self.hand(doomed)
+                  if c.get("type") not in ("vote", "goodwill_gamble")]
         heir_before = len(self.hand(heir))
 
         messages = self.gs.rules_engine.process_elimination_inheritance(self.game, doomed)
         self.assertTrue(messages)
-        self.assertEqual(len(self.hand(heir)), heir_before + len(doomed_estate))
+        # +estate, -the spent Inheritance card
+        self.assertEqual(len(self.hand(heir)), heir_before + len(estate) - 1)
         self.assertEqual(self.hand_types(heir).count("vote"), 1)
         self.assertEqual(self.hand(doomed), [])
-        self.assertIsNone(self.game["players"][heir]["inheritanceTarget"])
+        self.assertNotIn(f"inheritance_{seat}", self.hand_types(heir),
+                         "the card is spent when it fires")
+
+    def test_the_wrong_colour_inherits_nothing(self):
+        """Holding an Inheritance is not enough — it must be their colour."""
+        import seats
+        heir, doomed = self.player_ids[0], self.player_ids[1]
+        doomed_seat = seats.seat_of(self.game["players"][doomed])
+        other = next(k for k in seats.SEAT_KEYS if k != doomed_seat)
+        self.give(heir, f"inheritance_{other}")
+
+        heir_before = list(self.hand_types(heir))
+        messages = self.gs.rules_engine.process_elimination_inheritance(self.game, doomed)
+
+        self.assertFalse(messages)
+        self.assertEqual(self.hand_types(heir), heir_before,
+                         "the wrong colour is not spent and inherits nothing")
 
     def test_inheritance_does_not_fire_on_a_non_elimination_vote_out(self):
-        """A vote-out that only flips one card must NOT pay out the inheritance."""
+        """A vote-out that only flips one card must NOT pay out the estate."""
+        import seats
         heir, doomed = self.player_ids[0], self.player_ids[1]
-        self.play(heir, "inheritance", targetId=doomed)
+        seat = seats.seat_of(self.game["players"][doomed])
+        self.give(heir, f"inheritance_{seat}")
 
         heir_before = list(self.hand(heir))
         doomed_before = list(self.hand(doomed))
 
-        # Run a tribal that votes `doomed` out once (2 cards -> 1, still in the game)
+        # Vote `doomed` out once (2 cards -> 1, still in the game)
         self.gs._trigger_tribal_council(self.game, "single")
         self.gs.start_voting(self.game_id, "elimination")
         for voter in self.player_ids:
             target = doomed if voter != doomed else heir
-            self.gs.cast_vote(self.game_id, voter, [{"targetId": target, "votes": 1}])
+            votes = max(1, self.game["players"][voter].get("mandatoryVotes", 1))
+            self.gs.cast_vote(self.game_id, voter, [{"targetId": target, "votes": votes}])
         _tally(self.gs, self.game_id)
         self.gs.complete_tribal(self.game_id)
 
         self.assertEqual(self.game["players"][doomed]["characterCards"], 1)
         self.assertFalse(self.game["players"][doomed]["isEliminated"])
-        # Hands unchanged except for the Vote Card spent and returned
         self.assertEqual(len(self.hand(doomed)), len(doomed_before))
         self.assertEqual(len(self.hand(heir)), len(heir_before))
-        self.assertEqual(self.game["players"][heir]["inheritanceTarget"], doomed)
+        self.assertIn(f"inheritance_{seat}", self.hand_types(heir),
+                      "the card is still waiting for a true elimination")
 
     def test_reward_challenge_do_or_die_starts_a_real_duel(self):
         """The opponent throws for themselves — the server never rolls for them."""

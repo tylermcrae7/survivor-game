@@ -158,6 +158,14 @@ def main():
             'description': 'Places — derived camp locations, movement policy, voice plan for the Discord bot (53 tests)'
         },
         {
+            'file': 'tests/test_seats.py',
+            'description': 'Seats — six fixed colours, derived for old saves, never guessed'
+        },
+        {
+            'file': 'tests/test_inheritance.py',
+            'description': 'Inheritance — colour-bound, spent when it fires, dead weight when the colour is absent'
+        },
+        {
             'file': 'tests/test_card_identity.py',
             'description': 'Card identity — every card knows which card it is, through every move and the reshuffle'
         },

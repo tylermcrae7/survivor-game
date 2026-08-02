@@ -42,12 +42,26 @@ extra_vote_card = rules.get_card_definition('extra_vote')
 assert extra_vote_card and extra_vote_card['playable_phases'] == ['tribal_voting']
 print(f'✅ Card definition loaded: {extra_vote_card["name"]} - {extra_vote_card["description"][:50]}...')
 
-# Test 4: Card effects — every registry card type resolves and dispatches
+# Test 4: Card effects — every playable card type resolves and dispatches.
+# A card with no playable phase is never played by hand and correctly has no
+# effect to dispatch: the six Inheritance cards answer an elimination rather
+# than being a move you make, and execute_card_effect refuses unknown types,
+# so having no entry is the safe state rather than a gap.
 missing = [
     t for t, c in rules.get_all_card_definitions().items()
-    if c['category'] not in ('vote', 'tribal_council') and t not in rules.card_effects_registry
+    if c['category'] not in ('vote', 'tribal_council')
+    and c.get('playable_phases')
+    and t not in rules.card_effects_registry
 ]
-assert not missing, f'card types with no effect implementation: {missing}'
+assert not missing, f'playable card types with no effect implementation: {missing}'
+
+# A Tribal Council Card is played by drawing it, so it has no phase either.
+never_playable = [t for t, c in rules.get_all_card_definitions().items()
+                  if not c.get('playable_phases')
+                  and c['category'] != 'tribal_council']
+assert sorted(never_playable) == sorted(f'inheritance_{s}' for s in
+                                        ('red', 'teal', 'blue', 'orange', 'green', 'yellow')), \
+    f'only the colour-bound Inheritance cards are unplayable by hand, got {never_playable}'
 print(f'✅ Effect registry covers all {len(rules.card_effects_registry)} playable card types')
 
 # Test 5: Server Integration

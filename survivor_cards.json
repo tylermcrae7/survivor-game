@@ -215,19 +215,83 @@
       "reactive_only": false,
       "count": 3
     },
-    "inheritance": {
-      "type": "inheritance",
+    "inheritance_red": {
+      "type": "inheritance_red",
       "category": "action",
-      "name": "Inheritance",
-      "description": "Choose a target player - when they are eliminated, you inherit all their cards",
-      "playable_phases": [
-        "turn_play"
-      ],
-      "requires_target": true,
+      "seat": "red",
+      "name": "Inheritance (Red)",
+      "description": "When the Red player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
       "requires_multiple_targets": false,
       "requires_confirmation": false,
       "reactive_only": false,
-      "count": 6
+      "count": 1
+    },
+    "inheritance_teal": {
+      "type": "inheritance_teal",
+      "category": "action",
+      "seat": "teal",
+      "name": "Inheritance (Teal)",
+      "description": "When the Teal player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
+    "inheritance_blue": {
+      "type": "inheritance_blue",
+      "category": "action",
+      "seat": "blue",
+      "name": "Inheritance (Blue)",
+      "description": "When the Blue player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
+    "inheritance_orange": {
+      "type": "inheritance_orange",
+      "category": "action",
+      "seat": "orange",
+      "name": "Inheritance (Orange)",
+      "description": "When the Orange player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
+    "inheritance_green": {
+      "type": "inheritance_green",
+      "category": "action",
+      "seat": "green",
+      "name": "Inheritance (Green)",
+      "description": "When the Green player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
+    "inheritance_yellow": {
+      "type": "inheritance_yellow",
+      "category": "action",
+      "seat": "yellow",
+      "name": "Inheritance (Yellow)",
+      "description": "When the Yellow player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
     },
     "lets_form_an_alliance": {
       "type": "lets_form_an_alliance",

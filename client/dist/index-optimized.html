@@ -34,8 +34,8 @@
     <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
 
     <!-- Preload critical resources -->
-    <link rel="preload" href="styles.css?v=torchlit-3.16.0" as="style">
-    <link rel="preload" href="game.js?v=torchlit-3.16.0" as="script">
+    <link rel="preload" href="styles.css?v=torchlit-3.17.0" as="style">
+    <link rel="preload" href="game.js?v=torchlit-3.17.0" as="script">
     <link rel="preload" href="https://cdn.socket.io/4.7.5/socket.io.min.js" as="script" crossorigin="anonymous">
 
     <!-- Tribal typography: Fraunces (ceremony) + Alegreya Sans (signage & body).
@@ -45,13 +45,13 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Alegreya+Sans+SC:wght@500;700;800&display=swap">
 
     <!-- Critical CSS -->
-    <link rel="stylesheet" href="styles.css?v=torchlit-3.16.0">
+    <link rel="stylesheet" href="styles.css?v=torchlit-3.17.0">
 
     <!-- Web App Manifest for PWA -->
     <link rel="manifest" href="manifest.json">
 
     <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.16.0">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.17.0">
 
     <!-- Socket.IO with fallback -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
@@ -356,14 +356,12 @@
                     <div class="form-group">
                         <label>Your Buff</label>
                         <div id="colorSelection" class="color-grid" role="radiogroup" aria-label="Player color selection">
-                            <div class="color-btn touch-target" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" aria-label="Red" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" aria-label="Teal" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#45B7D1" style="background: #45B7D1;" role="radio" aria-label="Blue" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#96CEB4" style="background: #96CEB4;" role="radio" aria-label="Sage" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#FFEAA7" style="background: #FFEAA7;" role="radio" aria-label="Yellow" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#DDA0DD" style="background: #DDA0DD;" role="radio" aria-label="Plum" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#98D8C8" style="background: #98D8C8;" role="radio" aria-label="Mint" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-color="#F7DC6F" style="background: #F7DC6F;" role="radio" aria-label="Gold" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="red" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" aria-label="Red" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="teal" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" aria-label="Teal" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="blue" data-color="#45B7D1" style="background: #45B7D1;" role="radio" aria-label="Blue" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="orange" data-color="#F9844A" style="background: #F9844A;" role="radio" aria-label="Orange" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="green" data-color="#90BE6D" style="background: #90BE6D;" role="radio" aria-label="Green" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="yellow" data-color="#F9C74F" style="background: #F9C74F;" role="radio" aria-label="Yellow" aria-checked="false"></div>
                         </div>
                     </div>
                     <button class="btn btn-success btn-enhanced touch-target" data-action="joinGame" style="width:100%">
@@ -660,12 +658,12 @@
     </div>
 
     <!-- JavaScript Modules (with defer for proper loading order) -->
-    <script src="settings.js?v=torchlit-3.16.0" defer></script>
-    <script src="game.js?v=torchlit-3.16.0" defer></script>
-    <script src="network.js?v=torchlit-3.16.0" defer></script>
-    <script src="ui.js?v=torchlit-3.16.0" defer></script>
-    <script src="state-manager.js?v=torchlit-3.16.0" defer></script>
-    <script src="narrator.js?v=torchlit-3.16.0" defer></script>
+    <script src="settings.js?v=torchlit-3.17.0" defer></script>
+    <script src="game.js?v=torchlit-3.17.0" defer></script>
+    <script src="network.js?v=torchlit-3.17.0" defer></script>
+    <script src="ui.js?v=torchlit-3.17.0" defer></script>
+    <script src="state-manager.js?v=torchlit-3.17.0" defer></script>
+    <script src="narrator.js?v=torchlit-3.17.0" defer></script>
 
     <!-- Slim Initialization Script -->
     <script>
@@ -845,10 +843,14 @@
                 if (nameInput && !nameInput.value && S.get('identityName')) {
                     nameInput.value = S.get('identityName');
                 }
+                // A remembered colour that is no longer a seat (the palette
+                // used to offer eight) must not leave the form unselected —
+                // joinGame refuses without one, so the player would be locked
+                // out of their own game with no explanation.
                 const savedColor = S.get('identityColor');
-                if (savedColor) {
-                    document.querySelector(`.color-btn[data-color="${savedColor}"]`)?.click();
-                }
+                const swatch = savedColor && document.querySelector(
+                    `.color-btn[data-seat="${savedColor}"], .color-btn[data-color="${savedColor}"]`);
+                (swatch || document.querySelector('#colorSelection .color-btn'))?.click();
             }
 
             // Code hero copied flash

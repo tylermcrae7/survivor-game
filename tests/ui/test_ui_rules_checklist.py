@@ -231,7 +231,7 @@ def run_checks():
         # three cards the later checks click on all survive.
         api("/api/test/set_hand", {"gameId": gid, "playerId": ana_id,
             "hand": ["camp_raid", "the_spy_shack", "immunity_idol",
-                     "inheritance", "vote"]})
+                     "inheritance_red", "vote"]})
         api("/api/test/set_hand", {"gameId": gid, "playerId": ben_id,
             "hand": ["sorry_for_you", "vote"]})
         api("/api/test/set_hand", {"gameId": gid, "playerId": bot_id, "hand": ["vote"]})
@@ -274,7 +274,7 @@ def run_checks():
                       for c in g["players"][ana_id]["hand"]),
               ana_hand)
         check("sorry-for-you: the card she chose is the card she lost",
-              "inheritance" not in ana_hand and "camp_raid" in ana_hand, ana_hand)
+              "inheritance_red" not in ana_hand and "camp_raid" in ana_hand, ana_hand)
         check("turn: steal step consumed, guidance moves to Play",
               wait_for(lambda: 'Play' in guidance(ana)) is not None, guidance(ana))
 

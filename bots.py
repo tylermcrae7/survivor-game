@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 # these just need to be friendly and distinct from likely human names.
 BOT_NAMES = ["Coconut", "Driftwood", "Barnacle", "Mango", "Puddles", "Flint"]
 
-BOT_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4",
-              "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F"]
 
 # How much a bot wants each card — used when giving one up (give the lowest)
 # and when The Spy Shack lets it take one (take the highest).
@@ -40,7 +38,12 @@ CARD_VALUE = {
     "steal_vote": 6, "block_vote": 6, "grant_immunity": 6, "idol_nullifier": 6,
     "control_the_vote": 5, "im_the_leader_now": 5, "goodwill_gamble": 5,
     "camp_raid": 5, "the_spy_shack": 5, "knowledge_is_power": 5,
-    "inheritance": 4, "lets_form_an_alliance": 4,
+    "lets_form_an_alliance": 4,
+    # Colour-bound and never played by hand — valued low so a bot gives one
+    # up before anything it can actually use. Which is also the Guide's own
+    # advice about an Inheritance for a colour that isn't in the game.
+    "inheritance_red": 3, "inheritance_teal": 3, "inheritance_blue": 3,
+    "inheritance_orange": 3, "inheritance_green": 3, "inheritance_yellow": 3,
     "reward_challenge_do_or_die": 4, "reward_challenge_power_pair": 4,
     "reward_challenge_its_a_numbers_game": 4,
     "vote": 2,
@@ -49,7 +52,7 @@ CARD_VALUE = {
 # Cards a bot will consider playing on its turn, in priority order.
 _PLAYABLE_PRIORITY = [
     "camp_raid", "the_spy_shack", "knowledge_is_power",
-    "lets_form_an_alliance", "inheritance",
+    "lets_form_an_alliance",
     "reward_challenge_do_or_die", "reward_challenge_power_pair",
     "reward_challenge_its_a_numbers_game",
     "challenge_lowest_score_loses", "challenge_pull_or_steal",
@@ -179,13 +182,6 @@ def _choose_card_play(game, bot_id, rng):
                 if victim and allies:
                     return idx, {"allyId": rng.choice(sorted(allies)),
                                  "victimId": victim}
-
-        elif card_type == "inheritance":
-            # Mark whoever is closest to elimination; tiebreak on card count
-            target = sorted(alive_others,
-                            key=lambda p: (game["players"][p].get("characterCards", 2),
-                                           -_hand_count(game, p), p))[0]
-            return idx, {"targetId": target}
 
         elif card_type == "reward_challenge_do_or_die":
             target = _biggest_threat(game, bot_id)

@@ -167,30 +167,45 @@ final class StartViewModel {
 
 // MARK: - Player Colors
 
+/// The six seats a castaway can take.
+///
+/// The box holds 12 Survivor Character Cards, 2 of each of 6 colours, and 6
+/// Inheritance Cards — "1 OF EACH COLOR". So colour stopped being decoration
+/// the moment Inheritance bound to it.
+///
+/// This offered eight, of which three (sage, mint, teal) were near-identical
+/// greens and only three overlapped the server's six at all. That divergence
+/// is why 30 players in the saved games hold a colour that is not a seat. The
+/// rawValue is the seat key the server speaks; `hex` is only for drawing.
 enum PlayerColor: String, CaseIterable {
-    case coral = "#FF6B6B"
-    case teal = "#4ECDC4"
-    case sky = "#45B7D1"
-    case sage = "#96CEB4"
-    case yellow = "#FFEAA7"
-    case plum = "#DDA0DD"
-    case mint = "#98D8C8"
-    case gold = "#F7DC6F"
+    case red, teal, blue, orange, green, yellow
 
     var displayName: String {
         switch self {
-        case .coral: return "Coral"
+        case .red: return "Red"
         case .teal: return "Teal"
-        case .sky: return "Blue"
-        case .sage: return "Sage"
+        case .blue: return "Blue"
+        case .orange: return "Orange"
+        case .green: return "Green"
         case .yellow: return "Yellow"
-        case .plum: return "Plum"
-        case .mint: return "Mint"
-        case .gold: return "Gold"
+        }
+    }
+
+    /// Kept in step with seats.py — the server sends `seatRoster` with every
+    /// state, so this is the pre-join fallback rather than a second source of
+    /// truth.
+    var hex: String {
+        switch self {
+        case .red: return "#FF6B6B"
+        case .teal: return "#4ECDC4"
+        case .blue: return "#45B7D1"
+        case .orange: return "#F9844A"
+        case .green: return "#90BE6D"
+        case .yellow: return "#F9C74F"
         }
     }
 
     var color: Color {
-        Color(hex: rawValue) ?? .gray
+        Color(hex: hex) ?? .gray
     }
 }

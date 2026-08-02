@@ -10,6 +10,7 @@ from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
                           new_card, ensure_card_uids,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
+import seats
 from places import (DEFAULT_PLACE, PLACE_KEYS, PLACE_LABELS, place_policy,
                     effective_place, voice_plan, validate_discord_user_id)
 import push_notify
@@ -400,12 +401,19 @@ class GameState:
         if not is_valid:
             return {"success": False, "message": error}
 
-        is_valid, error = validate_player_color(color)
-        if not is_valid:
-            return {"success": False, "message": error}
-
+        # Table size first: at six players every seat is also taken, and
+        # "maximum 6 players" explains the rule where "every seat is taken"
+        # only describes the symptom.
         if len(g["players"]) >= 6:
             return {"success": False, "message": "Game is full — maximum 6 players."}
+
+        # Colour is a seat now, not a free-form value. An unrecognised one is
+        # not an error — it falls through to auto-assign, because an installed
+        # phone offering last version's palette must never lose its place at
+        # the fire over it.
+        _, seat_error = seats.assign(g, color)
+        if seat_error:
+            return {"success": False, "message": seat_error}
 
         if g.get("phase") != "lobby":
             return {"success": False, "message": "Game has already started — no new players."}
@@ -413,8 +421,6 @@ class GameState:
         for player in g["players"].values():
             if player.get("name", "").strip().lower() == clean_name.lower():
                 return {"success": False, "message": f"A player named '{clean_name}' already exists."}
-            if color and player.get("color") == color:
-                return {"success": False, "message": f"That color is already taken by {player.get('name')}."}
 
         return {"success": True, "message": f"{clean_name} can join."}
 
@@ -429,14 +435,18 @@ class GameState:
         if not g: return None
 
 
-        if not color:
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#F9844A", "#90BE6D", "#F9C74F"]
-            used_colors = {p.get("color") for p in g["players"].values()}
-            color = next((c for c in colors if c not in used_colors), "#8B5CF6")
-        
+        # One of six seats, always. `color` stays on the record — every
+        # rendering path in both clients reads it, and an installed build
+        # decodes it as required — but it is now the seat's canonical hex
+        # rather than whatever was asked for.
+        seat, seat_error = seats.assign(g, color)
+        if seat_error:
+            return None
+
         player_id = str(uuid.uuid4())[:8]
         g['players'][player_id] = {
-            'id': player_id, 'name': name, 'color': color, 'hand': [],
+            'id': player_id, 'name': name,
+            'color': seats.seat_hex(seat), 'seat': seat, 'hand': [],
             'isEliminated': False, 'hasStolen': False, 'hasPlayed': False,
             'hasDrawn': False, 'hasVoted': False, 'extraVotes': 0,
             'characterCards': 2, 'isActive': True, 'isCouncilLeader': False,
@@ -618,9 +628,16 @@ class GameState:
         # keeps a stale choice from ever showing someone at the wrong place.
         policy = place_policy(enriched_game)
         enriched_game["placePolicy"] = policy
+        enriched_game["seatRoster"] = seats.roster()
         for player in enriched_game.get("players", {}).values():
             player["place"] = effective_place(enriched_game, player)
             player.setdefault("discordUserId", None)
+            # Derived, never stored twice: a game saved before seats existed
+            # gets its seat from its colour, and anything unplaceable stays
+            # honestly null.
+            key = seats.seat_of(player)
+            player["seat"] = key
+            player["seatLabel"] = seats.SEAT_LABELS.get(key)
         return enriched_game
     
     def _get_council_leader_id(self, game):
@@ -2299,9 +2316,10 @@ class GameState:
         if name is None:
             return {"success": False, "message": "The island is out of computer players"}
 
-        taken_colors = {p.get("color") for p in g["players"].values()}
-        color = next((c for c in bots_module.BOT_COLORS
-                      if c not in taken_colors), None)
+        # A bot takes a seat like anyone else. Its own palette was the second
+        # source of truth that let the roster drift apart in the first place.
+        free = seats.free_seats(g)
+        color = free[0] if free else None
 
         validation = self.validate_new_player(gid, name, color)
         if not validation.get("success"):
@@ -3168,7 +3186,6 @@ class GameState:
             player["extraVotes"] = 0
             player["characterCards"] = 2
             player["immunityPlayed"] = False
-            player.pop("inheritanceTarget", None)
             player.pop("campRaidedBy", None)
             player.pop("mustUseExtraVotes", None)
             
@@ -3756,6 +3773,17 @@ def api_ping():
             'uptime': time.time() - start_time if 'start_time' in globals() else 0
         }
     )
+
+@app.route('/api/seats', methods=['GET'])
+@safe_api_call
+def get_seat_roster():
+    """The six seats. A join screen has no game yet, so it cannot read the
+    roster off game state — and hard-coding a palette per client is exactly how
+    the server's six and the clients' eight drifted apart."""
+    response = jsonify(success=True, seats=seats.roster())
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
 
 @app.route('/api/cards', methods=['GET'])
 @safe_api_call

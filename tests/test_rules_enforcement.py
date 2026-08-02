@@ -48,7 +48,7 @@ def test_one_play_per_turn():
     try:
         print("=== One play per turn ===")
         set_turn(game, ana)
-        game["players"][ana]["hand"] = [{"type": "inheritance"}, {"type": "inheritance"}]
+        game["players"][ana]["hand"] = [{"type": "camp_raid"}, {"type": "camp_raid"}]
         game["players"][ben]["hand"] = [{"type": "vote"}]
 
         r1 = gs.play_card(gid, playerId=ana, cardIdx=0, params={"targetId": ben})
@@ -61,7 +61,7 @@ def test_one_play_per_turn():
         assert r2["success"] is False
         assert "already played" in r2["message"]
         # The refused card never left the hand
-        assert "inheritance" in hand_types(game, ana)
+        assert "camp_raid" in hand_types(game, ana)
 
         print("✅ one play per turn\n")
     finally:
@@ -447,11 +447,13 @@ def test_inheritance_never_transfers_the_vote_card():
     gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
     try:
         print("=== Inheritance skips the Vote Card ===")
-        game["players"][ana]["inheritanceTarget"] = ben
+        import seats
+        seat = seats.seat_of(game["players"][ben])
         game["players"][ben]["hand"] = [{"type": "vote"},
                                         {"type": "goodwill_gamble"},
                                         {"type": "camp_raid"}]
-        game["players"][ana]["hand"] = [{"type": "vote"}]
+        game["players"][ana]["hand"] = [{"type": "vote"},
+                                        {"type": f"inheritance_{seat}"}]
         game["players"][ben]["isEliminated"] = True
         gs.rules_engine.process_elimination_inheritance(game, ben)
 

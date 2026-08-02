@@ -607,7 +607,7 @@ async function joinGame() {
     const gameId = document.getElementById('gameCodeInput').value.trim();
     const name = document.getElementById('playerNameInput').value.trim();
     const colorBtn = document.querySelector('.color-btn.selected');
-    const color = colorBtn ? colorBtn.dataset.color : null;
+    const color = colorBtn ? (colorBtn.dataset.seat || colorBtn.dataset.color) : null;
     const toast = window.SurvivorUI?.showToast || window.showToast;
 
     if (!gameId) { toast('Please enter a game code', 'warning'); document.getElementById('gameCodeInput').focus(); return; }
@@ -827,7 +827,7 @@ function startNewGame() {
 // Export functions for use in other modules
 window.SurvivorGame = {
     // State
-    APP_VERSION: '3.16.0',
+    APP_VERSION: '3.17.0',
     localGameState,
     fullGameState,
     SURVIVOR_CARDS,
