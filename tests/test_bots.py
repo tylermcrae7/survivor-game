@@ -166,6 +166,86 @@ def test_decision_basics():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _highest_bidder_state(style="normal", current_bid=0):
+    """Small pure-decision fixture; no server or scheduler needed."""
+    actions = ["bid"] if current_bid == 0 else ["bid", "pass"]
+    return {
+        "phase": "playing",
+        "settings": {"botStyle": style},
+        "players": {
+            "human": {"name": "Tyler", "isBot": False},
+            "bot": {"name": "Coconut", "isBot": True},
+        },
+        "turnOrder": ["human", "bot"],
+        "challenge": {
+            "type": "highest_bidder",
+            "phase": "bidding",
+            "round": 1,
+            "starterId": "human",
+            "currentPlayerId": "bot",
+            "currentBid": current_bid,
+            "maxBid": 11,
+            "actions": actions,
+            "knockedOut": [],
+        },
+    }
+
+
+def test_highest_bidder_bot_limits_follow_style_and_stay_private():
+    samples = {}
+    for style, expected_range in bots.HIGHEST_BIDDER_CAP_RANGE.items():
+        caps = []
+        openings = set()
+        for seed in range(100):
+            game = _highest_bidder_state(style)
+            memory = {}
+            plan = next_action(game, rng=random.Random(seed), turn_memory=memory)
+            assert plan["method"] == "challenge_action"
+            assert plan["kwargs"]["action"] == "bid"
+            openings.add(plan["kwargs"]["value"])
+
+            state = memory["highest_bidder"]
+            cap = state["caps"]["bot"]
+            assert expected_range[0] <= cap <= expected_range[1]
+            caps.append(cap)
+
+            # The cap belongs to BotRunner memory, never the public Challenge.
+            assert "caps" not in game["challenge"]
+
+            # Re-reading the same round preserves the reservation bid.
+            game["challenge"]["currentBid"] = 1
+            game["challenge"]["actions"] = ["bid", "pass"]
+            next_action(game, rng=random.Random(seed + 1000), turn_memory=memory)
+            assert memory["highest_bidder"]["caps"]["bot"] == cap
+
+        samples[style] = sum(caps) / len(caps)
+        assert len(openings) > 1, f"{style} bots should vary their opening bid"
+
+    assert samples["chill"] < samples["normal"] < samples["cutthroat"]
+
+
+def test_highest_bidder_bots_mix_bids_and_passes_before_the_limit():
+    # Test each style near the middle of its risk band.  Across seeded bots we
+    # should see both choices, rather than a deterministic march to eleven.
+    decision_points = {"chill": 3, "normal": 5, "cutthroat": 7}
+    for style, current_bid in decision_points.items():
+        decisions = set()
+        for seed in range(200):
+            game = _highest_bidder_state(style, current_bid=current_bid)
+            plan = next_action(game, rng=random.Random(seed), turn_memory={})
+            decisions.add(plan["kwargs"]["action"])
+        assert decisions == {"bid", "pass"}, (style, decisions)
+
+
+def test_highest_bidder_bots_never_bid_the_entire_bag():
+    for style in bots.HIGHEST_BIDDER_CAP_RANGE:
+        for seed in range(100):
+            game = _highest_bidder_state(style, current_bid=10)
+            plan = next_action(game, rng=random.Random(seed), turn_memory={})
+            assert plan["kwargs"]["action"] == "pass", (style, seed, plan)
+            assert plan["kwargs"].get("value") is None
+
+
 # ─────────────────────────── the full-game soak ──────────────────────────────
 
 def _human_move(gs, gid, human, rng):

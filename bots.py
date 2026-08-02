@@ -63,6 +63,23 @@ _PLAYABLE_PRIORITY = [
 
 PLAY_CHANCE = 0.75  # a bot holds its cards some turns, like a person would
 
+# Highest Bidder is a push-your-luck auction, not a counting exercise.  A bot
+# that always raises by one eventually bids all 11 rocks and is guaranteed to
+# pull the Purple Rock.  Give each bot a private reservation bid for the round;
+# the style changes its appetite for risk, while the per-round sample keeps the
+# table from learning one mechanical cutoff.  A one-step bluff is possible, but
+# no bot ever volunteers to pull the entire bag.
+HIGHEST_BIDDER_CAP_RANGE = {
+    "chill": (2, 4),
+    "normal": (4, 7),
+    "cutthroat": (6, 9),
+}
+HIGHEST_BIDDER_BLUFF_CHANCE = {
+    "chill": 0.08,
+    "normal": 0.18,
+    "cutthroat": 0.32,
+}
+
 
 # ────────────────────────────────── helpers ──────────────────────────────────
 
@@ -131,6 +148,58 @@ def _vote_blocked(game, pid):
 def _act(method, delay_class="normal", **kwargs):
     """An action plan: which GameState method to call and with what."""
     return {"method": method, "kwargs": kwargs, "delay_class": delay_class}
+
+
+def _highest_bidder_action(game, challenge, bot_id, rng, memory):
+    """Return a humanlike bid/pass plan with a stable private limit per round.
+
+    Pulling ``n`` of the 11 rocks has an ``n / 11`` chance of finding Purple.
+    The ranges above therefore make chill bots cautious, normal bots willing to
+    accept a meaningful risk, and cutthroat bots aggressive without making any
+    of them deterministically suicidal.  ``memory`` belongs to BotRunner and is
+    never serialized or sent to clients, so opponents cannot inspect the cap.
+    """
+    current_bid = int(challenge.get("currentBid", 0))
+    max_bid = int(challenge.get("maxBid", 11))
+    style = (game.get("settings") or {}).get("botStyle", "normal")
+    low, high = HIGHEST_BIDDER_CAP_RANGE.get(
+        style, HIGHEST_BIDDER_CAP_RANGE["normal"])
+
+    # A new Challenge object or round gets fresh private limits.  Object identity
+    # is safe here: this memory is process-local and lives only as long as the
+    # running game.
+    round_key = (id(challenge), int(challenge.get("round", 1)))
+    state = memory.get("highest_bidder")
+    if not isinstance(state, dict) or state.get("roundKey") != round_key:
+        state = {"roundKey": round_key, "caps": {}}
+        memory["highest_bidder"] = state
+    caps = state["caps"]
+    if bot_id not in caps:
+        upper = max(1, min(high, max_bid - 1))
+        lower = min(low, upper)
+        caps[bot_id] = rng.randint(lower, upper)
+    cap = caps[bot_id]
+
+    # The first player must bid.  Vary the opener instead of advertising a
+    # universal bid of one, but keep it comfortably inside that bot's limit.
+    if current_bid == 0:
+        opening = rng.randint(1, min(3, cap, max_bid))
+        return "bid", opening
+
+    next_bid = current_bid + 1
+    if next_bid > max_bid:
+        return "pass", None
+    if next_bid <= cap:
+        return "bid", next_bid
+
+    # Occasionally stretch exactly one rock beyond the original limit.  Never
+    # bluff to the full bag: bid 11 has a 100% failure rate, not bravado.
+    bluff_chance = HIGHEST_BIDDER_BLUFF_CHANCE.get(
+        style, HIGHEST_BIDDER_BLUFF_CHANCE["normal"])
+    if next_bid == cap + 1 and next_bid < max_bid and rng.random() < bluff_chance:
+        caps[bot_id] = next_bid
+        return "bid", next_bid
+    return "pass", None
 
 
 # ─────────────────────────── decision: card plays ────────────────────────────
@@ -325,7 +394,9 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
         if not actions:
             return None
         action, value = actions[0], None
-        if action == "bid":
+        if action == "bid" and ch.get("type") == "highest_bidder":
+            action, value = _highest_bidder_action(game, ch, cp, rng, mem)
+        elif action == "bid":
             nxt = ch.get("currentBid", 0) + 1
             if nxt > ch.get("maxBid", nxt) and "pass" in actions:
                 action = "pass"
