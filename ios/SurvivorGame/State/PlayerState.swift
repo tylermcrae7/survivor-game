@@ -189,6 +189,10 @@ struct CardInstance: Codable, Equatable, Identifiable {
 
     /// Falls back to type+name for a server that predates uids, or a card
     /// synthesised locally.
+    ///
+    /// NOT unique in that fallback: three Vote Cards in one hand share it.
+    /// Never key a `ForEach` over a hand on this — key on position, or
+    /// SwiftUI drops the duplicates and the hand renders short.
     var id: String { uid ?? (type + (name ?? "")) }
 
     enum CodingKeys: String, CodingKey {
@@ -223,17 +227,6 @@ enum CardCategory: String, Codable {
         case .tribalCouncil: return "Tribal Council"
         case .challenge: return "Challenge"
         case .house: return "House"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .vote: return .blue
-        case .tribalAdvantage: return .purple
-        case .action: return .orange
-        case .tribalCouncil: return .red
-        case .challenge: return Color(hex: "#e8862a") ?? .orange
-        case .house: return .teal
         }
     }
 

@@ -104,42 +104,57 @@ struct CardView: View {
                                       : "Double tap to read this card")
     }
 
-    // MARK: - Compact chip (AdvantagePlayView's horizontal row — unchanged)
+    // MARK: - Compact chip (AdvantagePlayView's horizontal row)
 
+    /// The advantage row's thumbnail. It sits beside the card's full name and
+    /// rules text, so it carries no information of its own — it is the visual
+    /// anchor for the row, and it says which card by echoing the mini's
+    /// category rule and title.
+    ///
+    /// It used to be a pre-Torch chip: a solid `.purple` capsule holding
+    /// "TRIBAL ADVANTAGE" in a fixed 80pt frame, which is roughly 20pt too
+    /// narrow for that phrase. The label broke mid-word across three lines,
+    /// spilled past the capsule, and pushed the title out of the tile.
     private var compactFace: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Category badge
-            HStack {
-                Text(card.cardCategory.displayName.uppercased())
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(card.cardCategory.color)
-                    .clipShape(Capsule())
-                Spacer()
-            }
-
-            // Card name
-            Text(card.displayName)
-                .font(.caption.bold())
-                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(card.cardCategory.displayName.lowercased())
+                .font(Torch.Font.label(8))
+                .tracking(Torch.Track.wide * 8)
+                .foregroundStyle(Torch.Color.textFaint)
                 .lineLimit(1)
+                // "tribal advantage" is the longest label in the set and the
+                // one that broke; let it shrink rather than wrap.
+                .minimumScaleFactor(0.6)
+
+            Text(card.displayName)
+                .font(Torch.Font.display(12, weight: 700))
+                .foregroundStyle(Torch.Color.parchment)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
         }
-        .padding(8)
-        // Compact stays fixed for the advantage picker's horizontal row.
-        .frame(maxWidth: 80, alignment: .topLeading)
-        .frame(width: 80, height: 70)
-        .background(isPlayable ? card.cardCategory.color.opacity(0.15) : Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isPlayable ? card.cardCategory.color : .clear,
-                    lineWidth: 2
-                )
+        .padding(.horizontal, 8)
+        .padding(.top, 9)
+        .padding(.bottom, 6)
+        .frame(width: 96, height: 76, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: Torch.Radius.sm, style: .continuous)
+                .fill(CouncilPalette.surfaceSunken)
         )
-        .shadow(color: isPlayable ? card.cardCategory.color.opacity(0.3) : .clear, radius: 4)
+        .overlay(alignment: .top) {
+            UnevenRoundedRectangle(topLeadingRadius: Torch.Radius.sm,
+                                   topTrailingRadius: Torch.Radius.sm)
+                .fill(card.cardCategory.torchGradient)
+                .frame(height: 3)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Torch.Radius.sm, style: .continuous)
+                .strokeBorder(isPlayable ? Torch.Color.torch.opacity(0.55)
+                                         : CouncilPalette.line,
+                              lineWidth: 1)
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(card.displayName), \(card.cardCategory.displayName) card")
         .accessibilityValue(card.description ?? "")

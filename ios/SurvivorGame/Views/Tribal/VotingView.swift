@@ -178,9 +178,26 @@ struct VotingView: View {
                 } label: {
                     HStack(spacing: 12) {
                         PlayerAvatarView(player: player, size: 40, showName: false)
-                        Text(player.name)
-                            .font(Torch.Font.display(Torch.TextSize.lg, weight: 700))
-                            .foregroundStyle(Torch.Color.ink)
+                        // Who is one vote from the torch snuffer decides the
+                        // vote, so the count belongs on the slip you write on
+                        // — not a tap away on someone's detail sheet.
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(player.name)
+                                .font(Torch.Font.display(Torch.TextSize.lg, weight: 700))
+                                .foregroundStyle(Torch.Color.ink)
+                            HStack(spacing: 5) {
+                                TorchLivesView(lives: player.characterCards,
+                                               onParchment: true)
+                                Text(player.characterCards == 1
+                                     ? "one torch left"
+                                     : "\(player.characterCards) torches")
+                                    .font(Torch.Font.label(Torch.TextSize.xs))
+                                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                    .foregroundStyle(player.characterCards == 1
+                                                     ? Torch.Color.ember
+                                                     : Torch.Color.inkSoft.opacity(0.75))
+                            }
+                        }
                         Spacer()
                         Image(systemName: "pencil.line")
                             .foregroundStyle(Torch.Color.inkSoft)
@@ -216,7 +233,13 @@ struct VotingView: View {
                     Text(player.name)
                         .font(Torch.Font.body(Torch.TextSize.xs))
                         .foregroundStyle(player.hasVoted ? Torch.Color.text : Torch.Color.textSecondary)
+                    Spacer(minLength: 8)
+                    // The ballot slips only show the people you may vote for;
+                    // this roster is where you see your own torches, and an
+                    // immune player's.
+                    TorchLivesView(lives: player.characterCards)
                 }
+                .accessibilityElement(children: .combine)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

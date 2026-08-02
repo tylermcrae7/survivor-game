@@ -61,10 +61,22 @@ struct SurvivorChip<Content: View>: View {
 struct TorchLivesView: View {
     let lives: Int
     let total: Int
+    /// The ballot slips are cream paper. Ember-on-night is unreadable there,
+    /// and the spent flame — `Color.secondary` at 30% — disappears entirely.
+    let onParchment: Bool
 
-    init(lives: Int, total: Int = 2) {
+    init(lives: Int, total: Int = 2, onParchment: Bool = false) {
         self.lives = lives
         self.total = total
+        self.onParchment = onParchment
+    }
+
+    private var litColor: Color {
+        onParchment ? Torch.Color.ember : SurvivorTheme.ember
+    }
+
+    private var spentColor: Color {
+        onParchment ? Torch.Color.ink.opacity(0.22) : Color.secondary.opacity(0.3)
     }
 
     var body: some View {
@@ -72,9 +84,7 @@ struct TorchLivesView: View {
             ForEach(0..<total, id: \.self) { index in
                 Image(systemName: "flame.fill")
                     .font(.caption2)
-                    .foregroundStyle(index < lives
-                        ? SurvivorTheme.ember
-                        : Color.secondary.opacity(0.3))
+                    .foregroundStyle(index < lives ? litColor : spentColor)
             }
         }
         .accessibilityLabel("\(lives) of \(total) torches lit")
