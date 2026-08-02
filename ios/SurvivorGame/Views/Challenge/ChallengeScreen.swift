@@ -71,8 +71,20 @@ struct ChallengeScreen: View {
                             if isMyMove {
                                 actionPanel(challenge)
                             } else {
-                                ProgressView()
-                                    .padding(.vertical, 8)
+                                // Named, so "someone else is up" cannot be
+                                // mistaken for "your move is still sending" —
+                                // they used to be the same bare spinner.
+                                let waitingOn = challenge.currentPlayerId
+                                    .flatMap { players[$0]?.name }
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text(waitingOn.map { "Waiting on \($0)…" }
+                                         ?? "Waiting on the tribe…")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 8)
+                                .accessibilityElement(children: .combine)
                             }
 
                             if let scores = challenge.scores, !scores.isEmpty {
@@ -204,6 +216,20 @@ struct ChallengeScreen: View {
     private func actionPanel(_ challenge: ChallengeState) -> some View {
         let actions = challenge.actions ?? []
         VStack(spacing: 12) {
+            // Sits ABOVE the buttons, not below the steal list — down there it
+            // was frequently off-screen, so a tap that had been accepted
+            // looked identical to one that had been dropped.
+            if isActing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Sending…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Sending your move")
+            }
+
             if actions.contains("pull") {
                 if challenge.type == "lowest_score_loses" {
                     // Secret pull 0…maxPull (an empty bag is a legal pretend-pull)
@@ -270,7 +296,6 @@ struct ChallengeScreen: View {
                 }
             }
 
-            if isActing { ProgressView() }
         }
         .disabled(isActing)
     }
@@ -314,12 +339,19 @@ struct ChallengeScreen: View {
     }
 
     private func act(_ action: String, value: ChallengeValue?) {
+        // A second tap while the first is in flight is a no-op rather than a
+        // queued action. The buttons dim now (SurvivorButton finally honours
+        // isEnabled), but an impatient double-tap must be harmless regardless.
+        guard !isActing else { return }
+        // Confirm the tap in the hand *immediately*. The round trip is only
+        // 60–90ms, but with no press feedback at all that was long enough to
+        // read as "nothing happened" and invite a second tap.
+        HapticEngine.impact(.light)
         isActing = true
         Task {
             defer { isActing = false }
             do {
                 try await gameClient.challengeAction(action, value: value)
-                HapticEngine.impact(.medium)
             } catch {
                 self.error = .from(error)
             }

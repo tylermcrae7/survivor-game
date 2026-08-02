@@ -8,7 +8,7 @@ struct TribalVoteState: Codable, Equatable {
     var votes: [String: [String: Int]]?
     var voteResults: [String: Int]?
     var protectedPlayers: [String]?
-    var immunityPlayed: [String]?
+    var immunityPlayed: [ImmunityRecord]?
     var tieBreakNeeded: Bool
     var tiedPlayers: [String]?
     var eliminated: [String]?
@@ -16,6 +16,21 @@ struct TribalVoteState: Codable, Equatable {
     var tieBreakResolvedBy: String?
     var advantageCardsPlayed: [AdvantageRecord]?
     var cardsSpent: [String]?
+
+    /// One played Immunity Idol. The server appends dictionaries here
+    /// (survivor_server.py `play_immunity`), not player-id strings — so
+    /// decoding this as `[String]` always threw, the `try?` swallowed it, and
+    /// the "Immunity Played" panel silently never rendered. Nobody could see
+    /// that an idol had been played, which is also what an Idol Nullifier
+    /// holder needs in order to answer one.
+    struct ImmunityRecord: Codable, Equatable {
+        let playerId: String?
+        let targetId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case playerId, targetId
+        }
+    }
 
     struct AdvantageRecord: Codable, Equatable {
         let playerId: String?
@@ -48,7 +63,7 @@ struct TribalVoteState: Codable, Equatable {
         votes = try? c.decodeIfPresent([String: [String: Int]].self, forKey: .votes)
         voteResults = try? c.decodeIfPresent([String: Int].self, forKey: .voteResults)
         protectedPlayers = try? c.decodeIfPresent([String].self, forKey: .protectedPlayers)
-        immunityPlayed = try? c.decodeIfPresent([String].self, forKey: .immunityPlayed)
+        immunityPlayed = try? c.decodeIfPresent([ImmunityRecord].self, forKey: .immunityPlayed)
         tieBreakNeeded = (try? c.decodeIfPresent(Bool.self, forKey: .tieBreakNeeded)) ?? false
         tiedPlayers = try? c.decodeIfPresent([String].self, forKey: .tiedPlayers)
         eliminated = try? c.decodeIfPresent([String].self, forKey: .eliminated)
@@ -62,7 +77,7 @@ struct TribalVoteState: Codable, Equatable {
         type: String? = nil, phase: TribalPhase = .waiting, voteType: String? = nil,
         councilLeaderId: String? = nil, votes: [String: [String: Int]]? = nil,
         voteResults: [String: Int]? = nil, protectedPlayers: [String]? = nil,
-        immunityPlayed: [String]? = nil, tieBreakNeeded: Bool = false,
+        immunityPlayed: [ImmunityRecord]? = nil, tieBreakNeeded: Bool = false,
         tiedPlayers: [String]? = nil, eliminated: [String]? = nil,
         eliminationsNeeded: Int? = nil, tieBreakResolvedBy: String? = nil,
         advantageCardsPlayed: [AdvantageRecord]? = nil, cardsSpent: [String]? = nil

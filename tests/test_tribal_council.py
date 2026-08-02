@@ -16,6 +16,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from survivor_server import GameState
 
+
+def _tally(gs, gid):
+    """Run the council to the tally, through the mandatory idol window.
+
+    "Immunity Idol ... can only be played AFTER all players have voted, but
+    BEFORE votes are tallied." So the Leader's first reveal seals the Voting
+    Box and calls for idols; a second one opens it. Tests that tallied in a
+    single call were encoding a window that could be skipped — which is
+    precisely the bug that made idols unplayable.
+    """
+    result = gs.reveal_votes(gid)
+    if isinstance(result, dict) and result.get("idolWindowOpened"):
+        result = gs.reveal_votes(gid)
+    return result
+
+
+
 class TestTribalCouncilFlow(unittest.TestCase):
     """Test comprehensive tribal council flow and phase transitions"""
 
@@ -366,7 +383,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
 
         # Idols are played after the votes are in, before the tally
         self.gs.advance_tribal_phase(self.game_id, "immunity")
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         return self.gs.complete_tribal(self.game_id)
 
@@ -446,7 +463,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         
         # Complete tribal council
         self.gs.advance_tribal_phase(self.game_id, "immunity")
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
 
         # Official rule: "If 2 players are tied with the most votes, both are voted out."
@@ -500,7 +517,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
 
         # The idol window opens, and so does the box
         self.assertTrue(self.gs.advance_tribal_phase(self.game_id, "immunity"))
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         self.assertEqual(game["currentVote"]["eliminated"], [blocked])
         self.assertEqual(game["currentVote"]["voteResults"], {blocked: 3})
@@ -527,10 +544,62 @@ class TestTribalCouncilFlow(unittest.TestCase):
                               [{"targetId": vote_for, "votes": 1}])
 
         game["players"][banned]["voteBanned"] = True
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         # 3 ballots named the target; the banned one is not among them
         self.assertEqual(game["currentVote"]["voteResults"].get(target), 2)
+
+    def test_the_idol_window_cannot_be_skipped(self):
+        """A reveal from `voting` seals the box — it must never tally.
+
+        The reported bug: "I had immunity idols and it wouldn't let me play
+        them." The card was legal the whole time (play_immunity checks the game
+        phase, never the tribal sub-phase) — but the only screen that offers it
+        lives in the immunity phase, so a Leader who went straight to the
+        reveal silently voided every idol at the table.
+        """
+        game = self.gs.games[self.game_id]
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+        for voter_id in self.player_ids:
+            target = self.player_ids[3] if voter_id != self.player_ids[3] else self.player_ids[1]
+            self.gs.cast_vote(self.game_id, voter_id, [{"targetId": target, "votes": 1}])
+
+        first = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(first["success"], first.get("message"))
+        self.assertTrue(first.get("idolWindowOpened"))
+        self.assertEqual(game["currentVote"]["phase"], "immunity")
+        # Nothing tallied: the votes are still sealed in the box.
+        self.assertFalse(game["currentVote"].get("voteResults"))
+
+        second = self.gs.reveal_votes(self.game_id)
+        self.assertTrue(second["success"], second.get("message"))
+        self.assertEqual(game["currentVote"]["phase"], "reveal")
+        self.assertTrue(game["currentVote"].get("voteResults"))
+
+    def test_the_idol_window_cannot_open_before_the_box_is_full(self):
+        """"...AFTER all players have voted" — the other half of the rule."""
+        game = self.gs.games[self.game_id]
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+        # Exactly one ballot placed, out of four.
+        self.gs.cast_vote(self.game_id, self.player_ids[0],
+                          [{"targetId": self.player_ids[3], "votes": 1}])
+
+        early = self.gs.advance_tribal_phase(self.game_id, "immunity")
+        self.assertFalse(early.get("success") if isinstance(early, dict) else early)
+        self.assertEqual(game["currentVote"]["phase"], "voting")
+
+    def test_discussion_cannot_jump_straight_to_the_idol_window(self):
+        """The old table let a Leader open the idols with an empty box."""
+        game = self.gs.games[self.game_id]
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        self.gs.advance_tribal_phase(self.game_id, "discussion")
+
+        jumped = self.gs.advance_tribal_phase(self.game_id, "immunity")
+        self.assertFalse(jumped.get("success") if isinstance(jumped, dict) else jumped)
+        self.assertEqual(game["currentVote"]["phase"], "discussion")
 
     def test_tribal_council_reset(self):
         """Test resetting tribal council back to discussion phase"""
@@ -617,7 +686,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         played = self.gs.play_immunity(self.game_id, playerId=immune_player_id)
         self.assertTrue(played["success"], played.get("message"))
 
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
 
         current_vote = game["currentVote"]

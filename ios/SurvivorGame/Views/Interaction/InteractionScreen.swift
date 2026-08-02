@@ -285,7 +285,9 @@ struct InteractionScreen: View {
             // server referee — presence must never strand the player.
             fingerPanel(range: 1...5, label: "Make your pick")
         }
-        if isActing { ProgressView() }
+        // No spinner here: `pickPanel` — the only caller — already draws one
+        // below this, so Do Or Die, Power Pair and It's A Numbers Game were
+        // each showing two stacked spinners on every tap.
     }
 
     private func throwButton(_ choice: String, symbol: String) -> some View {

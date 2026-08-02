@@ -19,6 +19,23 @@ from survivor_server import GameState
 from challenges import CHALLENGE_DEFINITIONS, challenge_engine
 
 
+def _tally(gs, gid):
+    """Run the council to the tally, through the mandatory idol window.
+
+    "Immunity Idol ... can only be played AFTER all players have voted, but
+    BEFORE votes are tallied." So the Leader's first reveal seals the Voting
+    Box and calls for idols; a second one opens it. Tests that tallied in a
+    single call were encoding a window that could be skipped — which is
+    precisely the bug that made idols unplayable.
+    """
+    result = gs.reveal_votes(gid)
+    if isinstance(result, dict) and result.get("idolWindowOpened"):
+        result = gs.reveal_votes(gid)
+    return result
+
+
+
+
 class RocksTestBase(unittest.TestCase):
     PLAYER_COUNT = 4
 
@@ -129,7 +146,7 @@ class TestNecklace(RocksTestBase):
         for voter in self.player_ids:
             vote_for = target if voter != target else self.player_ids[0]
             self.gs.cast_vote(self.game_id, voter, [{"targetId": vote_for, "votes": 1}])
-        self.gs.reveal_votes(self.game_id)
+        _tally(self.gs, self.game_id)
         result = self.gs.complete_tribal(self.game_id)
 
         self.assertTrue(result["success"], result.get("message"))
@@ -152,7 +169,7 @@ class TestNecklace(RocksTestBase):
             pid: {} for pid, p in self.game["players"].items()
             if not p.get("isEliminated", False)
         }
-        self.gs.reveal_votes(self.game_id)
+        _tally(self.gs, self.game_id)
 
         current_vote = self.game["currentVote"]
         self.assertTrue(current_vote["tieBreakNeeded"])

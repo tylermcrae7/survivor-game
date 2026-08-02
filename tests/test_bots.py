@@ -282,9 +282,18 @@ def _human_move(gs, gid, human, rng):
                          if not players[p].get("isEliminated")
                          and not players[p].get("voteBanned")]
                 if len(cv.get("votes") or {}) >= len(alive):
+                    # Seals the box and opens the idol window; it does NOT
+                    # tally. The Leader taps a second time from `immunity`.
                     gs.reveal_votes(gid)
                     return True
                 return False
+            if vph == "immunity":
+                # The idol window is mandatory now. A leader who reveals once
+                # and never comes back leaves the ceremony parked here — which
+                # is exactly what this helper used to do, spinning on
+                # complete_tribal forever.
+                gs.reveal_votes(gid)
+                return True
             if cv.get("tieBreakNeeded") and cv.get("tiedPlayers"):
                 gs.tie_break(gid, leaderId=human, chosenId=cv["tiedPlayers"][0])
                 return True
@@ -524,22 +533,32 @@ def test_bot_leader_opens_the_idol_window_for_a_human():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_bot_leader_skips_the_idol_window_when_no_human_holds_one():
-    """No idol at a human seat, no ceremony to sit through."""
+def test_bot_leader_opens_the_idol_window_even_when_nobody_can_use_it():
+    """The window is unconditional — its timing must not betray a hand.
+
+    This used to assert the opposite: a bot Leader peeked into human hands and
+    skipped the ceremony when nobody held an idol. That was two faults in one.
+    It read information no Council Leader is entitled to, and it made the
+    length of the pause a tell — a table that notices "the long pause means
+    somebody has an idol" has been handed, by the pacing alone, the exact
+    secret the Survival Guide asks the Leader to discover by asking out loud.
+    """
     gs, original_cwd, tmp = fresh_state()
     try:
-        print("=== Testing the idol window stays skipped when idle ===")
+        print("=== Testing the idol window opens for everyone ===")
         gid = gs.create_game()
         human = gs.add_player(gid, "Tyler", "red")
         for _ in range(3):
             assert gs.add_bot(gid)["success"]
         gs.start_full_game(gid)
 
+        # A human holding nothing but their Vote Card: no idol anywhere at the
+        # table, and the window opens anyway.
         game, leader = _bot_led_council(gs, gid, human, [{"type": "vote"}])
         runner = BotRunner(gs, rng=random.Random(11))
         assert runner.step(gid) is True
-        assert game["currentVote"]["phase"] == "reveal", game["currentVote"]["phase"]
-        print("✅ an idle idol window is still skipped!\n")
+        assert game["currentVote"]["phase"] == "immunity", game["currentVote"]["phase"]
+        print("✅ the idol window opens whether or not it can be used!\n")
     finally:
         os.chdir(original_cwd)
         shutil.rmtree(tmp, ignore_errors=True)
@@ -569,10 +588,12 @@ def test_bots_never_wait_on_a_vote_banned_player():
 
         # A banned bot is never asked to vote, and never blocks the reveal
         runner = BotRunner(gs, rng=random.Random(5))
+        # Runs to the tally, not merely out of `voting` — the ceremony now
+        # passes through the mandatory idol window on its way to the reveal.
         for _ in range(20):
-            if game["currentVote"]["phase"] != "voting":
+            if game["currentVote"]["phase"] == "reveal":
                 break
-            if not runner.step(gid):
+            if not runner.step(gid) and game["currentVote"]["phase"] == "voting":
                 # only the human's ballot is left to place
                 gs.cast_vote(gid, voterId=human,
                              votesData=[{"targetId": leader, "votes": 1}])
@@ -636,7 +657,7 @@ if __name__ == "__main__":
         test_refusal_circuit_breaker()
         test_bot_draw_logs_a_redacted_entry()
         test_bot_leader_opens_the_idol_window_for_a_human()
-        test_bot_leader_skips_the_idol_window_when_no_human_holds_one()
+        test_bot_leader_opens_the_idol_window_even_when_nobody_can_use_it()
         test_bots_never_wait_on_a_vote_banned_player()
         test_full_game_official()
         test_full_game_extended_expansion()

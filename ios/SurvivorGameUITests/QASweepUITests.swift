@@ -1034,8 +1034,16 @@ final class QASweepUITests: XCTestCase {
         try tapLeaderButton(camp.app, tap: "Advance to Discussion", to: "discussion")
         // Discussion's door is Start Voting — it used to read "Advance to Immunity".
         try tapLeaderButton(camp.app, tap: "Start Voting", to: "voting")
-        XCTAssertTrue(camp.app.buttons["Open Idol Window"].waitForExistence(timeout: 12),
-                      "the voting leader bar should offer the idol window")
+        // One door out of voting, not two. The bar used to offer "Open Idol
+        // Window" and "Reveal Votes" side by side in identical styling, and
+        // taking the second tallied on the spot — which silently voided every
+        // idol at the table, because the only screen that offers an idol is
+        // the immunity phase that button skipped.
+        XCTAssertTrue(camp.app.buttons["Seal the Box · Call for Idols"]
+                        .waitForExistence(timeout: 12),
+                      "the voting leader bar must offer the seal-and-call-for-idols door")
+        XCTAssertFalse(camp.app.buttons["Reveal Votes"].exists,
+                       "voting must not offer a door that skips the idol window")
         saveShot("verify-13-tribal-voting")
 
         // Every ballot in (all three via API so the box is provably full).
@@ -1047,15 +1055,13 @@ final class QASweepUITests: XCTestCase {
                           "votesData": [["targetId": target, "votes": 1]]])
         }
 
-        // Voting is where the idol window opens — the fixed leader bar offers
-        // both doors here, and Reveal Votes must be one of them.
-        XCTAssertTrue(camp.app.buttons["Reveal Votes"].waitForExistence(timeout: 15),
-                      "the voting leader bar should also offer Reveal Votes")
-        try tapLeaderButton(camp.app, tap: "Open Idol Window", to: "immunity")
+        // Sealing the box IS the call for idols: the tally waits one screen on.
+        try tapLeaderButton(camp.app, tap: "Seal the Box · Call for Idols",
+                            to: "immunity")
         saveShot("verify-14-tribal-immunity")
 
-        // Reveal, tapped by the Leader on the phone — no API rescue.
-        try tapLeaderButton(camp.app, tap: "Reveal Votes", to: "reveal",
+        // The tally, tapped by the Leader on the phone — no API rescue.
+        try tapLeaderButton(camp.app, tap: "Read the Votes", to: "reveal",
                             alsoAccept: ["results"])
         saveShot("verify-15-tribal-reveal")
         saveShot("verify2-01-human-leader-council")

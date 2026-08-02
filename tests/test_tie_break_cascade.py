@@ -36,6 +36,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from survivor_server import GameState
 
 
+def _tally(gs, gid):
+    """Run the council to the tally, through the mandatory idol window.
+
+    "Immunity Idol ... can only be played AFTER all players have voted, but
+    BEFORE votes are tallied." So the Leader's first reveal seals the Voting
+    Box and calls for idols; a second one opens it. Tests that tallied in a
+    single call were encoding a window that could be skipped — which is
+    precisely the bug that made idols unplayable.
+    """
+    result = gs.reveal_votes(gid)
+    if isinstance(result, dict) and result.get("idolWindowOpened"):
+        result = gs.reveal_votes(gid)
+    return result
+
+
+
+
 class TieBreakCascadeTest(unittest.TestCase):
     PLAYER_COUNT = 5
 
@@ -227,7 +244,7 @@ class TieBreakCascadeTest(unittest.TestCase):
             res = self.gs.cast_vote(self.game_id, voter, [{"targetId": target, "votes": 1}])
             self.assertTrue(res["success"], res.get("message"))
 
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         current_vote = self.game["currentVote"]
         self.assertTrue(current_vote["tieBreakNeeded"])
@@ -266,7 +283,7 @@ class TieBreakCascadeTest(unittest.TestCase):
             a: {c: 1},
             b: {}, c: {},
         }
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         self.assertTrue(current_vote["tieBreakNeeded"])
         self.assertEqual(current_vote["eliminationsNeeded"], 2)
@@ -313,7 +330,7 @@ class TieBreakCascadeTest(unittest.TestCase):
                                     [{"targetId": target, "votes": 1}])
             self.assertTrue(res["success"], res.get("message"))
 
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         current_vote = self.game["currentVote"]
         self.assertFalse(current_vote["tieBreakNeeded"], current_vote["resolution"])
@@ -337,7 +354,7 @@ class TieBreakCascadeTest(unittest.TestCase):
             self.pids[3]: {a: 1}, leader: {b: 1}, a: {c: 1}, b: {}, c: {},
         }
 
-        reveal = self.gs.reveal_votes(self.game_id)
+        reveal = _tally(self.gs, self.game_id)
         self.assertTrue(reveal["success"], reveal.get("message"))
         self.assertTrue(current_vote["tieBreakNeeded"])
         self.assertCountEqual(current_vote["tiedPlayers"], [a, b, c])
@@ -432,7 +449,7 @@ class TieBreakCascadeTest(unittest.TestCase):
             a: {c: 1},
             b: {}, c: {},
         }
-        self.gs.reveal_votes(self.game_id)
+        _tally(self.gs, self.game_id)
 
         result = self.gs.enhanced_tie_break(self.game_id, leaderId=leader, chosenIds=[a, c])
         self.assertTrue(result["success"], result.get("message"))

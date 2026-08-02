@@ -959,8 +959,7 @@ class GameState:
         if not current_vote:
             return {"success": False, "message": "No active tribal council found"}
             
-        # Votes are revealed from the voting phase, or from the immunity phase —
-        # the official order is: everyone votes, THEN idols are played, THEN the
+        # The official order is: everyone votes, THEN idols are played, THEN the
         # Council Leader opens the box and tallies.
         if current_vote.get("phase") not in ("voting", "immunity"):
             return {"success": False, "message": "Voting must be in progress to reveal votes"}
@@ -971,6 +970,28 @@ class GameState:
         if missing:
             return {"success": False,
                     "message": f"The Voting Box hasn't reached everyone — waiting on {missing}"}
+
+        # The idol window is a DOORWAY, not an option. A reveal called straight
+        # from voting used to tally on the spot, which silently voided every
+        # Immunity Idol at the table: the card stayed legal on the server, but
+        # the only screen that offers it lives in the immunity phase, so nobody
+        # could ever play it. ("I had immunity idols and it wouldn't let me
+        # play them.")
+        #
+        # This funnels rather than refuses — the leader's first tap seals the
+        # box and calls for idols, the second tallies. A refusal would have
+        # stranded any cached web client at 'voting' with no reachable button,
+        # since sw.js serves the old page long after the server moves on.
+        if current_vote.get("phase") == "voting":
+            current_vote["phase"] = "immunity"
+            self._save(gid)
+            logger.info(f"Ballot box sealed in game {gid} — idol window opened")
+            return {
+                "success": True,
+                "idolWindowOpened": True,
+                "message": "The Voting Box is full. Everyone, open your eyes — "
+                           "if anyone has an Immunity Idol, now would be the time to play it.",
+            }
 
         # Advance to reveal phase
         current_vote["phase"] = "reveal"
@@ -1615,7 +1636,10 @@ class GameState:
         # Use rules engine to advance tribal phase with validation
         # The idol window and the reveal both require a full Voting Box —
         # "Immunity Idol ... can only be played AFTER all players have voted."
-        if target_phase in ("immunity", "reveal")                 and (game.get("currentVote") or {}).get("phase") == "voting":
+        # Checked from ANY source phase, not just voting: the guard should say
+        # what it means rather than lean on the transition table to have already
+        # closed the other doors.
+        if target_phase in ("immunity", "reveal"):
             missing = self._ballot_box_missing(game)
             if missing:
                 return {"success": False,
@@ -2362,7 +2386,13 @@ class GameState:
             "message": interaction_message or challenge_message
                        or effect_result.get("message", f"Played {card.get('name', 'card')}"),
             "card_effect": effect_result,
-            "tribal_triggered": card.get("category") == "tribal_council"
+            "tribal_triggered": card.get("category") == "tribal_council",
+            # The card the player actually played. Deliberately taken from
+            # `card` and NOT from effect_result — The Spy Shack and Knowledge
+            # Is Power both put a card they *peeked at in someone else's hand*
+            # under card_effect.cardName, and this value is broadcast to the
+            # whole room. Playing a card is public; what you saw is not.
+            "cardName": card.get("name"),
         }
         # An effect whose message reveals hidden cards ships a redacted twin for
         # the shared history; carry it up only when the effect's message was used.
@@ -3106,7 +3136,7 @@ def emit_game_event(gid, event_type, data=None):
     except Exception as e:
         logger.warning(f"Failed to emit game event: {e}")
 
-def _emit_narrator_events(gid, action, request_data, game_before, game_after, result):
+def _emit_narrator_events(gid, action, request_data, narrator_before, game_after, result):
     """Emit rich game events for the narrator based on action type"""
     try:
         players = game_after.get('players', {})
@@ -3118,12 +3148,26 @@ def _emit_narrator_events(gid, action, request_data, game_before, game_after, re
 
         # Steal action
         if action == 'steal_card':
-            thief_id = request_data.get('playerId')
+            # The route requires `thiefId` (api_steal), and both clients send
+            # it — reading `playerId` here made every steal in the game's
+            # history narrate as "Unknown".
+            thief_id = request_data.get('thiefId') or request_data.get('playerId')
             target_id = request_data.get('targetId')
-            emit_game_event(gid, 'steal', {
-                'thief': get_player_name(thief_id),
-                'victim': get_player_name(target_id)
-            })
+            # A raid that moved nothing must not be narrated as a theft. A
+            # steal returns success when the target had no reachable cards, and
+            # again when a Sorry For You window opens — at which point the
+            # theft is only *pending* and may be cancelled outright.
+            moved = isinstance(result, dict) and result.get('stolen_cards')
+            pending = isinstance(result, dict) and result.get('reactive_window')
+            if moved and not pending:
+                emit_game_event(gid, 'steal', {
+                    'thief': get_player_name(thief_id),
+                    'victim': get_player_name(target_id),
+                    # IDs as well as names: names are not unique (only colours
+                    # are), so a client cannot reliably match a name to a seat.
+                    'thiefId': thief_id,
+                    'victimId': target_id,
+                })
 
         # Card play
         elif action == 'play_card':
@@ -3170,7 +3214,7 @@ def _emit_narrator_events(gid, action, request_data, game_before, game_after, re
         # Vote reveal - check for elimination
         elif action == 'reveal_votes' or action == 'complete_tribal':
             # Check if someone was eliminated
-            eliminated_before = {pid for pid, p in game_before.get('players', {}).items() if p.get('isEliminated')}
+            eliminated_before = narrator_before.get('eliminated') or set()
             eliminated_after = {pid for pid, p in players.items() if p.get('isEliminated')}
             newly_eliminated = eliminated_after - eliminated_before
             for pid in newly_eliminated:
@@ -3179,23 +3223,16 @@ def _emit_narrator_events(gid, action, request_data, game_before, game_after, re
                     'playerId': pid
                 })
 
-        # Game start
-        elif action == 'start_game':
+        # Game start — the action is `start_full_game` (api_start_full). There
+        # has never been a 'start_game' action, so this branch never ran.
+        elif action == 'start_full_game':
             player_count = len([p for p in players.values() if not p.get('isEliminated')])
             emit_game_event(gid, 'game_start', {
                 'count': player_count
             })
 
-        # Winner recorded
-        elif action == 'record_winner':
-            winner_id = request_data.get('winnerId')
-            emit_game_event(gid, 'winner', {
-                'player': get_player_name(winner_id),
-                'playerId': winner_id
-            })
-
         # Check for phase changes
-        old_phase = game_before.get('phase')
+        old_phase = narrator_before.get('phase')
         new_phase = game_after.get('phase')
         if old_phase != new_phase and new_phase:
             if new_phase.startswith('tribal') and not old_phase.startswith('tribal'):
@@ -3256,8 +3293,20 @@ def handle(action, required):
 
         kwargs = {k: v for k, v in d.items() if k != 'gameId'}
 
-        # Get game state before action for comparison
-        game_before = game_state.games.get(gid, {}).copy() if gid in game_state.games else {}
+        # Snapshot the two things the narrator compares across the action.
+        #
+        # This used to be `games[gid].copy()` — a SHALLOW copy, so
+        # `game_before["players"]` was the very same dict the action then
+        # mutated. Every "who is newly eliminated" diff compared a set against
+        # itself and came back empty, which is why the `elimination` event has
+        # never once fired. A deepcopy would fix it and cost a full clone of an
+        # 884 KB store on every request; two cheap snapshots do the same job.
+        _before = game_state.games.get(gid) or {}
+        narrator_before = {
+            "phase": _before.get("phase"),
+            "eliminated": {pid for pid, p in (_before.get("players") or {}).items()
+                           if p.get("isEliminated")},
+        }
 
         try:
             if not hasattr(game_state, action):
@@ -3291,6 +3340,18 @@ def handle(action, required):
                 # clear local state and return to the start screen.
                 socketio.emit('game_wiped', {'gameId': gid}, to=gid)
             elif action in ['reset_game', 'record_winner']:
+                # Crown the winner BEFORE the reset. `record_winner` never
+                # reaches _emit_narrator_events below — it is short-circuited
+                # into this branch — so the 'winner' event has never fired.
+                # Order matters: game_reset sends every phone back to the start
+                # screen, so a winner announced after it has nowhere to land.
+                if action == 'record_winner':
+                    winner_id = d.get('winnerId')
+                    winner = (_before.get('players') or {}).get(winner_id) or {}
+                    emit_game_event(gid, 'winner', {
+                        'player': winner.get('name', 'Unknown'),
+                        'playerId': winner_id,
+                    })
                 socketio.emit('game_reset', {'gameId': gid}, to=gid)
                 socketio.emit('global_reset', {'gameId': gid})
             else:
@@ -3299,7 +3360,7 @@ def handle(action, required):
 
                 # Emit specific game events for narrator
                 game_after = game_state.games.get(gid, {})
-                _emit_narrator_events(gid, action, d, game_before, game_after, result)
+                _emit_narrator_events(gid, action, d, narrator_before, game_after, result)
 
         except Exception as e:
             logger.error(f"Socket operation=state_update gameId={gid} error: {e}")

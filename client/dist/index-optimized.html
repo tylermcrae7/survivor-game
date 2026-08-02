@@ -34,8 +34,8 @@
     <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
 
     <!-- Preload critical resources -->
-    <link rel="preload" href="styles.css?v=torchlit-3.12.0" as="style">
-    <link rel="preload" href="game.js?v=torchlit-3.12.0" as="script">
+    <link rel="preload" href="styles.css?v=torchlit-3.13.0" as="style">
+    <link rel="preload" href="game.js?v=torchlit-3.13.0" as="script">
     <link rel="preload" href="https://cdn.socket.io/4.7.5/socket.io.min.js" as="script" crossorigin="anonymous">
 
     <!-- Tribal typography: Fraunces (ceremony) + Alegreya Sans (signage & body).
@@ -45,13 +45,13 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Alegreya+Sans+SC:wght@500;700;800&display=swap">
 
     <!-- Critical CSS -->
-    <link rel="stylesheet" href="styles.css?v=torchlit-3.12.0">
+    <link rel="stylesheet" href="styles.css?v=torchlit-3.13.0">
 
     <!-- Web App Manifest for PWA -->
     <link rel="manifest" href="manifest.json">
 
     <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.12.0">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.13.0">
 
     <!-- Socket.IO with fallback -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
@@ -503,10 +503,12 @@
                         <!-- Vote targets will be rendered here -->
                     </div>
 
+                    <!-- Seals the box and calls for idols; it does NOT tally.
+                         The Leader reads the votes from the idol screen. -->
                     <div id="leaderVotingControls" class="game-actions" style="display: none;">
                         <button class="btn btn-warning btn-enhanced touch-target" data-action="revealVotes">
-                            <svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg>
-                            Read the Votes
+                            <svg class="icon" aria-hidden="true"><use href="#i-idol"></use></svg>
+                            Seal the Box &middot; Call for Idols
                         </button>
                     </div>
                 </div></div>
@@ -524,9 +526,15 @@
                         <!-- Immunity actions will be rendered here -->
                     </div>
 
+                    <!-- The box is already full by the time this screen shows,
+                         so the only way on is the tally. "Proceed to Voting"
+                         used to send the council backwards past a played
+                         idol — and it was the only button here, which left the
+                         ceremony with no legal exit at all. -->
                     <div id="leaderImmunityControls" class="game-actions" style="display: none;">
-                        <button class="btn btn-primary btn-enhanced touch-target" data-action="proceedToVoting">
-                            Proceed to Voting
+                        <button class="btn btn-warning btn-enhanced touch-target" data-action="revealVotes">
+                            <svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg>
+                            Read the Votes
                         </button>
                     </div>
                 </div></div>
@@ -652,12 +660,12 @@
     </div>
 
     <!-- JavaScript Modules (with defer for proper loading order) -->
-    <script src="settings.js?v=torchlit-3.12.0" defer></script>
-    <script src="game.js?v=torchlit-3.12.0" defer></script>
-    <script src="network.js?v=torchlit-3.12.0" defer></script>
-    <script src="ui.js?v=torchlit-3.12.0" defer></script>
-    <script src="state-manager.js?v=torchlit-3.12.0" defer></script>
-    <script src="narrator.js?v=torchlit-3.12.0" defer></script>
+    <script src="settings.js?v=torchlit-3.13.0" defer></script>
+    <script src="game.js?v=torchlit-3.13.0" defer></script>
+    <script src="network.js?v=torchlit-3.13.0" defer></script>
+    <script src="ui.js?v=torchlit-3.13.0" defer></script>
+    <script src="state-manager.js?v=torchlit-3.13.0" defer></script>
+    <script src="narrator.js?v=torchlit-3.13.0" defer></script>
 
     <!-- Slim Initialization Script -->
     <script>
@@ -736,7 +744,6 @@
             drawCard:         () => window.SurvivorGame?.drawCard(),
             advanceTurn:      () => window.SurvivorGame?.advanceTurn(),
             revealVotes:      () => window.SurvivorGame?.revealVotes(),
-            proceedToVoting:  () => window.SurvivorGame?.proceedToVoting(),
             completeTribal:   () => window.SurvivorGame?.completeTribal(),
             resetTribal:      () => window.SurvivorGame?.resetTribal(),
             recordWinner:     () => window.SurvivorGame?.recordWinner(),
@@ -765,7 +772,6 @@
         window.drawCard = () => _actionMap.drawCard();
         window.advanceTurn = () => _actionMap.advanceTurn();
         window.revealVotes = () => _actionMap.revealVotes();
-        window.proceedToVoting = () => _actionMap.proceedToVoting();
         window.completeTribal = () => _actionMap.completeTribal();
         window.resetTribal = () => _actionMap.resetTribal();
         window.recordWinner = () => _actionMap.recordWinner();

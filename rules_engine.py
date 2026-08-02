@@ -29,9 +29,14 @@ class TribalPhase(Enum):
 TRIBAL_PHASE_TRANSITIONS = {
     TribalPhase.ANNOUNCEMENT: [TribalPhase.ADVANTAGE_PLAY, TribalPhase.DISCUSSION],
     TribalPhase.ADVANTAGE_PLAY: [TribalPhase.DISCUSSION],
-    TribalPhase.DISCUSSION: [TribalPhase.IMMUNITY, TribalPhase.VOTING],
-    TribalPhase.IMMUNITY: [TribalPhase.VOTING, TribalPhase.REVEAL],  # Allow going to reveal from immunity
-    TribalPhase.VOTING: [TribalPhase.IMMUNITY, TribalPhase.REVEAL],  # Allow going back to immunity
+    # Vote -> Idols -> Reveal is mandatory and one-way. The Survival Guide is
+    # explicit that an Immunity Idol is played "AFTER all players have voted,
+    # but BEFORE votes are tallied", so the idol window cannot be reached early
+    # from discussion (the ballot box would still be empty) and cannot be
+    # skipped on the way to the reveal (the idol would be silently voided).
+    TribalPhase.DISCUSSION: [TribalPhase.VOTING],
+    TribalPhase.IMMUNITY: [TribalPhase.REVEAL],
+    TribalPhase.VOTING: [TribalPhase.IMMUNITY],
     TribalPhase.REVEAL: []  # Final phase
 }
 

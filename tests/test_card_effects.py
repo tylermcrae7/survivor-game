@@ -22,6 +22,23 @@ from survivor_server import GameState
 from rules_engine import NON_OFFICIAL_CARD_TYPES, CHALLENGE_CARD_TYPES
 
 
+def _tally(gs, gid):
+    """Run the council to the tally, through the mandatory idol window.
+
+    "Immunity Idol ... can only be played AFTER all players have voted, but
+    BEFORE votes are tallied." So the Leader's first reveal seals the Voting
+    Box and calls for idols; a second one opens it. Tests that tallied in a
+    single call were encoding a window that could be skipped — which is
+    precisely the bug that made idols unplayable.
+    """
+    result = gs.reveal_votes(gid)
+    if isinstance(result, dict) and result.get("idolWindowOpened"):
+        result = gs.reveal_votes(gid)
+    return result
+
+
+
+
 class CardEffectTestBase(unittest.TestCase):
     """Shared 4-player game fixture with deterministic hands."""
 
@@ -315,7 +332,7 @@ class TestTurnActionCards(CardEffectTestBase):
         for voter in self.player_ids:
             target = doomed if voter != doomed else heir
             self.gs.cast_vote(self.game_id, voter, [{"targetId": target, "votes": 1}])
-        self.gs.reveal_votes(self.game_id)
+        _tally(self.gs, self.game_id)
         self.gs.complete_tribal(self.game_id)
 
         self.assertEqual(self.game["players"][doomed]["characterCards"], 1)

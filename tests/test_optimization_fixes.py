@@ -24,6 +24,23 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from survivor_server import GameState
 from rules_engine import SurvivorRulesEngine
 
+
+def _tally(gs, gid):
+    """Run the council to the tally, through the mandatory idol window.
+
+    "Immunity Idol ... can only be played AFTER all players have voted, but
+    BEFORE votes are tallied." So the Leader's first reveal seals the Voting
+    Box and calls for idols; a second one opens it. Tests that tallied in a
+    single call were encoding a window that could be skipped — which is
+    precisely the bug that made idols unplayable.
+    """
+    result = gs.reveal_votes(gid)
+    if isinstance(result, dict) and result.get("idolWindowOpened"):
+        result = gs.reveal_votes(gid)
+    return result
+
+
+
 class TestOptimizationFixes(unittest.TestCase):
     """Comprehensive tests for optimization fixes and improvements"""
 
@@ -271,7 +288,7 @@ class TestOptimizationFixes(unittest.TestCase):
         # Phase 5: Reveal votes - Player A's votes SHOULD count (immunity nullified).
         # reveal_votes moves the phase to "reveal" itself; it must be called from the
         # voting or immunity phase.
-        result_reveal = self.gs.reveal_votes(self.game_id)
+        result_reveal = _tally(self.gs, self.game_id)
         self.assertTrue(result_reveal["success"], result_reveal.get("message"))
 
         # Verify Player A received votes and was eliminated. currentVote["votes"] maps

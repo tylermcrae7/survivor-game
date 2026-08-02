@@ -70,12 +70,19 @@ struct ImmunityView: View {
                         .tracking(Torch.Track.label * Torch.TextSize.sm)
                         .foregroundStyle(Torch.Color.juryGold)
 
-                    ForEach(played, id: \.self) { playerId in
-                        let name = viewModel.gameState?.players[playerId]?.name ?? "Unknown"
+                    ForEach(Array(played.enumerated()), id: \.offset) { _, record in
+                        let players = viewModel.gameState?.players
+                        let holder = record.playerId.flatMap { players?[$0]?.name }
+                        let shielded = record.targetId.flatMap { players?[$0]?.name }
+                            ?? holder ?? "Someone"
                         HStack(spacing: 8) {
                             Image(systemName: "shield.fill")
                                 .foregroundStyle(Torch.Color.juryGold)
-                            Text("\(name) is protected")
+                            // An idol may be played for an ally, so name both
+                            // when they differ — that is the whole drama of it.
+                            Text(holder != nil && holder != shielded
+                                 ? "\(holder!) shielded \(shielded)"
+                                 : "\(shielded) is protected")
                                 .font(Torch.Font.body(Torch.TextSize.xs))
                                 .foregroundStyle(Torch.Color.text)
                         }

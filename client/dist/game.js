@@ -783,13 +783,6 @@ async function openImmunity() {
     await safeApiCall('/tribal/advance', { gameId: localGameState.gameId, phase: 'immunity', playerId: localGameState.playerId });
 }
 
-function proceedToVoting() {
-    // Leader control on the immunity screen: reveal comes next, not more voting.
-    // Kept for the existing button; it simply returns to the voting screen.
-    const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
-    showScreen('votingScreen');
-}
-
 async function completeTribal() {
     if (!localGameState.gameId) {
         (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
@@ -834,7 +827,7 @@ function startNewGame() {
 // Export functions for use in other modules
 window.SurvivorGame = {
     // State
-    APP_VERSION: '3.12.0',
+    APP_VERSION: '3.13.0',
     localGameState,
     fullGameState,
     SURVIVOR_CARDS,
@@ -889,7 +882,6 @@ window.SurvivorGame = {
     startVotingPhase,
     openImmunity,
     revealVotes,
-    proceedToVoting,
     completeTribal,
     resetTribal,
     recordWinner,

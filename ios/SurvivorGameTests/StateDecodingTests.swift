@@ -181,15 +181,43 @@ struct StateDecodingTests {
             "councilLeaderId": "p1",
             "tieBreakNeeded": false,
             "eliminated": [],
-            "immunityPlayed": ["p2"],
+            "immunityPlayed": [
+                {"playerId": "p2", "targetId": "p2", "timestamp": 1754000000.0}
+            ],
             "protectedPlayers": ["p2"]
         }
         """
         let vote = try JSONDecoder().decode(TribalVoteState.self, from: Data(json.utf8))
         #expect(vote.phase == .voting)
         #expect(vote.councilLeaderId == "p1")
-        #expect(vote.immunityPlayed == ["p2"])
+        #expect(vote.immunityPlayed?.count == 1)
+        #expect(vote.immunityPlayed?.first?.playerId == "p2")
         #expect(vote.tieBreakNeeded == false)
+    }
+
+    /// The server writes dictionaries into `immunityPlayed`
+    /// (survivor_server.py `play_immunity`), never player-id strings. This
+    /// field was typed `[String]?` and decoded behind a `try?`, so it silently
+    /// resolved to nil forever and the "Immunity Played" panel never rendered —
+    /// the fixture above had been asserting a shape the server does not send.
+    @Test func decodesAnIdolPlayedForAnAlly() throws {
+        let json = """
+        {
+            "phase": "immunity",
+            "tieBreakNeeded": false,
+            "immunityPlayed": [
+                {"playerId": "p1", "targetId": "p3", "timestamp": 1754000000.0},
+                {"playerId": "p2", "targetId": "p2", "timestamp": 1754000001.0}
+            ]
+        }
+        """
+        let vote = try JSONDecoder().decode(TribalVoteState.self, from: Data(json.utf8))
+        #expect(vote.immunityPlayed?.count == 2)
+        // Shielding an ally: the holder and the protected player differ.
+        #expect(vote.immunityPlayed?.first?.playerId == "p1")
+        #expect(vote.immunityPlayed?.first?.targetId == "p3")
+        #expect(vote.immunityPlayed?.last?.playerId == "p2")
+        #expect(vote.immunityPlayed?.last?.targetId == "p2")
     }
 
     @Test func decodesFinalTribalState() throws {

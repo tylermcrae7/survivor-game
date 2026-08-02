@@ -30,13 +30,28 @@ struct TieBreakView: View {
                     } label: {
                         HStack(spacing: 12) {
                             PlayerAvatarView(player: player, size: 40, showName: false)
-                            Text(player.name)
-                                .font(Torch.Font.body(Torch.TextSize.base, weight: .bold))
-                                .foregroundStyle(Torch.Color.parchment)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(player.name)
+                                    .font(Torch.Font.body(Torch.TextSize.base, weight: .bold))
+                                    .foregroundStyle(Torch.Color.parchment)
+                                // The stake, at the moment of the decision.
+                                // Lives are decremented later, in
+                                // complete_tribal, so this is the count the
+                                // player still has: two torches means this
+                                // costs them a Character Card, one means it
+                                // ends their game.
+                                TorchLivesView(lives: player.characterCards)
+                            }
                             Spacer()
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(Torch.Color.danger)
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(player.name), \(player.characterCards) of 2 torches lit")
+                        .accessibilityHint(player.characterCards > 1
+                                           ? "Takes one of their Survivor Character Cards"
+                                           : "Eliminates them from the game")
                         .padding(12)
                         .background(
                             RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)

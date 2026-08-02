@@ -156,6 +156,10 @@ def main():
         {
             'file': 'tests/test_places.py',
             'description': 'Places — derived camp locations, movement policy, voice plan for the Discord bot (53 tests)'
+        },
+        {
+            'file': 'tests/test_narrator_events.py',
+            'description': 'Narrator events — the commentary actually fires, names the right people, and leaks no peeked cards'
         }
     ]
     

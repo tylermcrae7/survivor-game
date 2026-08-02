@@ -264,21 +264,19 @@ private struct LeaderActionsBar: View {
                 .buttonStyle(.torchGlow)
 
             case .voting:
-                // The idol window opens only once the Voting Box has reached
-                // everyone (the server rejects voting → immunity/reveal while
-                // ballots are outstanding), so both doors are offered here.
-                Button("Open Idol Window") {
-                    Task { await viewModel.advancePhase(to: "immunity") }
-                }
-                .buttonStyle(.torchGlow)
-
-                Button("Reveal Votes") {
+                // One door, not two. This used to offer "Open Idol Window" and
+                // "Reveal Votes" side by side in identical styling — and the
+                // second one tallied on the spot, silently voiding every idol
+                // at the table, because the only screen that offers an idol is
+                // the immunity phase this button skipped. Sealing the box now
+                // *is* the call for idols; the tally lives one screen on.
+                Button("Seal the Box · Call for Idols") {
                     Task { await viewModel.revealVotes() }
                 }
                 .buttonStyle(.torchGlow)
 
             case .immunity:
-                Button("Reveal Votes") {
+                Button("Read the Votes") {
                     Task { await viewModel.revealVotes() }
                 }
                 .buttonStyle(.torchGlow)

@@ -557,7 +557,11 @@ class GameNarrator {
 
         switch (type) {
             case 'steal':
-                this.narrateSteal(player, target);
+                // The server sends {thief, victim}, not {player, target} —
+                // destructuring the wrong names passed undefined for both, so
+                // every steal narration rendered with its {thief}/{victim}
+                // placeholders still in the string.
+                this.narrateSteal(event.thief, event.victim);
                 break;
             case 'card_played':
                 this.narrateCardPlay(player, card, target);

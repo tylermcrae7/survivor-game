@@ -125,13 +125,6 @@ def _vote_blocked(game, pid):
     return bool(game.get("players", {}).get(pid, {}).get("voteBanned"))
 
 
-def _human_idol_holders(game):
-    """Living humans holding a Hidden Immunity Idol (same test windows_for uses)."""
-    return [pid for pid, p in game.get("players", {}).items()
-            if not p.get("isBot") and not p.get("isEliminated")
-            and any(c.get("type") == "immunity_idol" for c in (p.get("hand") or []))]
-
-
 def _act(method, delay_class="normal", **kwargs):
     """An action plan: which GameState method to call and with what."""
     return {"method": method, "kwargs": kwargs, "delay_class": delay_class}
@@ -435,13 +428,13 @@ def _tribal_action(game, age, rng):
                         votesData=[{"targetId": target, "votes": mandatory}])
         # Everyone (humans included) must be in before a bot leader reveals
         if leader_is_bot and all(pid in votes for pid in expected):
-            # A Hidden Immunity Idol is playable only AFTER the box is full, so
-            # a bot Leader owes any human holding one a real window before the
-            # tally. Bot-only tables keep skipping straight to the reveal.
-            if _human_idol_holders(game):
-                return _act("advance_tribal_phase", phase="immunity",
-                            playerId=leader)
-            return _act("reveal_votes")
+            # The box is full, so the idol window opens — always. This used to
+            # peek at human hands (_human_idol_holders) to decide whether the
+            # window was worth opening, which was both a read of information a
+            # Council Leader is not entitled to and a way for the window to
+            # never appear. The window is now mandatory for everyone.
+            return _act("advance_tribal_phase", phase="immunity",
+                        playerId=leader)
         return None
 
     if vph == "immunity":
@@ -599,12 +592,13 @@ def windows_for(game):
     if humans:
         for k, floor in HUMAN_WINDOW_FLOORS.items():
             w[k] = max(w[k], floor * mult)
-        # The idol window only needs air when a human can actually act in it —
-        # a bot Council Leader must not race past a person holding an idol (or
-        # a nullifier answering one), but an idle window stays quick.
-        if any(c.get("type") in ("immunity_idol", "idol_nullifier")
-               for p in humans for c in (p.get("hand") or [])):
-            w["immunity"] = max(w["immunity"], IMMUNITY_WINDOW_FLOOR * mult)
+        # The idol window gets its full pause whenever a human is at the table,
+        # never only when one is holding an idol. Timing the window off what is
+        # in people's hands leaks the very thing the window exists to keep
+        # secret: a table that learns "the long pause means somebody has an
+        # idol" has been told, by the pacing, exactly what the Survival Guide
+        # asks the Leader to find out by asking.
+        w["immunity"] = max(w["immunity"], IMMUNITY_WINDOW_FLOOR * mult)
     return w
 
 

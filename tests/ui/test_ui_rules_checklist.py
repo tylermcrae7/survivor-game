@@ -389,7 +389,16 @@ def run_checks():
                "ana_hand": [c.get("type") for c in g2["players"][ana_id]["hand"]],
                "ana_voted": g2["players"][ana_id].get("hasVoted")})
 
-        # Leader reveals — results appear on every phone
+        # Leader seals the box — the idol window opens on every phone. The
+        # Guide puts idols AFTER the last ballot and BEFORE the tally, so this
+        # first tap must NOT show a result.
+        wait_for(lambda: ana.locator('[data-action="revealVotes"]').count() >= 1, 10)
+        jsclick(ana, '[data-action="revealVotes"]')
+        check("vote: sealing the box opens the idol window, it does not tally",
+              wait_for(lambda: active_screen(ana) == 'immunityScreen', 10) is not None
+              and wait_for(lambda: active_screen(ben) == 'immunityScreen', 10) is not None)
+
+        # Leader reads the votes — results appear on every phone
         wait_for(lambda: ana.locator('[data-action="revealVotes"]').count() >= 1, 10)
         jsclick(ana, '[data-action="revealVotes"]')
         check("vote: the reveal shows the tally on every phone",
@@ -466,6 +475,8 @@ def run_checks():
                       f"refused: {r.get('message')}")
                 api("/api/vote/cast", {"gameId": gid, "voterId": voter, "votesData": []})
         wait_for(lambda: len((state(gid)["currentVote"] or {}).get("votes", {})) >= 3, 15)
+        # Two beats: seal the box, then tally (the idol window sits between).
+        api("/api/vote/reveal", {"gameId": gid, "playerId": leader4})
         api("/api/vote/reveal", {"gameId": gid, "playerId": leader4})
         cv4 = state(gid).get("currentVote") or {}
         if cv4.get("tieBreakNeeded"):
