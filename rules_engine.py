@@ -9,6 +9,7 @@ game mechanics and server infrastructure.
 import json
 import logging
 import random
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
@@ -247,6 +248,55 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 	return {"success": False, "message": f"Unknown take spec: {kind}"}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════════
+# CARD IDENTITY
+#
+# A card used to be `{"type": "vote"}` and nothing else, which made two Vote
+# Cards in one hand literally the same dictionary — indistinguishable, not
+# merely similar. Nothing could then say "this card", only "a card of this
+# type": no reordering a hand, no animating a specific card from one player to
+# another, and a Camp Raid looking for the card you just drew could only find
+# the first one that matched.
+#
+# `uid` fixes that. 12 hex characters, not 32: every action rewrites the whole
+# of games.json, and 48 bits is ample for the ~60 cards in a game.
+
+def new_card(card_type: str, **extra) -> Dict[str, Any]:
+	"""Mint a card that knows which card it is."""
+	return {"type": card_type, "uid": uuid.uuid4().hex[:12], **extra}
+
+
+def _iter_game_cards(game: Dict[str, Any]):
+	"""Every card dict in a game: hands, the draw pile, the discard."""
+	for player in (game.get("players") or {}).values():
+		if isinstance(player, dict):
+			for card in (player.get("hand") or []):
+				if isinstance(card, dict):
+					yield card
+	for pile in ("deck", "discard"):
+		for card in (game.get(pile) or []):
+			if isinstance(card, dict):
+				yield card
+
+
+def ensure_card_uids(game: Dict[str, Any]) -> int:
+	"""Give a uid to any card that lacks one. Returns how many were minted.
+
+	Idempotent, and deliberately a safety net rather than the mechanism: it
+	catches saved games from before uids existed, hands injected by the test
+	hooks, and any future site that mints a card and forgets the factory. The
+	discard is swept too — it is reshuffled into the Draw Pile when that empties,
+	so a uid-less card there becomes a uid-less card in somebody's hand hours
+	later, which is the sort of bug that surfaces once and is never reproduced.
+	"""
+	minted = 0
+	for card in _iter_game_cards(game):
+		if not card.get("uid"):
+			card["uid"] = uuid.uuid4().hex[:12]
+			minted += 1
+	return minted
+
+
 def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
                  source: str, spec: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
 	"""
@@ -475,7 +525,7 @@ class SurvivorRulesEngine:
 
 			# Add the specified count of each card type (compact format)
 			for _ in range(card_data.get('count', 0)):
-				card = {"type": card_data["type"]}
+				card = new_card(card_data["type"])
 				deck.append(card)
 				total_action_cards += 1
 
@@ -595,23 +645,21 @@ class SurvivorRulesEngine:
 			
 		# Add single elimination cards
 		for _ in range(config["single"]):
-			tribal_cards.append({
-			"type": "tribal_council_single",
-			"category": "tribal_council",
-			"name": single_def["name"],
-			"description": single_def["description"],
-			"elimination_type": "single"
-			})
+			tribal_cards.append(new_card(
+			"tribal_council_single",
+			category="tribal_council",
+			name=single_def["name"],
+			description=single_def["description"],
+			elimination_type="single"))
 			
 		# Add double elimination cards
 		for _ in range(config["double"]):
-			tribal_cards.append({
-			"type": "tribal_council_double",
-			"category": "tribal_council",
-			"name": double_def["name"],
-			"description": double_def["description"],
-			"elimination_type": "double"
-			})
+			tribal_cards.append(new_card(
+			"tribal_council_double",
+			category="tribal_council",
+			name=double_def["name"],
+			description=double_def["description"],
+			elimination_type="double"))
 			
 		return tribal_cards
 		
@@ -1010,7 +1058,7 @@ class SurvivorRulesEngine:
 		# (Goodwill Gamble instead moves to its recipient)
 		advantage_card = hand.pop(tribal_card_idx)
 		if advantage_type != "goodwill_gamble":
-			game.setdefault("discard", []).append({"type": advantage_type})
+			game.setdefault("discard", []).append(advantage_card)
 		
 		# Execute advantage effect
 		advantage_effects = {
@@ -1593,7 +1641,8 @@ class SurvivorRulesEngine:
 		target = game["players"][target_id]
 
 		# The physical card moves into the recipient's hand and counts as 1 vote
-		target.setdefault("hand", []).append({"type": "goodwill_gamble"})
+		target.setdefault("hand", []).append(
+			{"type": "goodwill_gamble", "uid": card.get("uid") or uuid.uuid4().hex[:12]})
 		self.sync_vote_counters(game)
 
 		return {"message": f"{player['name']} gave a Goodwill Gamble to {target['name']} — it counts as 1 vote and must be used at this Tribal Council"}

@@ -22,7 +22,12 @@ final class CardCatalog {
     /// A full card for a bare hand stub. Unknown types pass through untouched
     /// (they still render by prettified type name).
     func resolve(_ card: CardInstance) -> CardInstance {
-        guard card.category == nil, let full = cards[card.type] else { return card }
+        guard card.category == nil, var full = cards[card.type] else { return card }
+        // Merge, never replace: `full` is the shared catalog entry, so
+        // returning it discards everything that made this card *this* card.
+        // Before uids that was invisible; now it would give every card in a
+        // hand the same identity and collapse the grid.
+        full.uid = card.uid
         return full
     }
 

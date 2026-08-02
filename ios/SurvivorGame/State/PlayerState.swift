@@ -182,12 +182,17 @@ struct CardInstance: Codable, Equatable, Identifiable {
     var requiresMultipleTargets: Bool?
     var requiresConfirmation: Bool?
     var reactiveOnly: Bool?
+    /// Server-minted per-instance identity. Two Vote Cards in one hand used to
+    /// be the same dictionary on the wire and the same `id` here, so nothing
+    /// could name one of them.
+    var uid: String?
 
-    /// Stable identity: type + position-based (set externally)
-    var id: String { type + (name ?? "") }
+    /// Falls back to type+name for a server that predates uids, or a card
+    /// synthesised locally.
+    var id: String { uid ?? (type + (name ?? "")) }
 
     enum CodingKeys: String, CodingKey {
-        case type, category, name, description
+        case type, category, name, description, uid
         case playablePhases = "playable_phases"
         case requiresTarget = "requires_target"
         case requiresMultipleTargets = "requires_multiple_targets"

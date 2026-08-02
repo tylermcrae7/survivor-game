@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from functools import wraps
 from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
+                          new_card, ensure_card_uids,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 from places import (DEFAULT_PLACE, PLACE_KEYS, PLACE_LABELS, place_policy,
@@ -283,6 +284,13 @@ class GameState:
                         f"Healing poisoned challenge actionCount in {gid} "
                         f"({ch['actionCount']} -> 0)")
                     ch["actionCount"] = 0
+                # Every card saved before cards had identities gets one now.
+                # Deliberately not saved here: the in-memory state is
+                # authoritative and the next ordinary action persists it, so a
+                # boot doesn't pay for a full rewrite of the store.
+                minted = ensure_card_uids(game)
+                if minted:
+                    logger.info(f"Backfilled {minted} card uid(s) in {gid}")
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading {self._FILE}: {e}")
             self._backup_and_reset()
@@ -536,7 +544,7 @@ class GameState:
                 if action_deck:
                     player["hand"].append(action_deck.pop(0))
             # ...plus exactly 1 Vote Card, which never sat in the deck.
-            player["hand"].append({"type": "vote"})
+            player["hand"].append(new_card("vote"))
 
         g["deck"] = self.rules_engine.assemble_deck(
             action_deck, len(g["players"]), deck_mode=deck_mode, expansion=expansion
@@ -588,6 +596,11 @@ class GameState:
         self._sweep_expired_discards(gid)
         game = self.games.get(gid)
         if not game: return None
+        # Backstop, on the live object rather than the copy so the identity is
+        # stable across broadcasts: no card can reach a client without a uid,
+        # whatever minted it. Covers the test hooks, unit tests that assign
+        # hands directly, and the next create site somebody adds.
+        ensure_card_uids(game)
         import copy
         enriched_game = copy.deepcopy(game)
         # Keep derived vote-card counters honest for the client
@@ -1503,7 +1516,7 @@ class GameState:
 
         # The Tribal Council Card itself goes face up on the Discard Pile
         game.setdefault("discard", []).append(
-            {"type": f"tribal_council_{current_vote.get('type', 'single')}"})
+            new_card(f"tribal_council_{current_vote.get('type', 'single')}"))
 
         # ── Return 1 Vote Card to every player still in the game ──
         # "After voting has ended, return 1 Vote Card to every player who still has
@@ -1512,7 +1525,7 @@ class GameState:
         for player_id, player in game["players"].items():
             if player.get("isEliminated", False):
                 continue
-            player.setdefault("hand", []).append({"type": "vote"})
+            player.setdefault("hand", []).append(new_card("vote"))
             vote_cards_returned.append(player_id)
 
         # Reset per-tribal flags using rules engine
@@ -2552,7 +2565,7 @@ class GameState:
 
         # "place it face up on the Discard Pile"
         if card.get("category") != "tribal_council" and card.get("type") != "goodwill_gamble":
-            game.setdefault("discard", []).append({"type": card.get("type")})
+            game.setdefault("discard", []).append(played_card)
 
         # Handle tribal council card triggers
         if card.get("category") == "tribal_council":
@@ -4065,7 +4078,7 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
         game = game_state.games.get(gid)
         if not game or pid not in game.get("players", {}) or not isinstance(hand, list):
             return jsonify(success=False, message="bad test hook call"), 400
-        game["players"][pid]["hand"] = [{"type": c} if isinstance(c, str) else c for c in hand]
+        game["players"][pid]["hand"] = [new_card(c) if isinstance(c, str) else c for c in hand]
         game_state.rules_engine.sync_vote_counters(game)
         game_state._save(gid)
         socketio.emit('state_update', game_state.get_game_state(gid) or {}, to=gid)
@@ -4079,7 +4092,7 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
         game = game_state.games.get(gid)
         if not game or not isinstance(top, list):
             return jsonify(success=False, message="bad test hook call"), 400
-        cards = [{"type": c} if isinstance(c, str) else c for c in top]
+        cards = [new_card(c) if isinstance(c, str) else c for c in top]
         game["deck"] = cards + (game.get("deck") or [])
         game_state._save(gid)
         return jsonify(success=True)

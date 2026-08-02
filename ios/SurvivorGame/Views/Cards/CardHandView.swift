@@ -48,7 +48,7 @@ private struct CardHandContent: View {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Torch.Spacing.sm),
                                     GridItem(.flexible(), spacing: Torch.Spacing.sm)],
                           spacing: Torch.Spacing.sm) {
-                    ForEach(Array(viewModel.hand.enumerated()), id: \.offset) { index, card in
+                    ForEach(Array(viewModel.hand.enumerated()), id: \.element.id) { index, card in
                         Button {
                             viewModel.selectCard(at: index)
                             HapticEngine.selection()
