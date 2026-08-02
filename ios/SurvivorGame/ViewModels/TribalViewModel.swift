@@ -27,6 +27,14 @@ final class TribalViewModel {
 
     var activePlayers: [PlayerState] { gameState?.activePlayers ?? [] }
 
+    var sortedPlayers: [PlayerState] { gameState?.sortedPlayers ?? [] }
+
+    /// The ceremony pins everyone to one place. Surfacing the policy here is
+    /// what makes the locked row reachable at all — during `playing` the
+    /// server never forces a place, so the forced branch of `PlacesBar` was
+    /// unreachable while it was only mounted on the camp screen.
+    var placePolicy: PlacePolicy? { gameState?.placePolicy }
+
     var voteTargets: [PlayerState] {
         guard let myId = myPlayerId else { return activePlayers }
         return activePlayers.filter { $0.id != myId }

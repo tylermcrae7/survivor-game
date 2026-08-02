@@ -127,6 +127,22 @@ private struct TribalContent: View {
             .minimumScaleFactor(0.5)
             .padding(.vertical, 12)
 
+            // Where everyone is standing, in its locked form — one compact
+            // row, not the camp's full band. The ceremony is the only phase
+            // that forces a place, so this is also the only screen the forced
+            // row can ever appear on. It earns the space: a Discord bot is
+            // physically dragging players into the Tribal Council voice
+            // channel, and this row is the on-screen reason their audio moved.
+            if let policy = viewModel.placePolicy, policy.isForced {
+                PlacesBar(
+                    policy: policy,
+                    players: viewModel.sortedPlayers,
+                    myPlayerId: viewModel.myPlayerId,
+                    onMove: { _ in }
+                )
+                .padding(.bottom, 12)
+            }
+
             hairline
 
             // Phase content

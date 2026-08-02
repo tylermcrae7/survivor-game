@@ -18,6 +18,13 @@ struct AppSettingsSheet: View {
     @State private var showForgetConfirmation = false
     @State private var loaded = false
 
+    /// One focus binding for the whole sheet: a SwiftUI keyboard toolbar is
+    /// scoped to the form, not to the field it is written next to, so the
+    /// Done button has to be able to let go of whichever field is up.
+    private enum Field: Hashable { case server, name, discord }
+    @FocusState private var focusedField: Field?
+    private var discordFieldFocused: Bool { focusedField == .discord }
+
     @AppStorage("defaultDeckMode") private var defaultDeckMode = "official"
     @AppStorage("defaultExpansion") private var defaultExpansion = false
     @AppStorage("defaultBotPace") private var defaultBotPace = "normal"
@@ -38,6 +45,7 @@ struct AppSettingsSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                        .focused($focusedField, equals: .server)
                         .accessibilityHint("The HTTPS address of the Survivor game server")
 
                     Button {
@@ -73,34 +81,47 @@ struct AppSettingsSheet: View {
                 Section {
                     TextField("Your name", text: $playerName)
                         .textInputAutocapitalization(.words)
+                        .focused($focusedField, equals: .name)
                     BuffColorPicker(selectedColor: $preferredColor)
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Discord user ID")
-                            .font(Torch.Font.label(Torch.TextSize.xs))
-                            .tracking(Torch.Track.label * Torch.TextSize.xs)
-                            .foregroundStyle(Torch.Color.textSecondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Discord user ID")
+                                .font(Torch.Font.label(Torch.TextSize.xs))
+                                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                .foregroundStyle(Torch.Color.textSecondary)
+                            // The server refuses a malformed ID outright — and
+                            // it does so on JOIN, where the failure would read
+                            // as "the island turned me away". Say it here
+                            // instead, ABOVE the field: the number pad covers
+                            // everything below it, which is exactly where this
+                            // warning used to sit and never be read.
+                            if showsDiscordHint {
+                                Text("A Discord user ID is a long run of digits — usually 18.")
+                                    .font(Torch.Font.body(Torch.TextSize.xs))
+                                    .foregroundStyle(Torch.Color.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .transition(.opacity)
+                            }
+                        }
                         TextField("000000000000000000", text: $discordUserId)
                             .keyboardType(.numberPad)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .torchField()
+                            .focused($focusedField, equals: .discord)
                             .accessibilityLabel("Discord user ID")
+                            .accessibilityValue(showsDiscordHint
+                                ? "That doesn't look like a Discord user ID — it is a long run of digits, usually 18."
+                                : "")
                             // A pasted ID often arrives wrapped in spaces or
                             // angle brackets; keep only what the server accepts.
                             .onChange(of: discordUserId) { _, value in
                                 let digits = value.filter(\.isNumber)
                                 if digits != value { discordUserId = digits }
                             }
-                        // The server refuses a malformed ID outright — and it
-                        // does so on JOIN, where the failure would read as "the
-                        // island turned me away". Say it here instead.
-                        if !discordIdLooksRight {
-                            Text("A Discord user ID is a long run of digits — usually 18.")
-                                .font(Torch.Font.body(Torch.TextSize.xs))
-                                .foregroundStyle(Torch.Color.warning)
-                        }
                     }
                     .padding(.vertical, 4)
+                    .animation(.easeOut(duration: 0.15), value: showsDiscordHint)
                 } header: {
                     sectionLabel("you")
                 } footer: {
@@ -189,6 +210,15 @@ struct AppSettingsSheet: View {
                         dismiss()
                     }
                 }
+                // The Discord ID field takes a number pad, which has no return
+                // key: without this the only ways out are the nav-bar Done
+                // (which saves) or dragging the sheet away. It rides above
+                // every keyboard in the sheet, so it lets go of whichever
+                // field is up rather than one particular one.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focusedField = nil }
+                }
             }
             .onAppear { loadOnce() }
             .onChange(of: keepAwake) { _, value in
@@ -236,6 +266,16 @@ struct AppSettingsSheet: View {
         let trimmed = discordUserId.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty
             || trimmed.range(of: "^[0-9]{15,25}$", options: .regularExpression) != nil
+    }
+
+    /// Whether to actually complain yet. A real 18-digit ID is "too short" for
+    /// its first fourteen keystrokes, and an amber warning that fires on every
+    /// one of them is a warning people learn to ignore. So: judge on blur,
+    /// where the answer is final — and immediately while typing only once the
+    /// value has run past any plausible snowflake, which is unambiguous.
+    private var showsDiscordHint: Bool {
+        guard !discordIdLooksRight else { return false }
+        return !discordFieldFocused || discordUserId.count > 25
     }
 
     private var accessDescription: String {

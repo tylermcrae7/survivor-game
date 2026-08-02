@@ -34,22 +34,47 @@ struct PlacesBar: View {
             )
             .padding(.horizontal, 16)
         } else if !policy.open.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(policy.open, id: \.self) { key in
-                        PlaceCard(
-                            placeKey: key,
-                            occupants: occupants(of: key),
-                            isHere: key == myPlace,
-                            myPlayerId: myPlayerId,
-                            isMoving: isMoving,
-                            move: { onMove(key) }
-                        )
-                    }
+            // The whole premise of the band is seeing every place at once —
+            // who wandered off with whom is the information, and it cannot be
+            // information if a card is parked off the right edge. So the open
+            // places share the width equally and the labels scale down rather
+            // than truncate.
+            //
+            // `ViewThatFits` does the measuring, so no device width is baked
+            // in: each card asks for `Layout.minCardWidth` as its ideal, and
+            // if the phase ever opens more places than can stay legible side
+            // by side, the scrolling row underneath is the graceful fallback.
+            ViewThatFits(in: .horizontal) {
+                openRow(equalWidth: true)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    openRow(equalWidth: false)
                 }
-                .padding(.horizontal, 16)
             }
         }
+    }
+
+    private func openRow(equalWidth: Bool) -> some View {
+        HStack(spacing: PlacesBar.Layout.cardGap) {
+            ForEach(policy.open, id: \.self) { key in
+                PlaceCard(
+                    placeKey: key,
+                    occupants: occupants(of: key),
+                    isHere: key == myPlace,
+                    myPlayerId: myPlayerId,
+                    isMoving: isMoving,
+                    sharesWidth: equalWidth,
+                    move: { onMove(key) }
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    enum Layout {
+        static let cardGap: CGFloat = 8
+        /// The narrowest a shared-width card may get before the band stops
+        /// pretending everything fits and starts scrolling instead.
+        static let minCardWidth: CGFloat = 96
     }
 }
 
@@ -61,26 +86,37 @@ private struct PlaceCard: View {
     let isHere: Bool
     let myPlayerId: String?
     let isMoving: Bool
+    /// True when the band is laying every place out side by side, so this card
+    /// takes an equal share of the width instead of its natural size.
+    var sharesWidth: Bool = true
     let move: () -> Void
 
     var body: some View {
         Button(action: move) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Image(systemName: Place.symbolName(for: placeKey))
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundStyle(isHere ? Torch.Color.torch : Torch.Color.textSecondary)
                     Text(Place.label(for: placeKey))
                         .font(Torch.Font.label(Torch.TextSize.xs))
                         .tracking(Torch.Track.label * Torch.TextSize.xs)
                         .foregroundStyle(isHere ? Torch.Color.parchment : Torch.Color.textSecondary)
+                        // A long name shrinks to fit its share of the band
+                        // rather than truncating mid-word.
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
                 OccupantStrip(occupants: occupants, myPlayerId: myPlayerId, limit: 4)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .padding(.vertical, 8)
-            .frame(minWidth: 108, alignment: .leading)
+            .frame(
+                minWidth: sharesWidth ? PlacesBar.Layout.minCardWidth : 108,
+                idealWidth: sharesWidth ? PlacesBar.Layout.minCardWidth : nil,
+                maxWidth: sharesWidth ? .infinity : nil,
+                alignment: .leading
+            )
             .background(
                 RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
                     .fill(isHere ? Torch.Color.surfaceRaised : Torch.Color.surfaceSunken)
@@ -93,9 +129,17 @@ private struct PlaceCard: View {
             .contentShape(RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
-        // The place you're already in is marked, not tappable.
-        .disabled(isHere || isMoving)
-        .opacity(isMoving && !isHere ? 0.5 : 1)
+        // "You are here" is a highlight, not a disabled state. `.disabled()`
+        // dims the entire button label — the place name, its icon and your own
+        // chip — which made the card you are standing in the faintest one on
+        // the band and inverted the emphasis this card exists to carry. Take
+        // the tap target away instead and let the amber border and glow mark
+        // it; the view model refuses a move to where you already are anyway,
+        // so a VoiceOver activation is a harmless no-op.
+        .allowsHitTesting(!isHere && !isMoving)
+        // A move in flight is the one genuinely transient case, and dimming
+        // the whole band for the round trip is honest there.
+        .disabled(isMoving)
         .animation(.easeOut(duration: 0.18), value: isHere)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(PlaceOccupancy.describe(
@@ -155,33 +199,56 @@ private struct ForcedPlaceRow: View {
 private struct OccupantStrip: View {
     let occupants: [PlayerState]
     let myPlayerId: String?
+    /// The most faces this row will ever show. It shows fewer when the card is
+    /// too narrow to hold them, folding the remainder into `+N`.
     var limit: Int
     var size: CGFloat = 22
 
+    /// Widest first — `ViewThatFits` takes the first row that actually fits
+    /// the card it landed in, so a crowded place on a narrow band drops faces
+    /// instead of spilling past its own border.
+    private var candidateCounts: [Int] {
+        Array(stride(from: min(limit, occupants.count), through: 1, by: -1))
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
-            if occupants.isEmpty {
-                Text("empty")
-                    .font(Torch.Font.label(Torch.TextSize.xs))
-                    .tracking(Torch.Track.label * Torch.TextSize.xs)
-                    .foregroundStyle(Torch.Color.textFaint)
-            } else {
-                ForEach(occupants.prefix(limit)) { player in
-                    OccupantChip(
-                        player: player,
-                        isMe: player.id == myPlayerId,
-                        size: size
-                    )
-                }
-                if occupants.count > limit {
-                    Text("+\(occupants.count - limit)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Torch.Color.textSecondary)
+        content
+            .frame(height: size, alignment: .leading)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var content: some View {
+        if occupants.isEmpty {
+            Text("empty")
+                .font(Torch.Font.label(Torch.TextSize.xs))
+                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                .foregroundStyle(Torch.Color.textFaint)
+                .lineLimit(1)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                ForEach(candidateCounts, id: \.self) { shown in
+                    chips(showing: shown)
                 }
             }
         }
-        .frame(height: size, alignment: .leading)
-        .accessibilityHidden(true)
+    }
+
+    private func chips(showing shown: Int) -> some View {
+        HStack(spacing: 4) {
+            ForEach(occupants.prefix(shown)) { player in
+                OccupantChip(
+                    player: player,
+                    isMe: player.id == myPlayerId,
+                    size: size
+                )
+            }
+            if occupants.count > shown {
+                Text("+\(occupants.count - shown)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Torch.Color.textSecondary)
+                    .fixedSize()
+            }
+        }
     }
 }
 
