@@ -242,10 +242,6 @@ class InheritanceEstateTest(unittest.TestCase):
         self.assertNotIn(card, hand_types(game, heir), "and the card was spent")
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
-
-
 class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
     """A game already in flight when the card changed.
 
@@ -353,3 +349,7 @@ class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
 
         self.assertTrue(messages)
         self.assertIn("camp_raid", hand_types(self.game, heir))
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
