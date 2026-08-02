@@ -787,6 +787,10 @@ const GameAPI = {
     async blockImmunity(gameId, targetId) {
         return apiCall('/immunity/block', { gameId, targetId });
     },
+
+    async declineNullifier(gameId, playerId) {
+        return apiCall('/immunity/decline', { gameId, playerId });
+    },
     
     async revealVotes(gameId) {
         return apiCall('/vote/reveal', { gameId });

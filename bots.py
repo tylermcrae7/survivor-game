@@ -438,6 +438,30 @@ def _tribal_action(game, age, rng):
         return None
 
     if vph == "immunity":
+        # An idol is on the table awaiting its answer. This outranks everything
+        # else in the phase, including the Leader's reveal: a bot that stays
+        # quiet here holds the ceremony open for the whole table, and nothing
+        # would ever time it out.
+        window = game.get("pending_nullifier")
+        if window and window.get("reactive_window_open"):
+            answered = set(window.get("_answered") or [])
+            protected = window.get("targetId")
+            for pid in window.get("_responderIds") or []:
+                if pid in answered or not is_bot(game, pid):
+                    continue
+                if game["players"].get(pid, {}).get("isEliminated"):
+                    continue
+                # Spend it on a real threat, hold it otherwise — a nullifier
+                # burned on a harmless shield is a wasted card.
+                if protected and protected != pid \
+                        and protected == _biggest_threat(game, pid):
+                    return _act("block_immunity", playerId=pid, targetId=protected)
+                return _act("decline_nullifier", playerId=pid)
+            # Every bot has spoken; a human still owes an answer.
+            if any(pid not in answered and not is_bot(game, pid)
+                   for pid in (window.get("_responderIds") or [])):
+                return None
+
         # The idol window is open — threatened bots respond
         hand_leader = _biggest_threat(game, "")   # the table's card leader
         for pid in alive:

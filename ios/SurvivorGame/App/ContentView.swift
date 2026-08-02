@@ -44,9 +44,15 @@ struct ContentView: View {
                     InteractionScreen()
                 }
 
-                // The Sorry-For-You window outranks every screen — an unresolved
-                // raid freezes the game for the whole table until it's answered.
-                ReactiveTheftOverlay()
+                // Reactive windows outrank every screen — an unresolved one
+                // freezes the game for the whole table until it's answered.
+                // Exactly one shows at a time: two stacked modals, each with
+                // its own black scrim, would be unreadable and unclosable.
+                if gameClient.gameState?.pendingTheft?.reactiveWindowOpen == true {
+                    ReactiveTheftOverlay()
+                } else {
+                    NullifierWindowOverlay()
+                }
 
                 if gameClient.connectionState == .reconnecting
                     || (gameClient.connectionState == .disconnected && gameClient.gameState != nil) {

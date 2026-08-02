@@ -158,6 +158,10 @@ def main():
             'description': 'Places — derived camp locations, movement policy, voice plan for the Discord bot (53 tests)'
         },
         {
+            'file': 'tests/test_nullifier_window.py',
+            'description': 'Idol Nullifier — the reactive window an idol opens, and every way it must not wedge a council'
+        },
+        {
             'file': 'tests/test_narrator_events.py',
             'description': 'Narrator events — the commentary actually fires, names the right people, and leaks no peeked cards'
         }

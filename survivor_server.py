@@ -588,7 +588,8 @@ class GameState:
         self.rules_engine.sync_vote_counters(enriched_game)
         # Strip hidden information (secret rock pulls, secret throws/fingers)
         # before it leaves the server — these keys reveal only at the reveal step.
-        for hidden_holder in ("challenge", "interaction", "pending_theft"):
+        for hidden_holder in ("challenge", "interaction", "pending_theft",
+                              "pending_nullifier"):
             holder = enriched_game.get(hidden_holder)
             if isinstance(holder, dict):
                 for key in [k for k in holder if k.startswith("_")]:
@@ -809,6 +810,12 @@ class GameState:
         # Check if player has already played immunity this tribal
         if player.get("immunityPlayed", False):
             return {"success": False, "message": "Player has already played immunity this tribal council"}
+
+        # One idol at a time: a second one played while the first is still
+        # being answered leaves two windows open and no defined precedence.
+        blocked = self._nullifier_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
         
         # Find immunity idol in player's hand
         hand = player.get("hand", [])
@@ -852,14 +859,42 @@ class GameState:
             "timestamp": time.time()
         })
         
+        # An Idol Nullifier answers an idol, so it needs a beat in which to be
+        # played. Without one the holder is at the mercy of how fast the Leader
+        # taps: the nullifier is only legal once a target actually holds
+        # protection, so it cannot be played early, and the tally can land at
+        # any moment, so it often could not be played at all.
+        #
+        # Unlike the Sorry For You gate this does NOT hold the idol back — the
+        # protection applies immediately and the nullifier undoes it, because a
+        # holder has to see the protection to target it.
+        responders = [
+            pid for pid, p in game["players"].items()
+            if not p.get("isEliminated")
+            and any(self.rules_engine.resolve_card(c).get("type") == "idol_nullifier"
+                    for c in (p.get("hand") or []))
+        ]
+        if responders:
+            game["pending_nullifier"] = {
+                "idolPlayerId": playerId,
+                "targetId": target_id,
+                "reactive_window_open": True,
+                # Underscore-prefixed: get_game_state strips these before the
+                # state leaves the server. This list names every nullifier
+                # holder at the table and must never reach a client.
+                "_responderIds": responders,
+                "_answered": [],
+            }
+
         self._save(gid)
         logger.info(f"Player {playerId} played immunity idol for {target_id} in game {gid}")
-        
+
         return {
             "success": True,
             "message": effect_result.get("message", f"Immunity idol played for {target.get('name', 'player')}"),
             "targetId": target_id,
-            "protectedPlayer": target.get("name", "player")
+            "protectedPlayer": target.get("name", "player"),
+            "nullifierWindowOpen": bool(responders),
         }
 
     def block_immunity(self, gid, playerId=None, targetId=None, **kwargs):
@@ -933,15 +968,75 @@ class GameState:
             "timestamp": time.time()
         })
         
+        # The answer has been given — close the window for everyone.
+        game.pop("pending_nullifier", None)
+
         self._save(gid)
         logger.info(f"Player {playerId} nullified {targetId}'s immunity in game {gid}")
-        
+
         return {
             "success": True,
             "message": effect_result.get("message", f"Nullified {target.get('name', 'player')}'s immunity"),
             "targetId": targetId,
             "nullifiedPlayer": target.get("name", "player")
         }
+
+    def decline_nullifier(self, gid, playerId=None, **kwargs):
+        """Hold your peace while an Immunity Idol stands.
+
+        The counterpart to `block_immunity`. A window that only one holder can
+        close by *acting* is a window a quiet player can freeze for the whole
+        table, so declining is a first-class move — and the last decline closes
+        it for everyone.
+        """
+        if gid not in self.games:
+            return {"success": False, "message": "Game not found"}
+
+        game = self.games[gid]
+        window = game.get("pending_nullifier")
+        if not window or not window.get("reactive_window_open"):
+            return {"success": False, "message": "No idol is waiting for an answer"}
+
+        responders = window.get("_responderIds") or []
+        answered = window.get("_answered") or []
+
+        # The Council Leader can call time. A window that only closes when
+        # every holder chooses to answer is a window one distracted or departed
+        # player can freeze the endgame with — and there is no server-side
+        # ticker for a human-only game to rescue it. This is the digital
+        # "going once, going twice", and it mirrors the authority the Leader
+        # already has over every other beat of the ceremony.
+        leader_id = (game.get("currentVote") or {}).get("councilLeaderId")
+        if playerId == leader_id and playerId not in responders:
+            game.pop("pending_nullifier", None)
+            self._save(gid)
+            return {"success": True, "windowClosed": True,
+                    "message": "The Leader called time — the idol stands."}
+
+        if playerId not in responders:
+            return {"success": False, "message": "You have nothing to answer this idol with"}
+        if playerId not in answered:
+            answered.append(playerId)
+            window["_answered"] = answered
+
+        # Anyone who has since left the game cannot answer, so they must not be
+        # able to hold the ceremony open either.
+        live = [pid for pid in responders
+                if pid in game["players"] and not game["players"][pid].get("isEliminated")]
+        if all(pid in answered for pid in live):
+            game.pop("pending_nullifier", None)
+            self._save(gid)
+            return {"success": True, "message": "The idol stands.", "windowClosed": True}
+
+        self._save(gid)
+        return {"success": True, "message": "You held your peace.", "windowClosed": False}
+
+    def _nullifier_block_reason(self, game):
+        """Why the ceremony cannot move on yet, without naming who is holding it."""
+        window = game.get("pending_nullifier")
+        if window and window.get("reactive_window_open"):
+            return "An Immunity Idol is on the table — waiting to see if it stands"
+        return None
 
     def reveal_votes(self, gid, **kwargs):
         """
@@ -970,6 +1065,13 @@ class GameState:
         if missing:
             return {"success": False,
                     "message": f"The Voting Box hasn't reached everyone — waiting on {missing}"}
+
+        # An idol on the table gets its answer before the box is opened.
+        # Without this a Leader could tally straight through an open nullifier
+        # window, which is the skippable-idol bug wearing a different hat.
+        blocked = self._nullifier_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
 
         # The idol window is a DOORWAY, not an option. A reveal called straight
         # from voting used to tally on the spot, which silently voided every
@@ -1644,6 +1746,12 @@ class GameState:
             if missing:
                 return {"success": False,
                         "message": f"The Voting Box hasn't reached everyone — waiting on {missing}"}
+
+        # An idol awaiting its answer holds the ceremony where it is.
+        if target_phase == "reveal":
+            blocked = self._nullifier_block_reason(game)
+            if blocked:
+                return {"success": False, "message": blocked}
 
         success, message = self.rules_engine.advance_tribal_phase(game, target_phase)
         
@@ -4014,6 +4122,8 @@ def api_cast():    return handle('cast_vote',['voterId','votesData'])
 def api_imm():     return handle('play_immunity',['playerId'])
 @app.route('/api/immunity/block',methods=['POST'])
 def api_block():   return handle('block_immunity',['targetId'])
+@app.route('/api/immunity/decline',methods=['POST'])
+def api_decline(): return handle('decline_nullifier',['playerId'])
 @app.route('/api/vote/reveal',methods=['POST'])
 def api_reveal():  return handle('reveal_votes',[])
 @app.route('/api/vote/tiebreak',methods=['POST'])

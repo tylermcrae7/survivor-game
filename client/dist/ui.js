@@ -677,12 +677,16 @@ window.playImmunityIdol = async function (targetId) {
 window.playIdolNullifier = async function (targetId) {
     const me = window.SurvivorGame?.localGameState?.playerId;
     const hand = window.SurvivorGame?.fullGameState?.players?.[me]?.hand || [];
-    const idx = hand.findIndex(c => c.type === 'idol_nullifier');
-    if (idx < 0) {
+    if (!hand.some(c => c.type === 'idol_nullifier')) {
         showToast("You don't hold an Idol Nullifier", 'warning');
         return;
     }
-    playCard(idx, { targetId });
+    // /immunity/block, not playCard. The generic play path reaches the effect
+    // without the check that the target actually holds protection, so this
+    // used to let you burn the nullifier on somebody holding nothing — and
+    // stamp them `idolNullified`, which then refused a later, real one.
+    await window.SurvivorNetwork.blockImmunity(
+        window.SurvivorGame.localGameState.gameId, targetId);
 };
 
 /**
@@ -2427,6 +2431,11 @@ function updateFromDiff(diff) {
         renderReactiveTheft(window.SurvivorGame.fullGameState);
     }
 
+    // An idol awaiting its answer arrives as a pending_nullifier diff
+    if (diff.pending_nullifier !== undefined) {
+        renderNullifierWindow(window.SurvivorGame.fullGameState);
+    }
+
     // Reward Challenge interaction state changes
     if (diff.interaction !== undefined) {
         renderInteraction(window.SurvivorGame.fullGameState);
@@ -2791,6 +2800,7 @@ function updateCurrentScreen(gameState) {
 
     // Reactive theft window (Sorry For You) — must render regardless of screen
     renderReactiveTheft(gameState);
+    renderNullifierWindow(gameState);
 
     // Reward Challenge interactions (Do Or Die / Power Pair / Numbers Game)
     renderInteraction(gameState);
@@ -2879,6 +2889,97 @@ function renderReactiveTheft(gameState) {
     } else if (thiefIds.includes(me)) {
         showReactiveWaitBanner(targetName);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE IDOL NULLIFIER WINDOW
+//
+// A nullifier answers an idol, and the server refuses one until a target
+// actually holds protection — so it can never be played early. Before this
+// window existed the only thing between a holder and their card was how fast
+// the Leader tapped, and the tally could land at any moment.
+//
+// Unlike the theft gate this does NOT hold the idol back: protection applies at
+// once and the nullifier undoes it, because you have to see the shield to aim
+// at it.
+//
+// Who gets prompted is decided from your OWN hand. The server keeps the list of
+// holders under an underscore key and strips it before the state ships, so no
+// client can learn who else is holding one.
+
+let nullifierWindowKey = null;
+
+function renderNullifierWindow(gameState) {
+    const pending = gameState?.pending_nullifier;
+    const open = !!(pending && pending.reactive_window_open);
+    const me = window.SurvivorGame?.localGameState?.playerId;
+    const key = open ? `${pending.idolPlayerId}:${pending.targetId}` : null;
+
+    if (key === nullifierWindowKey) return;   // no change
+
+    if (nullifierWindowKey !== null) {
+        removeReactiveWaitBanner();
+        if (document.querySelector('.nullifier-dialog')) hideModal();
+    }
+    nullifierWindowKey = key;
+    if (!open) return;
+
+    const hand = gameState.players?.[me]?.hand || [];
+    const holdsNullifier = hand.some(c => c.type === 'idol_nullifier');
+    const idolName = gameState.players?.[pending.idolPlayerId]?.name || 'Someone';
+    const shieldedName = gameState.players?.[pending.targetId]?.name || idolName;
+
+    if (holdsNullifier && me !== pending.idolPlayerId
+        && !gameState.players?.[me]?.isEliminated) {
+        showNullifierDialog(pending, idolName, shieldedName);
+    } else if (me === pending.idolPlayerId) {
+        showReactiveWaitBanner(shieldedName);
+    }
+}
+
+function showNullifierDialog(pending, idolName, shieldedName) {
+    const shieldedAnAlly = pending.targetId !== pending.idolPlayerId;
+    const content = `
+        <div class="nullifier-dialog">
+            <div class="raid-mark">${icon('idol', 'raid-icon')}</div>
+            <p class="raid-line">
+                <strong>${escapeHtml(idolName)}</strong> played a Hidden Immunity Idol${
+                    shieldedAnAlly ? ` for <strong>${escapeHtml(shieldedName)}</strong>` : ''
+                }. Every vote against them is about to count for nothing.
+            </p>
+            <p class="picker-hint">You're holding an <em>Idol Nullifier</em> — play it now and
+            the idol does nothing, or hold your peace and let it stand.</p>
+            <div class="raid-actions">
+                <button class="btn btn-primary touch-target" data-nullifier="play">
+                    ${icon('x')} Nullify it
+                </button>
+                <button class="btn btn-secondary touch-target" data-nullifier="allow">
+                    Let it stand
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal(content, { title: 'An Idol Is Played', showClose: false });
+    Haptics.trigger('warning');
+
+    setTimeout(() => {
+        const gameId = window.SurvivorGame?.localGameState?.gameId;
+        const me = window.SurvivorGame?.localGameState?.playerId;
+        document.querySelector('[data-nullifier="play"]')?.addEventListener('click', async () => {
+            hideModal();
+            // Through /immunity/block, NOT the generic play_card path. Only
+            // this route closes the window, and until now the web played the
+            // card the other way — which skipped the check that the target
+            // actually holds protection, so a nullifier could be burned on
+            // somebody holding nothing at all.
+            await window.SurvivorNetwork.blockImmunity(gameId, pending.targetId);
+        }, { once: true });
+        document.querySelector('[data-nullifier="allow"]')?.addEventListener('click', async () => {
+            hideModal();
+            await window.SurvivorNetwork.declineNullifier(gameId, me);
+        }, { once: true });
+    }, 0);
 }
 
 /** Defender's blocking choice: burn the Sorry For You, or let the raid land. */
@@ -4071,6 +4172,7 @@ window.SurvivorUI = {
     renderPlayerHand,
     renderVoteTargets,
     renderReactiveTheft,
+    renderNullifierWindow,
     renderInteraction,
     beginCardPlay,
     openCampMenu,

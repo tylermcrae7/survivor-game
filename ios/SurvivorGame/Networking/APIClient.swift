@@ -227,6 +227,12 @@ actor APIClient {
         ])
     }
 
+    func declineNullifier(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/immunity/decline", body: [
+            "gameId": gameId, "playerId": playerId
+        ])
+    }
+
     func resetTribal(gameId: String, playerId: String) async throws -> ActionResponse {
         try await post(path: "/api/tribal/reset", body: ["gameId": gameId, "playerId": playerId])
     }

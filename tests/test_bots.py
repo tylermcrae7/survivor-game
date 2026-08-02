@@ -256,6 +256,18 @@ def _human_move(gs, gid, human, rng):
         cv = game.get("currentVote") or {}
         vph = cv.get("phase")
         leader = cv.get("councilLeaderId")
+
+        # An idol is on the table awaiting its answer. This outranks the rest
+        # of the ceremony: a human holding a nullifier who says nothing freezes
+        # the council for everyone, which is precisely the wedge this branch
+        # exists to prove cannot happen.
+        window = game.get("pending_nullifier")
+        if window and window.get("reactive_window_open"):
+            if human in (window.get("_responderIds") or []) \
+                    and human not in (window.get("_answered") or []):
+                gs.decline_nullifier(gid, playerId=human)
+                return True
+            return False
         if vph == "voting" and human not in (cv.get("votes") or {}) \
                 and not me.get("isEliminated"):
             mandatory = max(0, me.get("mandatoryVotes", 1))
@@ -361,7 +373,8 @@ def _play_full_bot_game(deck_mode, expansion, seed, settings=None):
                         f"vote_phase={cv.get('phase')} final_phase={ft.get('phase')} "
                         f"interaction={bool(game.get('interaction'))} "
                         f"challenge={bool(game.get('challenge'))} "
-                        f"theft={bool(game.get('pending_theft'))}")
+                        f"theft={bool(game.get('pending_theft'))} "
+                        f"nullifier={game.get('pending_nullifier')}")
         else:
             raise AssertionError("Game did not finish within the step budget")
 

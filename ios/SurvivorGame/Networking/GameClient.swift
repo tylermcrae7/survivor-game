@@ -429,6 +429,18 @@ final class GameClient {
         applyState(response.gameState)
     }
 
+    /// Hold your peace while an idol stands. A window that only closes when
+    /// somebody *acts* is one a quiet player can freeze for the whole table, so
+    /// declining is a real move rather than an absence of one.
+    func declineNullifier() async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.declineNullifier(gameId: gameId, playerId: playerId)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Could not decline")
+        }
+        applyState(response.gameState)
+    }
+
     func changeLeader(newLeaderId: String) async throws {
         guard let gameId else { throw GameClientError.noGame }
         let response = try await apiClient.changeLeader(gameId: gameId, newLeaderId: newLeaderId)

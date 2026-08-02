@@ -1536,9 +1536,13 @@ class SurvivorRulesEngine:
 			# Reset inheritance markers that may have been processed
 			player.pop("inheritanceProcessed", None)
 			
-		# Reset any global tribal flags
+		# Reset any global tribal flags. The real keys are snake_case — this
+		# line said "pendingTheft" and so had never removed anything in its
+		# life. A reactive window that leaked past a council would have gone on
+		# blocking every turn after it, with no UI left to resolve it.
 		game.pop("tribalInterrupted", None)
-		game.pop("pendingTheft", None)
+		game.pop("pending_theft", None)
+		game.pop("pending_nullifier", None)
 		
 		logger.info("Post-tribal flags reset completed")
 		
@@ -1639,11 +1643,20 @@ class SurvivorRulesEngine:
 			
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
-		# Nullify target's immunity idol protection
+
+		# There must be an idol to nullify. `block_immunity` has always checked
+		# this, but the generic play_card path reaches this effect directly —
+		# which is how the web client plays the card — and did not. A nullifier
+		# spent on someone holding nothing was silently wasted AND stamped them
+		# `idolNullified`, so a later, real nullification would be refused as
+		# already-done.
+		if not target.get("immunityIdolProtection"):
+			return {"success": False,
+			        "message": f"{target['name']} has no Immunity Idol to nullify"}
+
 		target["immunityIdolProtection"] = False
 		target["idolNullified"] = True
-		
+
 		return {"message": f"{player['name']} nullified {target['name']}'s immunity idol!"}
 		
 	def _effect_sorry_for_you(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:

@@ -23,6 +23,9 @@ struct GameState: Codable, Equatable {
     var challenge: ChallengeState?
     var interaction: InteractionState?
     var pendingTheft: PendingTheftState?
+    /// An Immunity Idol on the table, waiting to see whether a Nullifier
+    /// answers it. Absent on servers that predate the window.
+    var pendingNullifier: PendingNullifierState?
     /// Which places are open and whether the ceremony has forced everyone into
     /// one. Absent on servers that predate places — the Places UI hides itself.
     var placePolicy: PlacePolicy?
@@ -33,6 +36,7 @@ struct GameState: Codable, Equatable {
         case deckMode, expansion, necklaceHolder, eventLog, discard, settings
         case challenge, interaction, placePolicy
         case pendingTheft = "pending_theft"
+        case pendingNullifier = "pending_nullifier"
     }
 
     /// Core keys decode strictly (they are always present); everything else is
@@ -62,6 +66,8 @@ struct GameState: Codable, Equatable {
         challenge = try? c.decodeIfPresent(ChallengeState.self, forKey: .challenge)
         interaction = try? c.decodeIfPresent(InteractionState.self, forKey: .interaction)
         pendingTheft = try? c.decodeIfPresent(PendingTheftState.self, forKey: .pendingTheft)
+        pendingNullifier = try? c.decodeIfPresent(PendingNullifierState.self,
+                                                  forKey: .pendingNullifier)
         placePolicy = try? c.decodeIfPresent(PlacePolicy.self, forKey: .placePolicy)
     }
 
@@ -77,7 +83,8 @@ struct GameState: Codable, Equatable {
         necklaceHolder: String? = nil, eventLog: [EventLogEntry]? = nil,
         discard: [CardInstance]? = nil, settings: GameSettings? = nil,
         challenge: ChallengeState? = nil, interaction: InteractionState? = nil,
-        pendingTheft: PendingTheftState? = nil, placePolicy: PlacePolicy? = nil
+        pendingTheft: PendingTheftState? = nil, placePolicy: PlacePolicy? = nil,
+        pendingNullifier: PendingNullifierState? = nil
     ) {
         self.id = id
         self.phase = phase
@@ -102,6 +109,7 @@ struct GameState: Codable, Equatable {
         self.interaction = interaction
         self.pendingTheft = pendingTheft
         self.placePolicy = placePolicy
+        self.pendingNullifier = pendingNullifier
     }
 
     // MARK: - Derived Properties
@@ -206,6 +214,30 @@ struct GameSettings: Codable, Equatable {
 }
 
 /// The paused Sorry-For-You window: a steal is hanging until the target answers.
+/// An Immunity Idol on the table, waiting to see whether a Nullifier answers.
+///
+/// Note what is *not* here: the server keeps the list of nullifier holders under
+/// an underscore-prefixed key and strips it before the state ships. The phone
+/// works out whether to prompt from its own hand, so a client can never learn
+/// who else is holding one.
+struct PendingNullifierState: Codable, Equatable {
+    var idolPlayerId: String?
+    var targetId: String?
+    var reactiveWindowOpen: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case idolPlayerId, targetId
+        case reactiveWindowOpen = "reactive_window_open"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        idolPlayerId = try? c.decodeIfPresent(String.self, forKey: .idolPlayerId)
+        targetId = try? c.decodeIfPresent(String.self, forKey: .targetId)
+        reactiveWindowOpen = (try? c.decodeIfPresent(Bool.self, forKey: .reactiveWindowOpen)) ?? false
+    }
+}
+
 struct PendingTheftState: Codable, Equatable {
     var thiefId: String?
     var thiefIds: [String]?

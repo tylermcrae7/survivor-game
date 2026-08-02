@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ImmunityView: View {
     @Bindable var viewModel: TribalViewModel
-    @State private var showNullifierTarget = false
     @State private var showShieldTarget = false
 
     var body: some View {
@@ -44,15 +43,19 @@ struct ImmunityView: View {
                     .disabled(viewModel.isPerformingAction)
                 }
 
-                // Idol Nullifier button
+                // No Nullifier button here. A nullifier answers an idol, and
+                // the server refuses one until a target actually holds
+                // protection — so offering it alongside the idol was offering a
+                // move that could not yet be made. It now arrives by itself,
+                // the moment there is something to answer
+                // (NullifierWindowOverlay).
                 if viewModel.hasIdolNullifier {
-                    Button {
-                        showNullifierTarget = true
-                    } label: {
-                        Label("Play Idol Nullifier", systemImage: "shield.slash.fill")
-                    }
-                    .buttonStyle(.torchSecondary)
-                    .disabled(viewModel.isPerformingAction)
+                    Label("You hold an Idol Nullifier — you'll be offered it if an idol is played.",
+                          systemImage: "shield.slash")
+                        .font(Torch.Font.body(Torch.TextSize.xs))
+                        .foregroundStyle(Torch.Color.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if !viewModel.hasImmunityIdol && !viewModel.hasIdolNullifier {
@@ -106,14 +109,6 @@ struct ImmunityView: View {
                 players: viewModel.activePlayers.filter { $0.id != viewModel.myPlayerId }
             ) { targetId in
                 Task { await viewModel.playImmunity(targetId: targetId) }
-            }
-        }
-        .sheet(isPresented: $showNullifierTarget) {
-            TargetPickerSheet(
-                title: "Nullify Whose Immunity?",
-                players: viewModel.activePlayers
-            ) { targetId in
-                Task { await viewModel.blockImmunity(targetId: targetId) }
             }
         }
     }

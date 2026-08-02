@@ -827,7 +827,7 @@ function startNewGame() {
 // Export functions for use in other modules
 window.SurvivorGame = {
     // State
-    APP_VERSION: '3.13.0',
+    APP_VERSION: '3.14.0',
     localGameState,
     fullGameState,
     SURVIVOR_CARDS,
