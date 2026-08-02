@@ -89,6 +89,7 @@ struct SurvivorGameApp: App {
                 ContentView()
                     .environment(gameClient)
                     .environment(playerInspector)
+                    .environment(gameClient.narration)
                     .survivorScreen()
                 
                 // Show non-blocking warning if storage is in-memory only

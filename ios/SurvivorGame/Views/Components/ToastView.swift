@@ -69,7 +69,7 @@ struct ToastView: View {
 /// perfect way to eat the tap the player meant for a button underneath, and
 /// swallowed taps are a bug this app has already had once.
 struct NarrationHost: ViewModifier {
-    @Environment(GameClient.self) private var gameClient
+    @Environment(NarrationFeed.self) private var narration
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -90,7 +90,7 @@ struct NarrationHost: ViewModifier {
         // screen to lose for a second and a half. The camp's Steal → Play →
         // Draw tracker and the council's phase tracker both stay visible.
         content.overlay(alignment: .top) {
-            if let event = gameClient.narration.current {
+            if let event = narration.current {
                 ToastView(message: event.message, type: .narration)
                     .padding(.horizontal, 20)
                     .transition(reduceMotion
@@ -102,8 +102,8 @@ struct NarrationHost: ViewModifier {
             }
         }
         .animation(reduceMotion ? .none : .torchEaseOut(duration: 0.26),
-                   value: gameClient.narration.current)
-        .onChange(of: gameClient.narration.current) { _, new in
+                   value: narration.current)
+        .onChange(of: narration.current) { _, new in
             guard let new else { return }
             AccessibilityNotification.Announcement(new.message).post()
         }
