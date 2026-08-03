@@ -918,8 +918,23 @@ final class QASweepUITests: XCTestCase {
         XCTAssertEqual(live["type"] as? String, "highest_bidder")
         saveShot("verify-07-blockerB-bot-challenge-live")
 
-        // Drive the bidding so a NON-human always wins it at the full bag size
-        // and eats the Purple Rock. Round 1 knocks the bot out, round 2 the ally.
+        // The human has to win this Challenge, and the bag decides who does.
+        //
+        // This used to drive the bidding instead: bait everyone to one under
+        // the bag so a non-human bid the whole thing and was guaranteed the
+        // Purple Rock. That encoded what the bots would do, and it stopped
+        // being true the day they learned to bid strategically — no bot now
+        // volunteers to pull all eleven, so nobody was ever knocked out and
+        // the Challenge never ended.
+        //
+        // Take the luck out of the bag instead of predicting the players. All
+        // grey means whoever wins the bidding pulls clean and wins, so the
+        // only thing left to arrange is that the winner is the human — and a
+        // bid of one under the bag is above every bot's appetite whatever
+        // their private limit is.
+        try api.post("/api/test/stack_bag",
+                     ["gameId": gid, "bag": ["grey": 11, "purple": 0]])
+
         var done: [String: Any] = [:]
         for _ in 0..<80 {
             let st = try serverState()
@@ -928,36 +943,30 @@ final class QASweepUITests: XCTestCase {
             guard let cur = ch["currentPlayerId"] as? String else { break }
             let bid = (ch["currentBid"] as? Int) ?? 0
             let maxBid = (ch["maxBid"] as? Int) ?? 11
-            let knocked = (ch["knockedOut"] as? [String]) ?? []
-            let botStillIn = !knocked.contains(botId)
 
             if (ch["phase"] as? String) == "pulling" {
-                // Only the bidding winner pulls; the bot drives its own pulls.
-                if cur == allyId { try challengeAct(allyId, "pull", nil) }
+                // Whoever won the bidding empties their bid, one rock at a time.
+                if cur == camp.humanId || cur == allyId {
+                    try challengeAct(cur, "pull", nil)
+                }
                 Thread.sleep(forTimeInterval: 0.4)
                 continue
             }
             switch cur {
-            case camp.humanId, allyId:
-                if botStillIn {
-                    // Bait: raise to one under the bag so the bot answers with
-                    // the whole bag; everyone else then folds.
-                    if bid < maxBid - 1 {
-                        try challengeAct(cur, "bid", maxBid - 1)
-                    } else {
-                        try challengeAct(cur, "pass", nil)
-                    }
-                } else if cur == allyId {
-                    // Bot is out: the ally takes the whole bag and follows it out.
-                    if bid < maxBid {
-                        try challengeAct(allyId, "bid", maxBid)
-                    } else {
-                        try challengeAct(allyId, "pass", nil)
-                    }
-                } else if bid == 0 {
-                    try challengeAct(camp.humanId, "bid", 1)   // forced opener
+            case camp.humanId:
+                // One under the bag: above every bot's private limit, and the
+                // bluff step cannot reach it either.
+                if bid < maxBid - 1 {
+                    try challengeAct(camp.humanId, "bid", maxBid - 1)
                 } else {
                     try challengeAct(camp.humanId, "pass", nil)
+                }
+            case allyId:
+                // The first bidder of a round is not allowed to pass.
+                if bid == 0 {
+                    try challengeAct(allyId, "bid", 1)
+                } else {
+                    try challengeAct(allyId, "pass", nil)
                 }
             default:
                 Thread.sleep(forTimeInterval: 0.4)   // the bot's move
@@ -970,7 +979,7 @@ final class QASweepUITests: XCTestCase {
             }
         }
         XCTAssertEqual((done["challenge"] as? [String: Any])?["winnerId"] as? String,
-                       camp.humanId, "the human should be the last player standing")
+                       camp.humanId, "the human should have won the Challenge")
         XCTAssertEqual(currentTurnId(done), botId,
                        "the parked Challenge sits on the BOT's turn — the old wedge")
 

@@ -4170,6 +4170,30 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
         game_state._save(gid)
         return jsonify(success=True)
 
+    @app.route('/api/test/stack_bag', methods=['POST'])
+    def test_stack_bag():
+        """Fix the contents of a rock bag mid-challenge.
+
+        Highest Bidder is push-your-luck: the winner of the bidding pulls that
+        many rocks and is out if one is Purple. A test that needs a specific
+        player to win therefore has to control either the bidding or the bag,
+        and controlling the bidding means encoding what the bots will do — the
+        coupling that broke this suite the day bots learned to bid strategically.
+        """
+        data = request.get_json(silent=True) or {}
+        game = game_state.games.get(data.get('gameId'))
+        challenge = (game or {}).get("challenge")
+        bag = data.get('bag')
+        if not challenge or not isinstance(bag, dict):
+            return jsonify(success=False, message="no challenge to stack"), 400
+        try:
+            challenge["bag"] = {"grey": int(bag.get("grey", 0)),
+                                "purple": int(bag.get("purple", 0))}
+        except (TypeError, ValueError):
+            return jsonify(success=False, message="bag counts must be integers"), 400
+        game_state._save(data.get('gameId'))
+        return jsonify(success=True, bag=challenge["bag"])
+
     @app.route('/api/test/set_flags', methods=['POST'])
     def test_set_flags():
         data = request.get_json(silent=True) or {}
