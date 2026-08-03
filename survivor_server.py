@@ -54,11 +54,14 @@ ALLOWED_ORIGINS = os.environ.get(
 #
 #   SURVIVOR_ACCESS_CODE set   -> every /api/* call and Socket.IO connection
 #                                 requires the cookie from POST /api/access
-#   SURVIVOR_ACCESS_CODE unset -> gate disabled (LAN play, dev, tests)
+#   SURVIVOR_REVIEW_ACCESS_CODE optionally grants a separate, revocable code
+#                                 for TestFlight/App Review
+#   both codes unset           -> gate disabled (LAN play, dev, tests)
 #
 # The cookie value is an HMAC derived from the code itself, so there is no
 # extra secret to manage and stale cookies die the moment the code changes.
 ACCESS_CODE = os.environ.get('SURVIVOR_ACCESS_CODE', '').strip()
+REVIEW_ACCESS_CODE = os.environ.get('SURVIVOR_REVIEW_ACCESS_CODE', '').strip()
 # How long a raider has to choose which card they give up before the game
 # picks for them. A blocking window with no way out is how the web app once
 # wedged a table forever; this is the way out.
@@ -75,19 +78,28 @@ _access_attempts = {}
 
 
 def gate_enabled():
-    return bool(ACCESS_CODE)
+    return bool(ACCESS_CODE or REVIEW_ACCESS_CODE)
 
 
-def _access_token():
-    """The cookie value that proves knowledge of the current access code."""
-    return hmac.new(ACCESS_CODE.encode(), b'survivor-access-v1', hashlib.sha256).hexdigest()
+def _access_codes():
+    """Configured codes, kept dynamic so rotating either one revokes its cookies."""
+    return tuple(code for code in (ACCESS_CODE, REVIEW_ACCESS_CODE) if code)
+
+
+def _access_token(code=None):
+    """The cookie value that proves knowledge of one configured access code."""
+    code = ACCESS_CODE if code is None else code
+    return hmac.new(code.encode(), b'survivor-access-v1', hashlib.sha256).hexdigest()
 
 
 def _has_valid_access_cookie(cookies):
     if not gate_enabled():
         return True
     supplied = cookies.get(ACCESS_COOKIE, '')
-    return bool(supplied) and hmac.compare_digest(supplied, _access_token())
+    return bool(supplied) and any(
+        hmac.compare_digest(supplied, _access_token(code))
+        for code in _access_codes()
+    )
 
 
 def _client_ip():
@@ -3780,14 +3792,18 @@ def api_access():
     data = request.get_json(silent=True) or {}
     supplied = str(data.get('code', '')).strip()
 
-    if not supplied or not hmac.compare_digest(supplied.lower(), ACCESS_CODE.lower()):
+    matched_code = next((
+        code for code in _access_codes()
+        if supplied and hmac.compare_digest(supplied.lower(), code.lower())
+    ), None)
+    if matched_code is None:
         logger.warning(f"Access gate: wrong code from {ip}")
         return jsonify(success=False, message="That's not the code. The island stays hidden."), 403
 
     response = jsonify(success=True, message="Welcome ashore")
     forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
     response.set_cookie(
-        ACCESS_COOKIE, _access_token(),
+        ACCESS_COOKIE, _access_token(matched_code),
         max_age=ACCESS_COOKIE_MAX_AGE,
         httponly=True,
         samesite='Lax',

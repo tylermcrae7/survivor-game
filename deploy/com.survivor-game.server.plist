@@ -36,6 +36,10 @@
              `load` this plist) to revoke every phone that has entered it. -->
         <key>SURVIVOR_ACCESS_CODE</key>
         <string>{{ACCESS_CODE}}</string>
+        <!-- Optional reviewer-only code. Its cookie stops working as soon as
+             this value is removed or changed. -->
+        <key>SURVIVOR_REVIEW_ACCESS_CODE</key>
+        <string>{{REVIEW_ACCESS_CODE}}</string>
         <key>ALLOWED_ORIGINS</key>
         <string>{{PUBLIC_ORIGIN}}</string>
     </dict>

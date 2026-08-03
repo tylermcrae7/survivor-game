@@ -2,9 +2,10 @@
 """
 Access gate tests — the shared "island code" that protects the public tunnel.
 
-The gate is entirely env-driven: SURVIVOR_ACCESS_CODE set means every /api/*
-call and socket connection needs the signed cookie from POST /api/access;
-unset means LAN/dev/test play is completely unaffected.
+The gate is entirely env-driven: SURVIVOR_ACCESS_CODE (and the optional,
+separately revocable SURVIVOR_REVIEW_ACCESS_CODE) means every /api/* call and
+socket connection needs the signed cookie from POST /api/access; both unset
+means LAN/dev/test play is completely unaffected.
 """
 
 import importlib
@@ -17,12 +18,16 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def make_app(access_code):
+def make_app(access_code, review_access_code=None):
     """(Re)import survivor_server with the gate env var set/unset."""
     if access_code is None:
         os.environ.pop('SURVIVOR_ACCESS_CODE', None)
     else:
         os.environ['SURVIVOR_ACCESS_CODE'] = access_code
+    if review_access_code is None:
+        os.environ.pop('SURVIVOR_REVIEW_ACCESS_CODE', None)
+    else:
+        os.environ['SURVIVOR_REVIEW_ACCESS_CODE'] = review_access_code
 
     import survivor_server
     importlib.reload(survivor_server)
@@ -68,19 +73,21 @@ class GateDisabledTest(unittest.TestCase):
 
 class GateEnabledTest(unittest.TestCase):
     CODE = 'torch-idol-8352'
+    REVIEW_CODE = 'review-torch-2468'
 
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
         cls.cwd = os.getcwd()
         os.chdir(cls.tmp)
-        cls.server = make_app(cls.CODE)
+        cls.server = make_app(cls.CODE, cls.REVIEW_CODE)
 
     @classmethod
     def tearDownClass(cls):
         os.chdir(cls.cwd)
         shutil.rmtree(cls.tmp, ignore_errors=True)
         os.environ.pop('SURVIVOR_ACCESS_CODE', None)
+        os.environ.pop('SURVIVOR_REVIEW_ACCESS_CODE', None)
 
     def setUp(self):
         self.client = self.server.app.test_client()
@@ -145,6 +152,23 @@ class GateEnabledTest(unittest.TestCase):
         data = self.client.get('/api/access/check').get_json()
         self.assertTrue(data['gated'])
         self.assertTrue(data['ok'])
+
+    def test_review_code_sets_its_own_cookie_and_opens_the_api(self):
+        response = self.unlock(code=self.REVIEW_CODE)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.server.ACCESS_COOKIE, response.headers.get('Set-Cookie', ''))
+        self.assertEqual(self.client.get('/api/cards').status_code, 200)
+
+    def test_removing_review_code_revokes_only_its_cookie(self):
+        self.unlock(code=self.REVIEW_CODE)
+        self.assertEqual(self.client.get('/api/cards').status_code, 200)
+
+        original = self.server.REVIEW_ACCESS_CODE
+        try:
+            self.server.REVIEW_ACCESS_CODE = ''
+            self.assertEqual(self.client.get('/api/cards').status_code, 401)
+        finally:
+            self.server.REVIEW_ACCESS_CODE = original
 
     def test_code_comparison_is_case_insensitive(self):
         response = self.unlock(code=self.CODE.upper())

@@ -77,6 +77,7 @@ echo "Installing launchd services..."
 # Server plist (repo path + access code + public origin substituted in)
 sed -e "s|{{REPO_DIR}}|$REPO_DIR|g" \
     -e "s|{{ACCESS_CODE}}|$SURVIVOR_ACCESS_CODE|g" \
+    -e "s|{{REVIEW_ACCESS_CODE}}|${SURVIVOR_REVIEW_ACCESS_CODE:-}|g" \
     -e "s|{{PUBLIC_ORIGIN}}|https://$HOSTNAME|g" \
     "$SCRIPT_DIR/com.survivor-game.server.plist" \
     > "$HOME/Library/LaunchAgents/com.survivor-game.server.plist"
