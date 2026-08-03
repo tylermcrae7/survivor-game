@@ -5,6 +5,7 @@ import Foundation
 final class TribalViewModel {
     var error: ViewModelError?
     var isPerformingAction = false
+    var isMovingPlace = false
     var selectedVoteTarget: String?
     var selectedAdvantageTarget: String?
 
@@ -29,11 +30,31 @@ final class TribalViewModel {
 
     var sortedPlayers: [PlayerState] { gameState?.sortedPlayers ?? [] }
 
-    /// The ceremony pins everyone to one place. Surfacing the policy here is
-    /// what makes the locked row reachable at all — during `playing` the
-    /// server never forces a place, so the forced branch of `PlacesBar` was
-    /// unreachable while it was only mounted on the camp screen.
-    var placePolicy: PlacePolicy? { gameState?.placePolicy }
+    /// The ceremony pins everyone to one place — except during discussion,
+    /// when camp reopens and the tribe breaks up to scheme. So this row is
+    /// locked for most of the council and live for one sub-phase of it.
+    ///
+    /// Mine, not the table's: a snuffed player stays at the fire while the
+    /// living scatter. Falls back to the game-wide policy on an older server.
+    var placePolicy: PlacePolicy? {
+        gameClient.myPlayer?.placePolicy ?? gameState?.placePolicy
+    }
+
+    var myPlace: String? { gameClient.myPlayer?.placeKey }
+
+    /// Walking off during the council's discussion. The same door the camp
+    /// screen uses; the server refuses it in every other sub-phase.
+    func moveToPlace(_ place: String) async {
+        guard placePolicy?.canMove(to: place, from: myPlace) == true else { return }
+        isMovingPlace = true
+        defer { isMovingPlace = false }
+        do {
+            try await gameClient.moveToPlace(place)
+            HapticEngine.selection()
+        } catch {
+            self.error = .from(error)
+        }
+    }
 
     var voteTargets: [PlayerState] {
         guard let myId = myPlayerId else { return activePlayers }

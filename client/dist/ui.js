@@ -990,10 +990,16 @@ function renderPlacesPanel(gameState) {
 
     // A server that predates places sends no policy — then say nothing at all
     // rather than inventing a camp that the server will not honour.
-    const policy = gameState && gameState.placePolicy;
+    const myId = window.SurvivorGame?.localGameState?.playerId;
+    // Yours, not the table's. Once your torch is out you are held at the Camp
+    // Fire while the living scatter during the council's discussion, so the
+    // narrowing rides on the player record. Older servers send only the
+    // game-wide one.
+    const policy = gameState
+        && ((gameState.players && gameState.players[myId] && gameState.players[myId].placePolicy)
+            || gameState.placePolicy);
     if (!policy || !gameState.players) return hide();
 
-    const myId = window.SurvivorGame?.localGameState?.playerId;
     const myPlace = gameState.players[myId]?.place || null;
 
     // Turn order keeps the chips in the same familiar sequence as the tribe panel

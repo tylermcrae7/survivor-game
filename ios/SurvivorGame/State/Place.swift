@@ -3,8 +3,10 @@ import UIKit
 
 /// A named spot at camp. During `playing` everyone drifts between the open
 /// places — who slipped off with whom is deliberately public, it is the
-/// paranoia engine. During Tribal Council the policy forces one place and
-/// nobody may leave it.
+/// paranoia engine. Tribal Council forces one place and nobody may leave it,
+/// except during its discussion, when camp reopens for exactly as long as the
+/// scheming lasts. A snuffed torch goes to Exile Island until the Final
+/// Tribal Council brings everyone back together.
 ///
 /// The wire vocabulary is the server's snake_case key; this type owns the
 /// key → label and key → SF Symbol mappings so no view has to.
@@ -13,6 +15,7 @@ enum Place: String, CaseIterable, Identifiable, Sendable {
     case theBeach = "the_beach"
     case theWaterWell = "the_water_well"
     case tribalCouncil = "tribal_council"
+    case exileIsland = "exile_island"
 
     var id: String { rawValue }
 
@@ -25,6 +28,7 @@ enum Place: String, CaseIterable, Identifiable, Sendable {
         case .theBeach: "The Beach"
         case .theWaterWell: "The Water Well"
         case .tribalCouncil: "Tribal Council"
+        case .exileIsland: "Exile Island"
         }
     }
 
@@ -34,6 +38,7 @@ enum Place: String, CaseIterable, Identifiable, Sendable {
         case .theBeach: Place.beachSymbol
         case .theWaterWell: "drop.fill"
         case .tribalCouncil: "person.3.fill"
+        case .exileIsland: "moon.stars.fill"
         }
     }
 

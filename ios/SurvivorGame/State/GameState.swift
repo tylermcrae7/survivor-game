@@ -168,10 +168,12 @@ struct GameState: Codable, Equatable {
         turnOrder.compactMap { players[$0] }
     }
 
-    /// Who is standing in `placeKey`, in turn order. Snuffed players have left
-    /// the island — their last place is not something anyone should still see.
+    /// Who is standing in `placeKey`, in turn order — snuffed players
+    /// included. They used to be filtered out as having left the island, which
+    /// stopped being true when the dead were pinned to the Camp Fire: this
+    /// answers "who is in the room", and a ghost at the fire is in the room.
     func players(at placeKey: String) -> [PlayerState] {
-        sortedPlayers.filter { $0.isAlive && $0.placeKey == placeKey }
+        sortedPlayers.filter { $0.placeKey == placeKey }
     }
 }
 

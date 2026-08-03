@@ -19,10 +19,12 @@ struct PlacesBar: View {
         players.first { $0.id == myPlayerId }?.placeKey
     }
 
-    /// Snuffed players are not at camp any more, wherever the server last
-    /// left them.
+    /// Everyone standing here, snuffed players included. They used to be
+    /// filtered out as "not at camp any more", which stopped being true the
+    /// moment the dead were pinned to the Camp Fire: this band answers "who
+    /// can hear me", and a ghost sitting at the fire can hear you.
     private func occupants(of key: String) -> [PlayerState] {
-        players.filter { $0.isAlive && $0.placeKey == key }
+        players.filter { $0.placeKey == key }
     }
 
     var body: some View {
@@ -278,9 +280,11 @@ private struct OccupantChip: View {
                 Circle().strokeBorder(isMe ? Torch.Color.torch : .clear, lineWidth: 1.5)
             }
             // Bots sit at the table and belong in the room count, but they
-            // have no voice and no secrets — present, never loud.
-            .saturation(player.isBot ? 0.3 : 1)
-            .opacity(player.isBot ? 0.7 : 1)
+            // have no voice and no secrets — present, never loud. A snuffed
+            // player goes all the way grey: still in the room, still listening,
+            // no longer playing.
+            .saturation(player.isEliminated ? 0 : (player.isBot ? 0.3 : 1))
+            .opacity(player.isEliminated ? 0.55 : (player.isBot ? 0.7 : 1))
     }
 }
 
@@ -294,7 +298,12 @@ enum PlaceOccupancy {
     ) -> String {
         let label = Place.label(for: placeKey)
         guard !occupants.isEmpty else { return "\(label), nobody" }
-        let names = occupants.map { $0.id == myPlayerId ? "you" : $0.name }
+        let names = occupants.map { player -> String in
+            let who = player.id == myPlayerId ? "you" : player.name
+            // Worth saying aloud: a snuffed player in the room hears
+            // everything and can act on none of it.
+            return player.isEliminated ? "\(who), out of the game" : who
+        }
         return "\(label), \(names.formatted(.list(type: .and)))"
     }
 }

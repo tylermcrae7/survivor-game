@@ -304,6 +304,89 @@ final class VisualAuditUITests: XCTestCase {
         shot("09-advantage-untargeted-played")
     }
 
+    // MARK: - Breakouts during the council's discussion
+
+    /// The council is one room for its whole length except discussion, which
+    /// is when the scheming happens — so camp reopens for that sub-phase and
+    /// shuts again when the ballot starts. A snuffed player is on Exile Island
+    /// throughout and cannot follow two players off to the well to hear the
+    /// alliance being made.
+    @MainActor
+    func testCampReopensForDiscussionButTheExiledStayExiled() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+        for pid in [camp.me] + camp.allies {
+            try api.post("/api/test/set_hand", ["gameId": gid, "playerId": pid, "hand": ["vote"]])
+        }
+        try api.post("/api/test/set_flags",
+                     ["gameId": gid, "playerId": camp.allies[2],
+                      "characterCards": 0, "isEliminated": true])
+
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_single"]])
+        let before = try api.get("/api/game/\(gid)/state")
+        let order = try XCTUnwrap(before["turnOrder"] as? [String])
+        let onTurn = order[((before["currentTurnIndex"] as? Int) ?? 0) % order.count]
+        try api.post("/api/turn/steal",
+                     ["gameId": gid, "thiefId": onTurn,
+                      "targetId": try XCTUnwrap(order.first { $0 != onTurn })])
+        try api.post("/api/turn/draw", ["gameId": gid, "playerId": onTurn])
+        let opened = try api.get("/api/game/\(gid)/state")
+        let leader = try XCTUnwrap(
+            (opened["currentVote"] as? [String: Any])?["councilLeaderId"] as? String)
+
+        // Locked for the opening of the ceremony…
+        XCTAssertTrue(camp.app.staticTexts["Tribal Council"].firstMatch
+                        .waitForExistence(timeout: 15))
+        shot("10-council-locked")
+
+        try api.post("/api/tribal/advance", ["gameId": gid, "playerId": leader,
+                                             "phase": "advantage_play"])
+        try api.post("/api/tribal/advance", ["gameId": gid, "playerId": leader,
+                                             "phase": "discussion"])
+
+        // …and the whole camp is back on the band for discussion.
+        let well = camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'The Water Well'")).firstMatch
+        XCTAssertTrue(well.waitForExistence(timeout: 12),
+                      "discussion should reopen camp")
+        shot("11-council-discussion-open")
+        well.tap()
+
+        _ = try waitFor("the player walks off mid-council", timeout: 12) { st in
+            let players = st["players"] as? [String: [String: Any]]
+            return (players?[camp.me]?["place"] as? String) == "the_water_well"
+        }
+        shot("12-council-discussion-moved")
+
+        // The snuffed ally is on Exile Island, not in anybody's breakout.
+        let withDead = try api.get("/api/game/\(gid)/state")
+        let players = try XCTUnwrap(withDead["players"] as? [String: [String: Any]])
+        XCTAssertEqual(players[camp.allies[2]]?["place"] as? String, "exile_island",
+                       "a torch that is out sits out the rest of the season")
+        let refused = try? api.post("/api/place/move",
+                                    ["gameId": gid, "playerId": camp.allies[2],
+                                     "place": "the_water_well"])
+        XCTAssertNil(refused, "the dead may not join a breakout")
+
+        // Voting calls everyone back with no transition hook anywhere. Wait on
+        // the *screen*, not the server: the point is that the phone follows.
+        try api.post("/api/vote/start", ["gameId": gid, "playerId": leader,
+                                         "voteType": "elimination"])
+        XCTAssertTrue(camp.app.staticTexts["It Is Time to Vote"]
+                        .waitForExistence(timeout: 12),
+                      "the ballot should open")
+        XCTAssertFalse(camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'The Water Well'")).firstMatch.exists,
+                       "and the breakout rooms should be gone from the band")
+        let regrouped = try api.get("/api/game/\(gid)/state")
+        let back = try XCTUnwrap(regrouped["players"] as? [String: [String: Any]])
+        XCTAssertEqual(back[camp.me]?["place"] as? String, "tribal_council")
+        XCTAssertEqual(back[camp.allies[2]]?["place"] as? String, "exile_island",
+                       "the exiled are not called back for an ordinary council")
+        shot("13-council-regrouped")
+    }
+
     /// Poll the server until `cond` holds, so a UI assertion is not racing a
     /// socket round trip.
     @discardableResult

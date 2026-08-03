@@ -49,7 +49,12 @@ final class PlayingViewModel {
 
     // MARK: - Places
 
-    var placePolicy: PlacePolicy? { gameState?.placePolicy }
+    /// Mine, not the table's. They differ once your torch is out: the living
+    /// may wander, you are held at the fire. Falls back to the game-wide
+    /// policy for a server that predates the per-player one.
+    var placePolicy: PlacePolicy? {
+        gameClient.myPlayer?.placePolicy ?? gameState?.placePolicy
+    }
     var myPlace: String? { gameClient.myPlace }
 
     // MARK: - Actions

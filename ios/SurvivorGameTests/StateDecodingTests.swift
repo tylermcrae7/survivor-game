@@ -277,14 +277,15 @@ struct StateDecodingTests {
 
 struct PlaceTests {
 
-    /// The exact four keys the server writes, and the exact labels the UI
-    /// (and later the Discord channel names) must show for them.
+    /// The exact five keys the server writes, and the exact labels the UI
+    /// (and the Discord channel names) must show for them.
     @Test func everyServerKeyMapsToItsLabel() {
         let expected: [(String, String)] = [
             ("camp_fire", "Camp Fire"),
             ("the_beach", "The Beach"),
             ("the_water_well", "The Water Well"),
             ("tribal_council", "Tribal Council"),
+            ("exile_island", "Exile Island"),
         ]
         for (key, label) in expected {
             #expect(Place(rawValue: key)?.label == label, "wrong label for \(key)")
@@ -376,7 +377,7 @@ struct PlaceTests {
 
     /// Occupancy is what the whole feature shows: alive players only, in turn
     /// order, with the no-place fallback folded in.
-    @Test func occupancyGroupsLivePlayersByPlaceInTurnOrder() {
+    @Test func occupancyGroupsEveryoneByPlaceInTurnOrder() {
         let state = GameState(
             id: "g", phase: .playing,
             players: [
@@ -389,8 +390,61 @@ struct PlaceTests {
             turnOrder: ["p1", "p2", "p3", "p4"], currentTurnIndex: 0,
             placePolicy: PlacePolicy(open: ["camp_fire", "the_beach"])
         )
-        #expect(state.players(at: "the_beach").map(\.id) == ["p1", "p2"])
+        // Dee is out, and still counted: the band answers "who is in this
+        // room", and someone whose torch is out can still hear it.
+        #expect(state.players(at: "the_beach").map(\.id) == ["p1", "p2", "p4"])
         #expect(state.players(at: "camp_fire").map(\.id) == ["p3"])
         #expect(state.players(at: "the_water_well").isEmpty)
+    }
+
+    // MARK: - Your policy, not the table's
+
+    /// The council's discussion reopens camp, and a snuffed player is held at
+    /// the fire while the living scatter. That narrowing cannot live on the
+    /// game — the state is broadcast to everybody — so it rides on the player.
+
+    @Test func aPlayerCarriesTheirOwnPolicy() throws {
+        let json = """
+        {"id": "p1", "name": "Ada", "color": "#FF6B6B", "isEliminated": true,
+         "place": "camp_fire",
+         "placePolicy": {"open": ["camp_fire"], "forced": "camp_fire"}}
+        """
+        let player = try JSONDecoder().decode(PlayerState.self, from: Data(json.utf8))
+        #expect(player.placePolicy?.forced == "camp_fire")
+        #expect(player.placePolicy?.visibleKeys == ["camp_fire"])
+        #expect(player.placePolicy?.canMove(to: "the_beach", from: "camp_fire") == false)
+    }
+
+    @Test func aLivingPlayerMayWanderDuringDiscussion() throws {
+        let json = """
+        {"id": "p2", "name": "Bo", "color": "#4ECDC4", "place": "the_beach",
+         "placePolicy": {"open": ["camp_fire", "the_beach", "the_water_well"],
+                         "forced": null}}
+        """
+        let player = try JSONDecoder().decode(PlayerState.self, from: Data(json.utf8))
+        #expect(player.placePolicy?.isForced == false)
+        #expect(player.placePolicy?.canMove(to: "the_water_well", from: "the_beach") == true)
+    }
+
+    /// A build talking to a server that predates the per-player policy must
+    /// still decode, and still render from the game-wide one.
+    @Test func anOlderServerSendsNoPerPlayerPolicy() throws {
+        let json = """
+        {"id": "p3", "name": "Cy", "color": "#45B7D1"}
+        """
+        let player = try JSONDecoder().decode(PlayerState.self, from: Data(json.utf8))
+        #expect(player.placePolicy == nil)
+    }
+
+    /// The whole ceremony is one room except discussion, so the tribal screen
+    /// has to handle both shapes rather than assuming the locked one.
+    @Test func theCouncilPolicyIsLockedExceptDuringDiscussion() {
+        let locked = PlacePolicy(open: ["tribal_council"], forced: "tribal_council")
+        #expect(locked.visibleKeys == ["tribal_council"])
+        #expect(locked.canMove(to: "the_beach", from: "tribal_council") == false)
+
+        let talking = PlacePolicy(open: ["camp_fire", "the_beach", "the_water_well"])
+        #expect(talking.visibleKeys.count == 3)
+        #expect(talking.canMove(to: "the_beach", from: "camp_fire") == true)
     }
 }

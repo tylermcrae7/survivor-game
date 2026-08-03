@@ -33,6 +33,12 @@ struct PlayerState: Codable, Identifiable, Equatable {
     /// The Discord account this player has claimed, for the voice-channel
     /// mirror. Absent for anyone who never set one, and for every bot.
     var discordUserId: String?
+    /// *This player's* movement policy, which is narrower than the table's
+    /// once their torch is out: the living scatter during the council's
+    /// discussion, the snuffed watch from the fire. The state is broadcast to
+    /// everybody, so the narrowing rides on the player it applies to. Absent
+    /// on servers that predate it — fall back to the game-wide policy.
+    var placePolicy: PlacePolicy?
 
     /// The place this player occupies, falling back to the fire when the
     /// server said nothing.
@@ -59,7 +65,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         case hasStolen, hasPlayed, hasDrawn, hasVoted, extraVotes, characterCards
         case immunityPlayed, voteBanned, isBot, maxVotes, mandatoryVotes
         case goodwillVotes, drawBonus, stealBonus, immunityIdolProtection
-        case campRaidedBy, inheritanceTarget, place, discordUserId
+        case campRaidedBy, inheritanceTarget, place, discordUserId, placePolicy
     }
 
     init(from decoder: Decoder) throws {
@@ -90,6 +96,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         inheritanceTarget = try container.decodeIfPresent(String.self, forKey: .inheritanceTarget)
         place = try? container.decodeIfPresent(String.self, forKey: .place)
         discordUserId = try? container.decodeIfPresent(String.self, forKey: .discordUserId)
+        placePolicy = try? container.decodeIfPresent(PlacePolicy.self, forKey: .placePolicy)
     }
 
     /// Designated memberwise init for tests and previews (extension inits in
@@ -105,7 +112,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         drawBonus: Int? = nil, stealBonus: Int? = nil,
         immunityIdolProtection: Bool = false, campRaidedBy: String? = nil,
         inheritanceTarget: String? = nil, place: String? = nil,
-        discordUserId: String? = nil
+        discordUserId: String? = nil, placePolicy: PlacePolicy? = nil
     ) {
         self.id = id
         self.name = name
@@ -133,6 +140,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         self.inheritanceTarget = inheritanceTarget
         self.place = place
         self.discordUserId = discordUserId
+        self.placePolicy = placePolicy
     }
 }
 

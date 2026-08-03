@@ -1,11 +1,14 @@
 """
 Places — where every castaway is standing on the island.
 
-Four named places exist. During normal play the camp is open and people drift
+Five named places exist. During normal play the camp is open and people drift
 between the Camp Fire, the Beach and the Water Well, which is where alliances
 get made. When the tribe is called to Tribal Council everybody is standing in
-the same spot whether they like it or not, and in the lobby (or once a season is
-over) there is only the Camp Fire.
+the same spot whether they like it or not — except during the council's
+discussion, which is exactly when the scheming happens, so camp reopens for it
+and shuts again when the ballot starts. A snuffed torch goes to Exile Island
+and stays there until the Final Tribal Council reunites everyone. In the lobby
+(or once a season is over) there is only the Camp Fire.
 
 **Derive, don't hook.** A player record stores only the place a player *chose*
 (``placeChoice``). The place they are actually standing in is derived from the
@@ -37,6 +40,7 @@ PLACES = (
     {"key": "the_beach", "label": "The Beach"},
     {"key": "the_water_well", "label": "The Water Well"},
     {"key": "tribal_council", "label": "Tribal Council"},
+    {"key": "exile_island", "label": "Exile Island"},
 )
 
 PLACE_KEYS = tuple(p["key"] for p in PLACES)
@@ -46,6 +50,13 @@ PLACE_LABELS = {p["key"]: p["label"] for p in PLACES}
 CAMP_PLACES = ("camp_fire", "the_beach", "the_water_well")
 # ...and where you start, and end up whenever there is nowhere else to be.
 DEFAULT_PLACE = "camp_fire"
+
+# Where a snuffed torch goes. The point of it is that they can still talk to
+# each other: watching the rest of a season in silence is nobody's idea of a
+# night in. They stay there until the Final Tribal Council, where the jury and
+# the finalists are in one room again.
+EXILE_PLACE = "exile_island"
+EXILE_PHASES = ("playing", "tribal_council")
 
 # phase -> (open places, forced place or None). A forced place overrides every
 # stored choice; an open list without a forced place lets people move.
@@ -57,6 +68,19 @@ _PHASE_POLICY = {
     "finished":       (("camp_fire",),      "camp_fire"),
 }
 
+# Tribal Council is not one room for its whole length. Discussion is when the
+# scheming actually happens — the tribe breaks up, pairs wander off, and then
+# everyone is called back to vote. So camp reopens for that one sub-phase and
+# shuts again the moment the ballot starts.
+#
+# These are `currentVote["phase"]` values, not `game["phase"]`: the game phase
+# stays "tribal_council" for the whole ceremony.
+TALK_SUBPHASES = ("discussion",)
+
+# The Final Tribal Council is deliberately absent. Its deliberation is the jury
+# questioning two finalists to their faces, which is the ceremony rather than an
+# interlude in it.
+
 # Unknown or missing phase: the safe answer is "everyone's at the fire". This
 # also covers the legacy "final" phase and any phase added later — a new phase
 # never leaves a player standing somewhere invalid.
@@ -67,15 +91,34 @@ _FALLBACK_POLICY = (("camp_fire",), "camp_fire")
 _DISCORD_ID_RE = re.compile(r'^[0-9]{15,25}$')
 
 
-def place_policy(game):
+def place_policy(game, player=None):
     """
     What the current phase allows: ``{"open": [...], "forced": key|None}``.
 
     ``forced`` set means nobody may move — everyone reads as standing there.
     ``open`` is never empty, so ``open[0]`` is always a usable fallback.
+
+    Pass ``player`` for that player's own policy. Without one you get the
+    table's, which is what the Discord bot locks channels by and what an older
+    client reads. The two differ only for a snuffed player: they go to Exile
+    Island and stay there, so wherever the living may wander — and during the
+    council's discussion they may wander far — the dead are somewhere else.
     """
-    phase = (game or {}).get("phase")
+    game = game or {}
+    phase = game.get("phase")
     open_places, forced = _PHASE_POLICY.get(phase, _FALLBACK_POLICY)
+
+    if phase == "tribal_council":
+        subphase = (game.get("currentVote") or {}).get("phase")
+        if subphase in TALK_SUBPHASES:
+            open_places, forced = CAMP_PLACES, None
+
+    # Out of the game is out of the rooms. Exile lasts from the snuffing until
+    # the Final Tribal Council — `final_tribal` and `finished` are deliberately
+    # not exile phases, because that is the reunion.
+    if (player or {}).get("isEliminated") and phase in EXILE_PHASES:
+        open_places, forced = (EXILE_PLACE,), EXILE_PLACE
+
     return {"open": list(open_places), "forced": forced}
 
 
@@ -95,7 +138,7 @@ def effective_place(game, player):
 
     Derived, never stored: the phase gets the final say over the player's choice.
     """
-    return _effective(place_policy(game), player)
+    return _effective(place_policy(game, player), player)
 
 
 def voice_plan(game):
@@ -106,6 +149,13 @@ def voice_plan(game):
     Every place appears, empty ones included, so the bot can clear a channel it
     no longer needs. Computer players are left out entirely — a bot has no
     Discord presence to move. Players are listed in roster order.
+
+    ``policy`` is the *table's*, which is what the bot locks channels by. A
+    snuffed player is narrower than that — Exile Island, alone — so each entry
+    carries ``eliminated`` and the bot bars them from the living's rooms
+    individually. Moving them to Exile is not enough on its own: nothing stops
+    a ghost walking back into The Beach in Discord, and the plan version only
+    moves when the *game* changes, so no later poll would notice.
     """
     game = game or {}
     policy = place_policy(game)
@@ -114,10 +164,12 @@ def voice_plan(game):
     for pid, player in (game.get("players") or {}).items():
         if player.get("isBot"):
             continue
-        buckets[_effective(policy, player)].append({
+        mine = place_policy(game, player)
+        buckets[_effective(mine, player)].append({
             "playerId": pid,
             "name": player.get("name"),
             "discordUserId": player.get("discordUserId"),
+            "eliminated": bool(player.get("isEliminated")),
         })
 
     places = [{"key": key, "label": PLACE_LABELS[key], "players": buckets[key]}

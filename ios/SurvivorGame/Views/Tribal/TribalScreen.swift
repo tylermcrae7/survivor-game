@@ -127,18 +127,21 @@ private struct TribalContent: View {
             .minimumScaleFactor(0.5)
             .padding(.vertical, 12)
 
-            // Where everyone is standing, in its locked form — one compact
-            // row, not the camp's full band. The ceremony is the only phase
-            // that forces a place, so this is also the only screen the forced
-            // row can ever appear on. It earns the space: a Discord bot is
-            // physically dragging players into the Tribal Council voice
-            // channel, and this row is the on-screen reason their audio moved.
-            if let policy = viewModel.placePolicy, policy.isForced {
+            // Where everyone is standing. For most of the ceremony this is the
+            // locked row — a Discord bot is physically dragging players into
+            // the Tribal Council voice channel, and this row is the on-screen
+            // reason their audio moved. During discussion it is the camp's
+            // full band instead, because that is when the tribe breaks up to
+            // scheme and the rooms reopen.
+            if let policy = viewModel.placePolicy {
                 PlacesBar(
                     policy: policy,
                     players: viewModel.sortedPlayers,
                     myPlayerId: viewModel.myPlayerId,
-                    onMove: { _ in }
+                    isMoving: viewModel.isMovingPlace,
+                    onMove: { place in
+                        Task { await viewModel.moveToPlace(place) }
+                    }
                 )
                 .padding(.bottom, 12)
             }

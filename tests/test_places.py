@@ -65,11 +65,13 @@ class PlacesTestBase(unittest.TestCase):
 class TestPlacePolicy(PlacesTestBase):
     """The phase decides what's open, and whether anyone may move at all."""
 
-    def test_the_four_places_are_the_contract(self):
+    def test_the_five_places_are_the_contract(self):
         self.assertEqual(PLACE_KEYS,
-                         ("camp_fire", "the_beach", "the_water_well", "tribal_council"))
+                         ("camp_fire", "the_beach", "the_water_well",
+                          "tribal_council", "exile_island"))
         self.assertEqual([p["label"] for p in PLACES],
-                         ["Camp Fire", "The Beach", "The Water Well", "Tribal Council"])
+                         ["Camp Fire", "The Beach", "The Water Well",
+                          "Tribal Council", "Exile Island"])
 
     def test_policy_for_every_verified_phase(self):
         expected = {
@@ -253,7 +255,8 @@ class TestVoicePlan(PlacesTestBase):
         for place in plan["places"]:
             self.assertEqual(set(place), {"key", "label", "players"})
             for player in place["players"]:
-                self.assertEqual(set(player), {"playerId", "name", "discordUserId"})
+                self.assertEqual(set(player),
+                                 {"playerId", "name", "discordUserId", "eliminated"})
 
     def test_every_place_appears_even_when_empty(self):
         plan = voice_plan(self.game)
@@ -571,3 +574,187 @@ class TestPlaceRoutes(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestBreakoutsDuringDiscussion(PlacesTestBase):
+    """Tribal Council is not one room for its whole length.
+
+    Discussion is when the scheming happens: the tribe breaks up, pairs wander
+    off, and then everyone is called back to vote. Camp reopens for that one
+    sub-phase — and shuts again the instant the ballot starts, which is the
+    half that matters. A breakout that outlived the discussion would let two
+    players agree on a name while the box is open.
+    """
+
+    def open_discussion(self):
+        self.gs._trigger_tribal_council(self.game, drawer_id=self.tyler)
+        self.game["currentVote"]["phase"] = "discussion"
+
+    def subphase(self, name):
+        self.gs._trigger_tribal_council(self.game, drawer_id=self.tyler)
+        self.game["currentVote"]["phase"] = name
+
+    def test_the_camp_reopens_for_discussion(self):
+        self.open_discussion()
+        policy = place_policy(self.game)
+        self.assertIsNone(policy["forced"], "nobody is pinned during discussion")
+        self.assertEqual(policy["open"],
+                         ["camp_fire", "the_beach", "the_water_well"])
+
+    def test_you_can_actually_walk_off_during_discussion(self):
+        self.open_discussion()
+        result = self.gs.move_place(self.game_id, playerId=self.tyler,
+                                    place="the_water_well")
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(self.place_of(self.tyler), "the_water_well")
+
+    def test_every_other_subphase_still_holds_the_tribe_together(self):
+        for name in ("announcement", "advantage_play", "voting",
+                     "immunity", "reveal"):
+            with self.subTest(subphase=name):
+                self.subphase(name)
+                self.assertEqual(place_policy(self.game)["forced"], "tribal_council")
+                refused = self.gs.move_place(self.game_id, playerId=self.tyler,
+                                             place="the_beach")
+                self.assertFalse(refused["success"])
+
+    def test_the_walk_back_is_automatic_when_voting_starts(self):
+        """Derive, don't hook: no transition has to remember to call anyone in."""
+        self.open_discussion()
+        self.gs.move_place(self.game_id, playerId=self.tyler, place="the_beach")
+        self.assertEqual(self.place_of(self.tyler), "the_beach")
+
+        self.game["currentVote"]["phase"] = "voting"
+
+        self.assertEqual(self.place_of(self.tyler), "tribal_council")
+
+    def test_and_the_choice_is_still_there_at_the_next_discussion(self):
+        self.open_discussion()
+        self.gs.move_place(self.game_id, playerId=self.tyler, place="the_beach")
+        self.game["currentVote"]["phase"] = "voting"
+        self.game["currentVote"]["phase"] = "discussion"
+        self.assertEqual(self.place_of(self.tyler), "the_beach")
+
+    def test_the_voice_plan_scatters_and_regroups_with_it(self):
+        self.open_discussion()
+        self.gs.move_place(self.game_id, playerId=self.tyler, place="the_beach")
+        beach = next(p for p in voice_plan(self.game)["places"]
+                     if p["key"] == "the_beach")
+        self.assertEqual([p["playerId"] for p in beach["players"]], [self.tyler])
+
+        self.game["currentVote"]["phase"] = "voting"
+        council = next(p for p in voice_plan(self.game)["places"]
+                       if p["key"] == "tribal_council")
+        self.assertIn(self.tyler, [p["playerId"] for p in council["players"]])
+
+    def test_the_plan_version_moves_when_the_council_reopens_camp(self):
+        """Or the Discord bot never unlocks the rooms it needs to."""
+        self.subphase("announcement")
+        closed = voice_plan(self.game)["version"]
+        self.game["currentVote"]["phase"] = "discussion"
+        self.assertNotEqual(voice_plan(self.game)["version"], closed)
+
+
+class TestExileIsland(PlacesTestBase):
+    """A torch that is out goes to Exile Island and stays there.
+
+    The room exists so the snuffed have each other to talk to rather than
+    watching the rest of a season in silence — and so they are demonstrably
+    not in the room where the living are deciding who goes next. They come
+    back for the Final Tribal Council, which is the reunion.
+    """
+
+    def snuff(self, pid):
+        self.game["players"][pid]["isEliminated"] = True
+        self.game["players"][pid]["characterCards"] = 0
+
+    def test_a_snuffed_player_is_exiled_during_play(self):
+        self.snuff(self.ada)
+        policy = place_policy(self.game, self.game["players"][self.ada])
+        self.assertEqual(policy["forced"], "exile_island")
+        self.assertEqual(policy["open"], ["exile_island"])
+
+    def test_the_living_are_unaffected(self):
+        self.snuff(self.ada)
+        policy = place_policy(self.game, self.game["players"][self.tyler])
+        self.assertIsNone(policy["forced"])
+        self.assertEqual(len(policy["open"]), 3)
+
+    def test_they_cannot_walk_off_and_are_told_why(self):
+        self.snuff(self.ada)
+        result = self.gs.move_place(self.game_id, playerId=self.ada,
+                                    place="the_beach")
+        self.assertFalse(result["success"])
+        self.assertIn("torch is out", result["message"])
+        self.assertEqual(self.place_of(self.ada), "exile_island")
+
+    def test_being_snuffed_exiles_them_from_wherever_they_were(self):
+        self.gs.move_place(self.game_id, playerId=self.ada, place="the_water_well")
+        self.assertEqual(self.place_of(self.ada), "the_water_well")
+
+        self.snuff(self.ada)
+
+        self.assertEqual(self.place_of(self.ada), "exile_island")
+
+    def test_they_are_barred_from_the_councils_breakout_too(self):
+        """The whole point of the request."""
+        self.snuff(self.ada)
+        self.gs._trigger_tribal_council(self.game, drawer_id=self.tyler)
+        self.game["currentVote"]["phase"] = "discussion"
+
+        self.assertTrue(self.gs.move_place(self.game_id, playerId=self.tyler,
+                                           place="the_beach")["success"])
+        self.assertFalse(self.gs.move_place(self.game_id, playerId=self.ada,
+                                            place="the_beach")["success"])
+        self.assertEqual(self.place_of(self.ada), "exile_island")
+
+    def test_exile_outlasts_the_councils_that_follow(self):
+        """The living are called together; the exiled are not called back."""
+        self.snuff(self.ada)
+        self.gs._trigger_tribal_council(self.game, drawer_id=self.tyler)
+        for subphase in ("announcement", "discussion", "voting", "reveal"):
+            with self.subTest(subphase=subphase):
+                self.game["currentVote"]["phase"] = subphase
+                self.assertEqual(self.place_of(self.tyler), "tribal_council"
+                                 if subphase != "discussion" else "camp_fire")
+                self.assertEqual(self.place_of(self.ada), "exile_island")
+
+    def test_the_final_tribal_council_brings_everyone_back_together(self):
+        """The one reunion: the jury and the finalists in one room."""
+        self.snuff(self.ada)
+        self.game["phase"] = "final_tribal"
+        self.assertEqual(self.place_of(self.ada), "tribal_council")
+        self.assertEqual(self.place_of(self.tyler), "tribal_council")
+        policy = place_policy(self.game, self.game["players"][self.ada])
+        self.assertEqual(policy["forced"], "tribal_council")
+
+    def test_and_a_finished_season_puts_the_whole_cast_at_the_fire(self):
+        self.snuff(self.ada)
+        self.game["phase"] = "finished"
+        self.assertEqual(self.place_of(self.ada), "camp_fire")
+        self.assertEqual(self.place_of(self.tyler), "camp_fire")
+
+    def test_the_state_carries_each_players_own_policy(self):
+        self.snuff(self.ada)
+        state = self.state()
+        self.assertEqual(state["players"][self.ada]["placePolicy"]["forced"],
+                         "exile_island")
+        self.assertIsNone(state["players"][self.tyler]["placePolicy"]["forced"])
+        self.assertIsNone(state["placePolicy"]["forced"],
+                          "the table's policy is still the table's")
+
+    def test_the_voice_plan_marks_them_so_the_bot_can_bar_the_door(self):
+        """Moving a ghost home is a one-off; the bot needs to lock them out."""
+        self.snuff(self.ada)
+        plan = voice_plan(self.game)
+        exile = next(p for p in plan["places"] if p["key"] == "exile_island")
+        entry = next(p for p in exile["players"] if p["playerId"] == self.ada)
+        self.assertTrue(entry["eliminated"])
+        fire = next(p for p in plan["places"] if p["key"] == "camp_fire")
+        living = next(p for p in fire["players"] if p["playerId"] == self.tyler)
+        self.assertFalse(living["eliminated"])
+
+    def test_the_plan_version_moves_when_a_torch_goes_out(self):
+        before = voice_plan(self.game)["version"]
+        self.snuff(self.ada)
+        self.assertNotEqual(voice_plan(self.game)["version"], before)

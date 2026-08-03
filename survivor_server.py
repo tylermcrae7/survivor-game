@@ -11,6 +11,7 @@ from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 import seats
+import places
 from places import (DEFAULT_PLACE, PLACE_KEYS, PLACE_LABELS, place_policy,
                     effective_place, voice_plan, validate_discord_user_id)
 import push_notify
@@ -519,8 +520,15 @@ class GameState:
         if place not in PLACE_KEYS:
             return {"success": False, "message": "There's no such place on this island"}
 
-        policy = place_policy(game)
+        policy = place_policy(game, player)
         if policy["forced"]:
+            # A snuffed player is on Exile Island, not wherever the living
+            # happen to be, so "everyone is here" would be a lie to the one
+            # person it is said to.
+            if policy["forced"] == places.EXILE_PLACE:
+                return {"success": False,
+                        "message": "Your torch is out — Exile Island is yours "
+                                   "until the Final Tribal Council"}
             return {"success": False,
                     "message": f"Everyone is at {PLACE_LABELS[policy['forced']]} "
                                f"right now — nobody wanders off"}
@@ -639,6 +647,12 @@ class GameState:
         enriched_game["seatRoster"] = seats.roster()
         for player in enriched_game.get("players", {}).values():
             player["place"] = effective_place(enriched_game, player)
+            # The table's policy is the top-level one; this is *yours*. They
+            # part company once your torch is out — the living may wander
+            # during the council's discussion, you may not. The state is
+            # broadcast to everybody, so the narrowing has to ride on the
+            # player it applies to rather than the game.
+            player["placePolicy"] = place_policy(enriched_game, player)
             player.setdefault("discordUserId", None)
             # Derived, never stored twice: a game saved before seats existed
             # gets its seat from its colour, and anything unplaceable stays
@@ -4163,7 +4177,8 @@ if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
         game = game_state.games.get(gid)
         if not game or pid not in game.get("players", {}):
             return jsonify(success=False, message="bad test hook call"), 400
-        for key in ("hasStolen", "hasPlayed", "hasDrawn", "characterCards", "campRaidedBy"):
+        for key in ("hasStolen", "hasPlayed", "hasDrawn", "characterCards",
+                    "campRaidedBy", "isEliminated"):
             if key in data:
                 game["players"][pid][key] = data[key]
         game_state._save(gid)
