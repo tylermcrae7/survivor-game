@@ -36,12 +36,19 @@ if [ ! -x "$DEPLOY_DIR/.venv/bin/python" ]; then
 fi
 "$DEPLOY_DIR/.venv/bin/pip" install -q -r "$DEPLOY_DIR/requirements.txt"
 
-# Bounce the server if its LaunchAgent is installed
-PLIST="$HOME/Library/LaunchAgents/com.survivor-game.server.plist"
-if [ -f "$PLIST" ]; then
-    launchctl unload "$PLIST" 2>/dev/null || true
-    launchctl load "$PLIST"
-    echo "Server restarted."
-fi
+# Bounce the server and the Discord bot if their LaunchAgents are installed.
+#
+# The bot is not optional to restart. It validates the voice plan it polls
+# against its own list of places, so a server that knows about a place the
+# running bot does not — Exile Island was exactly this — makes every poll fail
+# until the bot is restarted onto the new code.
+for label in server discord-bot; do
+    PLIST="$HOME/Library/LaunchAgents/com.survivor-game.$label.plist"
+    if [ -f "$PLIST" ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "Restarted com.survivor-game.$label"
+    fi
+done
 
 echo "=== Redeploy complete ==="

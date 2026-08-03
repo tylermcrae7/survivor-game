@@ -28,14 +28,27 @@ PLACE_KEYS = (
     "the_beach",
     "the_water_well",
     "tribal_council",
+    "exile_island",
 )
+
+# Where a snuffed player sits out the rest of the season, and the room the
+# whole tribe is called into. Neither is ever barred to anyone in the game.
+GHOST_PLACE = "exile_island"
+COUNCIL_PLACE = "tribal_council"
 
 CHANNEL_ENV = {
     "camp_fire": "DISCORD_CAMP_FIRE_CHANNEL_ID",
     "the_beach": "DISCORD_THE_BEACH_CHANNEL_ID",
     "the_water_well": "DISCORD_THE_WATER_WELL_CHANNEL_ID",
     "tribal_council": "DISCORD_TRIBAL_COUNCIL_CHANNEL_ID",
+    "exile_island": "DISCORD_EXILE_ISLAND_CHANNEL_ID",
 }
+
+# Exile Island arrived after the other four, so a server that has not made the
+# channel yet must still run. Without it the snuffed simply stay where Discord
+# last left them — the game itself is unaffected, since nothing about places
+# depends on a bot existing.
+OPTIONAL_PLACES = frozenset({"exile_island"})
 
 PLAN_POLL_SECONDS = 2.0
 IDLE_POLL_SECONDS = 10.0
@@ -109,9 +122,17 @@ class BotConfig:
 
     @classmethod
     def from_environment(cls) -> "BotConfig":
-        channel_ids = {place: _snowflake(name) for place, name in CHANNEL_ENV.items()}
+        channel_ids: dict[str, int] = {}
+        for place, name in CHANNEL_ENV.items():
+            if place in OPTIONAL_PLACES and not os.environ.get(name, "").strip():
+                LOG.warning(
+                    "%s is not set: snuffed players will not be moved to %s",
+                    name, place,
+                )
+                continue
+            channel_ids[place] = _snowflake(name)
         if len(set(channel_ids.values())) != len(channel_ids):
-            raise ConfigurationError("the four Discord channel IDs must be unique")
+            raise ConfigurationError("the Discord channel IDs must be unique")
         return cls(
             # The token is deliberately treated as an opaque string. Do not add
             # format validation: Discord can change its token format at any time.
@@ -241,16 +262,25 @@ def _validate_plan(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
         if not isinstance(place, dict):
             raise SurvivorAPIError(200, f"/api/voice/plan/{game_id}", "invalid place")
         key = place.get("key")
-        if key in by_key or key not in PLACE_KEYS:
+        if key not in PLACE_KEYS:
+            # A place this build has never heard of. Refusing the whole plan
+            # would take the bot down for every game until it is restarted, so
+            # skip the room and mirror the ones we do know. Exile Island was
+            # exactly this skew; the next one should cost nothing.
+            LOG.warning("ignoring unknown place %r in plan for %s", key, game_id)
+            continue
+        if key in by_key:
             raise SurvivorAPIError(
-                200, f"/api/voice/plan/{game_id}", f"invalid place key {key!r}"
+                200, f"/api/voice/plan/{game_id}", f"duplicate place key {key!r}"
             )
         if not isinstance(place.get("players"), list):
             raise SurvivorAPIError(
                 200, f"/api/voice/plan/{game_id}", f"invalid players for {key}"
             )
         by_key[key] = place
-    missing = set(PLACE_KEYS) - set(by_key)
+    # Optional places may legitimately be absent — an older server does not
+    # know Exile Island exists. Missing *required* rooms is still a broken plan.
+    missing = set(PLACE_KEYS) - OPTIONAL_PLACES - set(by_key)
     if missing:
         raise SurvivorAPIError(
             200, f"/api/voice/plan/{game_id}", f"missing places: {sorted(missing)}"
@@ -259,8 +289,10 @@ def _validate_plan(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
     forced = policy.get("forced")
     if forced is not None and forced not in PLACE_KEYS:
         raise SurvivorAPIError(200, f"/api/voice/plan/{game_id}", "invalid forced place")
-    if not policy["open"] or any(key not in PLACE_KEYS for key in policy["open"]):
+    open_known = [key for key in policy["open"] if key in PLACE_KEYS]
+    if not open_known:
         raise SurvivorAPIError(200, f"/api/voice/plan/{game_id}", "invalid open place")
+    policy["open"] = open_known
     if forced is not None and forced not in policy["open"]:
         raise SurvivorAPIError(
             200, f"/api/voice/plan/{game_id}", "forced place is not open"
@@ -317,6 +349,10 @@ class SurvivorDiscordClient(discord.Client):
             await self._unmute_everyone_in_managed_channels(
                 "Survivor: startup mute safety cleanup"
             )
+            # Same reasoning for the Exile Island bars: reconciliation puts
+            # back whatever the live game still calls for, so starting clean
+            # cannot strand anyone.
+            await self._clear_every_member_bar("Survivor: startup safety cleanup")
         except Exception:
             LOG.exception("Discord configuration validation failed")
             await self.close()
@@ -464,7 +500,10 @@ class SurvivorDiscordClient(discord.Client):
             )
 
     async def _poll_once(self) -> float:
-        if self.guild is None or len(self.channels) != len(PLACE_KEYS):
+        # Every channel that *was* configured must have resolved. Exile Island
+        # is optional, so comparing against PLACE_KEYS would idle the bot
+        # forever on a server that has not made that channel yet.
+        if self.guild is None or len(self.channels) != len(self.config.channel_ids):
             return ERROR_RETRY_SECONDS
 
         if self._current_game_id is None:
@@ -550,7 +589,10 @@ class SurvivorDiscordClient(discord.Client):
         # Connect there. Open every valid destination before attempting moves;
         # only then close the doors that the new plan marks unavailable.
         destinations = {forced} if forced is not None else set(policy["open"])
-        for place_key in PLACE_KEYS:
+        # Exile Island is a destination whenever anybody is on it, whatever the
+        # table's policy says — the table's policy is the living's.
+        destinations |= {place["key"] for place in plan["places"] if place["players"]}
+        for place_key in self.channels:
             if place_key in destinations:
                 if not await self._set_channel_lock(place_key, False):
                     success = False
@@ -562,14 +604,19 @@ class SurvivorDiscordClient(discord.Client):
                 success = False
 
         if forced is not None:
-            for place_key in PLACE_KEYS:
-                locked = place_key != forced
+            for place_key in self.channels:
+                # Exile is never locked to @everyone: the snuffed are there
+                # during a council the living are all standing in.
+                locked = place_key not in (forced, GHOST_PLACE)
                 if not await self._set_channel_lock(place_key, locked):
                     success = False
         else:
             for place_key in policy["open"]:
                 if not await self._set_channel_lock(place_key, False):
                     success = False
+
+        if not await self._reconcile_ghost_locks(plan, forced):
+            success = False
 
         LOG.info(
             "reconciled game=%s phase=%s version=%s forced=%s linked=%d success=%s",
@@ -623,6 +670,87 @@ class SurvivorDiscordClient(discord.Client):
     def _linked_players(self, plan: dict[str, Any]) -> list[int]:
         return [assignment[0] for assignment in self._assignments(plan)]
 
+    @staticmethod
+    def _linked_by_state(plan: dict[str, Any]) -> tuple[set[int], set[int]]:
+        """Linked Discord ids, split into (ghosts, living)."""
+        ghosts: set[int] = set()
+        living: set[int] = set()
+        for place in plan["places"]:
+            for player in place["players"]:
+                raw = player.get("discordUserId")
+                if not isinstance(raw, str) or not raw.isdigit():
+                    continue
+                (ghosts if player.get("eliminated") else living).add(int(raw))
+        return ghosts, living - ghosts
+
+    async def _reconcile_ghost_locks(
+        self, plan: dict[str, Any], forced: str | None
+    ) -> bool:
+        """Keep snuffed players out of the breakout rooms, not merely out of
+        them right now.
+
+        Moving a ghost back to the Camp Fire is a one-off: the plan version
+        only moves when the *game* changes, so nothing would notice them
+        walking straight back into The Beach afterwards. A per-member Connect
+        deny is what Discord will actually enforce at the door.
+
+        Only linked players in this game are ever touched, and only their
+        denies — an allow written by an administrator is left alone, exactly as
+        the @everyone lock does.
+        """
+        ghosts, living = self._linked_by_state(plan)
+        everyone_linked = ghosts | living
+        success = True
+        for place_key in self.channels:
+            # While the tribe is called together nobody is anywhere else and
+            # the @everyone lock already says so, so bar nobody individually —
+            # which also clears yesterday's denies the moment camp reopens.
+            barred = (
+                ghosts
+                if forced is None and place_key not in (GHOST_PLACE, COUNCIL_PLACE)
+                else set()
+            )
+            for user_id in everyone_linked:
+                if not await self._set_member_lock(
+                    place_key, user_id, locked=user_id in barred
+                ):
+                    success = False
+        return success
+
+    async def _set_member_lock(
+        self, place_key: str, user_id: int, locked: bool
+    ) -> bool:
+        assert self.guild is not None
+        channel = self.channels[place_key]
+        member = self.guild.get_member(user_id)
+        if member is None:
+            # Not cached and not worth a fetch per channel per poll: an absent
+            # member cannot be in a voice channel to bar.
+            return True
+        overwrite = channel.overwrites_for(member)
+        if locked and overwrite.connect is False:
+            return True
+        if not locked and overwrite.connect is not False:
+            return True   # nothing of ours to clear (and never erase an allow)
+        overwrite.connect = False if locked else None
+        try:
+            await channel.set_permissions(
+                member,
+                overwrite=None if overwrite.is_empty() else overwrite,
+                reason=("Survivor: snuffed players do not join breakouts"
+                        if locked else "Survivor: restore access after the game"),
+            )
+            LOG.info(
+                "%s %s for %s", "barred" if locked else "readmitted",
+                channel.name, member.display_name,
+            )
+            return True
+        except discord.Forbidden as exc:
+            LOG.error("cannot set member permissions for %s: %s", channel.name, exc)
+        except discord.HTTPException as exc:
+            LOG.error("failed to set member permissions for %s: %s", channel.name, exc)
+        return False
+
     def _voice_channel_for_user(self, user_id: int) -> Any | None:
         if self.guild is None:
             return None
@@ -649,7 +777,11 @@ class SurvivorDiscordClient(discord.Client):
     async def _move_member(
         self, user_id: int, place_key: str, label: str, player_name: str
     ) -> bool:
-        target = self.channels[place_key]
+        target = self.channels.get(place_key)
+        if target is None:
+            # An optional place with no channel configured. Nothing to move
+            # anyone into, and the game does not care.
+            return True
         current = self._voice_channel_for_user(user_id)
         if current is None:
             return True  # Not connected to voice is a normal state.
@@ -768,6 +900,29 @@ class SurvivorDiscordClient(discord.Client):
         if targets:
             LOG.info("voting mute=%s applied to %d linked members", muted, len(targets))
         return success
+
+    async def _clear_every_member_bar(self, reason: str) -> None:
+        """Drop every per-member Connect deny this bot could have written.
+
+        A process that dies mid-season would otherwise leave a snuffed player
+        locked out of The Beach with nothing left running to let them back in.
+        Reconciliation re-applies whatever the live game still calls for within
+        one poll, so clearing on the way in costs a couple of API calls and
+        removes the whole class of stranding.
+
+        Only denies are cleared, and only for members who have one — an allow
+        written by an administrator is never touched.
+        """
+        if self.guild is None or not self.channels:
+            return
+        for place_key, channel in self.channels.items():
+            for target, overwrite in list(channel.overwrites.items()):
+                if not isinstance(target, discord.Member):
+                    continue
+                if overwrite.connect is not False:
+                    continue
+                await self._set_member_lock(place_key, target.id, locked=False)
+        LOG.info("cleared member channel bars (%s)", reason)
 
     async def _unmute_everyone_in_managed_channels(self, reason: str) -> None:
         if self.guild is None or not self.channels:

@@ -93,11 +93,19 @@ Required values:
 | `{{REPO_DIR}}` | the absolute deployed repo path, normally `/Users/<you>/srv/survivor-game` |
 | `{{DISCORD_BOT_TOKEN}}` | current token from Discord Developer Portal → Bot |
 | `{{DISCORD_GUILD_ID}}` | server ID |
-| four `{{DISCORD_..._CHANNEL_ID}}` values | IDs of Camp Fire, Beach, Water Well, and Tribal Council |
+| five `{{DISCORD_..._CHANNEL_ID}}` values | IDs of Camp Fire, Beach, Water Well, Tribal Council, and Exile Island |
 | `{{SURVIVOR_BASE_URL}}` | normally `https://survivor.mctech.biz` |
 | `{{SURVIVOR_ACCESS_CODE}}` | the current island access code |
 
-All four Discord channels must be voice channels with no user limit. The bot
+**Exile Island is optional to configure and required to work.** It arrived
+after the other four, so the bot still starts without
+`DISCORD_EXILE_ISLAND_CHANNEL_ID` — it logs a warning and simply never moves
+snuffed players anywhere. The game itself is unaffected either way: places are
+derived server-side and no client depends on a bot existing. Set the ID and the
+snuffed are moved there on elimination and barred from the living's rooms until
+the Final Tribal Council.
+
+All five Discord channels must be voice channels with no user limit. The bot
 role needs View Channel, Connect, Mute Members, Move Members, and Manage Roles
 (Discord calls the last one **Manage Permissions** at channel level). Keep the
 bot role near the top, and do not grant Administrator. No privileged gateway

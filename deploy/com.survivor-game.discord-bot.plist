@@ -42,6 +42,8 @@
         <string>{{DISCORD_THE_WATER_WELL_CHANNEL_ID}}</string>
         <key>DISCORD_TRIBAL_COUNCIL_CHANNEL_ID</key>
         <string>{{DISCORD_TRIBAL_COUNCIL_CHANNEL_ID}}</string>
+        <key>DISCORD_EXILE_ISLAND_CHANNEL_ID</key>
+        <string>{{DISCORD_EXILE_ISLAND_CHANNEL_ID}}</string>
         <key>SURVIVOR_BASE_URL</key>
         <string>{{SURVIVOR_BASE_URL}}</string>
         <key>SURVIVOR_ACCESS_CODE</key>
