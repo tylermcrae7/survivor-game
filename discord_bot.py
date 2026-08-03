@@ -410,18 +410,24 @@ class SurvivorDiscordClient(discord.Client):
                 f"bot cannot see configured guild {self.config.guild_id}"
             )
 
+        # Report every problem at once. Failing on the first channel makes
+        # fixing a Discord server a round trip per room, and the fix is nearly
+        # always the same one applied everywhere.
         channels: dict[str, discord.VoiceChannel] = {}
+        faults: list[str] = []
         for place, channel_id in self.config.channel_ids.items():
             channel = guild.get_channel(channel_id)
             if channel is None:
-                raise ConfigurationError(
+                faults.append(
                     f"{CHANNEL_ENV[place]}={channel_id} is not visible in guild {guild.id}"
                 )
+                continue
             if not isinstance(channel, discord.VoiceChannel):
-                raise ConfigurationError(
-                    f"{channel_id} for {place} is not a voice channel"
-                )
+                faults.append(f"{channel_id} for {place} is not a voice channel")
+                continue
             channels[place] = channel
+        if faults:
+            raise ConfigurationError("; ".join(faults))
 
         bot_member = guild.me
         if bot_member is None:
@@ -466,9 +472,17 @@ class SurvivorDiscordClient(discord.Client):
                 required["mute_members"] = permissions.mute_members
             missing = [name for name, allowed in required.items() if not allowed]
             if missing:
-                raise ConfigurationError(
-                    f"bot lacks {', '.join(missing)} in voice channel {channel.name}"
+                faults.append(
+                    f"{channel.name}: needs {', '.join(missing)}"
                 )
+
+        if faults:
+            raise ConfigurationError(
+                "the bot role is missing channel permissions — "
+                + "; ".join(faults)
+                + ". Grant them on the category and sync, or per channel "
+                  "(Discord calls manage_roles 'Manage Permissions')"
+            )
 
         self.guild = guild
         self.channels = channels
