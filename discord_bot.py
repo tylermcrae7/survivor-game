@@ -701,6 +701,11 @@ class SurvivorDiscordClient(discord.Client):
         ghosts, living = self._linked_by_state(plan)
         everyone_linked = ghosts | living
         success = True
+        # With no Exile channel configured there is nowhere to send them, and
+        # barring the rooms anyway would leave a snuffed player unable to join
+        # anything at all. Clear every bar instead and behave as before.
+        if GHOST_PLACE not in self.channels:
+            ghosts = set()
         for place_key in self.channels:
             # While the tribe is called together nobody is anywhere else and
             # the @everyone lock already says so, so bar nobody individually —
