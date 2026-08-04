@@ -387,6 +387,52 @@ final class VisualAuditUITests: XCTestCase {
         shot("13-council-regrouped")
     }
 
+    // MARK: - Linking Discord without typing a snowflake
+
+    /// The old flow was: turn on Developer Mode in Discord, long-press your own
+    /// name, copy an 18-digit number, type it into Settings. The field's own
+    /// help text had to tell you how long the number was.
+    ///
+    /// Now the phone shows a code and somebody runs `/link` in Discord. This
+    /// drives the whole loop with the bot's half done over HTTP, because a real
+    /// slash command needs a Discord gateway — but the claim endpoint it calls
+    /// is exactly the one the bot calls.
+    @MainActor
+    func testLinkingDiscordShowsACodeAndCollectsTheAccount() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "SURVIVOR_SERVER_URL": Self.serverURL,
+            "SURVIVOR_PLAYER_NAME": Self.playerName,
+            "SURVIVOR_RESET_ACCESS": UUID().uuidString,
+        ]
+        app.launch()
+        let accessField = app.textFields["island-access-code"]
+        if accessField.waitForExistence(timeout: 8) {
+            accessField.tap()
+            accessField.typeText(Self.accessCode)
+            app.buttons["island-come-ashore"].tap()
+        }
+        XCTAssertTrue(app.textFields["Game code"].waitForExistence(timeout: 10))
+
+        app.buttons["Settings"].firstMatch.tap()
+        let link = app.buttons["settings-link-discord"]
+        XCTAssertTrue(link.waitForExistence(timeout: 8),
+                      "Settings should offer to link Discord")
+        link.tap()
+
+        // The code is the point of the screen, so it has to be on it.
+        let code = try waitForCode(in: app)
+        shot("14-discord-link-code")
+
+        // Stand in for the bot: same endpoint, same shape, real Discord id.
+        try api.post("/api/discord/link/claim",
+                     ["code": code, "discordUserId": "111111111111111111"])
+
+        XCTAssertTrue(app.staticTexts["Linked"].waitForExistence(timeout: 12),
+                      "the phone should collect the claim without being touched")
+        shot("15-discord-linked")
+    }
+
     /// Poll the server until `cond` holds, so a UI assertion is not racing a
     /// socket round trip.
     @discardableResult
@@ -403,4 +449,23 @@ final class VisualAuditUITests: XCTestCase {
         return last
     }
 
+    /// Read the code off the screen. The visible text is "/link PALM-472" and
+    /// the spoken label spells it out, so the identifier is what carries it.
+    private func waitForCode(in app: XCUIApplication) throws -> String {
+        let prefix = "discord-link-code-"
+        let element = app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", prefix)).firstMatch
+        guard element.waitForExistence(timeout: 15) else {
+            shot("14-discord-link-FAILED")
+            XCTFail("no link code appeared. On screen: "
+                    + app.staticTexts.allElementsBoundByIndex
+                        .prefix(20).map { $0.label }.joined(separator: " | "))
+            return ""
+        }
+        // ...and while we are here, the spoken form is the whole reason a
+        // sighted-only label would have been wrong.
+        XCTAssertTrue(element.label.contains("dash"),
+                      "VoiceOver should spell the code, not read it as a word")
+        return String(element.identifier.dropFirst(prefix.count))
+    }
 }

@@ -17,6 +17,7 @@
 		1BBEDBAB7B8AE6904A8C284E /* PlacesBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC481BEA784D2AFDA39347C /* PlacesBar.swift */; };
 		20698A00EC6EB3802173F29D /* DesignSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5396A2E209113CD92EB3A88 /* DesignSystemTests.swift */; };
 		20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */; };
+		236A1DC06A3BD3051FC787B2 /* DiscordLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C66E49F082FBC958DC7CE70 /* DiscordLinkSheet.swift */; };
 		270F3BDFB4C49636A5453C66 /* SurvivorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */; };
 		29FAA0B0EA01182029E97275 /* NetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA53E7581D67D6EF850AEDE4 /* NetworkingTests.swift */; };
 		2B479F1D3809B3EB62E06F44 /* CardDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503E35CDBCFBE25AB9D87771 /* CardDefinition.swift */; };
@@ -140,6 +141,7 @@
 		03BBAD4DE85648C219BC0E8F /* CardIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardIdentityTests.swift; sourceTree = "<group>"; };
 		048F925110028562672B8F57 /* PenaltyDiscardOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PenaltyDiscardOverlay.swift; sourceTree = "<group>"; };
 		083E4829752E7D45735E2195 /* LobbyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyScreen.swift; sourceTree = "<group>"; };
+		0C66E49F082FBC958DC7CE70 /* DiscordLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordLinkSheet.swift; sourceTree = "<group>"; };
 		0DADDCA25868D3BFCF509268 /* TorchAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchAudio.swift; sourceTree = "<group>"; };
 		0DC5D2C9DAB382995407D3F5 /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
 		0FA7A3B2A00460C0C68A2255 /* ChallengeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeState.swift; sourceTree = "<group>"; };
@@ -377,6 +379,7 @@
 			isa = PBXGroup;
 			children = (
 				8E7B73810847FA907FA26FD4 /* AppSettingsSheet.swift */,
+				0C66E49F082FBC958DC7CE70 /* DiscordLinkSheet.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -777,6 +780,7 @@
 				43CA90BC5E4FBACEF5B53D48 /* ConnectionBanner.swift in Sources */,
 				9C9B02BD119CE0A0AEA9186B /* ConnectionState.swift in Sources */,
 				D59EFE81A04EAC42ECBE7AD7 /* ContentView.swift in Sources */,
+				236A1DC06A3BD3051FC787B2 /* DiscordLinkSheet.swift in Sources */,
 				4DAC014B2C200FDF5622B453 /* EliminationView.swift in Sources */,
 				322C1630628F6ED6F828E5A1 /* FinalTribalScreen.swift in Sources */,
 				4961C36697A5B34E8EA34135 /* FinalTribalState.swift in Sources */,

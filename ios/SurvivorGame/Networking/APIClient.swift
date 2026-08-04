@@ -70,6 +70,39 @@ actor APIClient {
         try await request("GET", path: path)
     }
 
+    // MARK: - Discord linking
+
+    /// Ask for a code to show. The phone never learns a Discord account any
+    /// other way — only the server sees both the code and whoever claims it.
+    func startDiscordLink() async throws -> String {
+        struct Response: Decodable { let code: String }
+        let response: Response = try await post(path: "/api/discord/link/start")
+        return response.code
+    }
+
+    /// Returns the linked Discord id once somebody has run `/link`, nil while
+    /// nobody has, and throws `.linkCodeExpired` when the code is gone.
+    func pollDiscordLink(code: String) async throws -> String? {
+        struct Response: Decodable {
+            let claimed: Bool
+            let discordUserId: String?
+        }
+        do {
+            let response: Response = try await post(
+                path: "/api/discord/link/status", body: ["code": code])
+            return response.claimed ? response.discordUserId : nil
+        } catch APIError.serverError(statusCode: 404, _) {
+            throw APIError.linkCodeExpired
+        }
+    }
+
+    /// Release a code the phone has stopped waiting on.
+    func cancelDiscordLink(code: String) async throws {
+        struct Response: Decodable { let success: Bool }
+        let _: Response = try await post(
+            path: "/api/discord/link/cancel", body: ["code": code])
+    }
+
     // MARK: - Game Management
 
     func createGame(
@@ -528,11 +561,17 @@ enum APIError: LocalizedError {
     case invalidResponse
     case serverError(statusCode: Int, message: String)
     case decodingFailed(Error)
+    /// A Discord link code the server no longer holds. Distinct from a network
+    /// failure because the answer is different: ask for a new code rather than
+    /// keep waiting on a dead one.
+    case linkCodeExpired
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
             return "Invalid response from server"
+        case .linkCodeExpired:
+            return "That code expired. Ask for a new one."
         case .serverError(_, let message):
             return message
         case .decodingFailed(let error):

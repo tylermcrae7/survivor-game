@@ -14,6 +14,8 @@ struct AppSettingsSheet: View {
     @State private var playerName = ""
     @State private var preferredColor: String?
     @State private var discordUserId = ""
+    @State private var showLinkSheet = false
+    @State private var showManualDiscordId = false
     @State private var statusMessage: String?
     @State private var showForgetConfirmation = false
     @State private var loaded = false
@@ -83,49 +85,44 @@ struct AppSettingsSheet: View {
                         .textInputAutocapitalization(.words)
                         .focused($focusedField, equals: .name)
                     BuffColorPicker(selectedColor: $preferredColor)
-                    VStack(alignment: .leading, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Discord user ID")
-                                .font(Torch.Font.label(Torch.TextSize.xs))
-                                .tracking(Torch.Track.label * Torch.TextSize.xs)
-                                .foregroundStyle(Torch.Color.textSecondary)
-                            // The server refuses a malformed ID outright — and
-                            // it does so on JOIN, where the failure would read
-                            // as "the island turned me away". Say it here
-                            // instead, ABOVE the field: the number pad covers
-                            // everything below it, which is exactly where this
-                            // warning used to sit and never be read.
-                            if showsDiscordHint {
-                                Text("A Discord user ID is a long run of digits — usually 18.")
-                                    .font(Torch.Font.body(Torch.TextSize.xs))
-                                    .foregroundStyle(Torch.Color.warning)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .transition(.opacity)
+                    // The code is the way in; the raw ID stays as the way
+                    // out. If the bot is down or a slash command misbehaves
+                    // mid-game, somebody can still type the number.
+                    Button {
+                        showLinkSheet = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isDiscordLinked
+                                  ? "checkmark.seal.fill" : "link")
+                                .foregroundStyle(isDiscordLinked
+                                                 ? Torch.Color.torch
+                                                 : Torch.Color.textSecondary)
+                            Text(isDiscordLinked ? "Discord linked" : "Link Discord")
+                                .foregroundStyle(Torch.Color.text)
+                            Spacer()
+                            if isDiscordLinked {
+                                Text("relink")
+                                    .font(Torch.Font.label(Torch.TextSize.xs))
+                                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                    .foregroundStyle(Torch.Color.textSecondary)
                             }
                         }
-                        TextField("000000000000000000", text: $discordUserId)
-                            .keyboardType(.numberPad)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .torchField()
-                            .focused($focusedField, equals: .discord)
-                            .accessibilityLabel("Discord user ID")
-                            .accessibilityValue(showsDiscordHint
-                                ? "That doesn't look like a Discord user ID — it is a long run of digits, usually 18."
-                                : "")
-                            // A pasted ID often arrives wrapped in spaces or
-                            // angle brackets; keep only what the server accepts.
-                            .onChange(of: discordUserId) { _, value in
-                                let digits = value.filter(\.isNumber)
-                                if digits != value { discordUserId = digits }
-                            }
                     }
-                    .padding(.vertical, 4)
-                    .animation(.easeOut(duration: 0.15), value: showsDiscordHint)
+                    .accessibilityIdentifier("settings-link-discord")
+                    .accessibilityHint("Shows a code to run in Discord, so there is no ID to copy")
+
+                    DisclosureGroup(isExpanded: $showManualDiscordId) {
+                        discordIdField
+                    } label: {
+                        Text("Enter ID manually")
+                            .font(Torch.Font.body(Torch.TextSize.sm))
+                            .foregroundStyle(Torch.Color.textSecondary)
+                    }
+                    .accessibilityIdentifier("settings-manual-discord")
                 } header: {
                     sectionLabel("you")
                 } footer: {
-                    footerText("Optional. Lets the camp's Discord bot move you between voice channels as you change places. In Discord: Settings → Advanced → turn on Developer Mode, then press and hold your own name and tap Copy User ID.")
+                    footerText("Optional. Lets the camp's Discord bot move you between voice channels as you change places. Tap Link Discord and run the code it shows — there is no ID to copy.")
                 }
                 .listRowBackground(Torch.Color.surfaceSunken)
                 .listRowSeparatorTint(Torch.Color.line)
@@ -242,6 +239,22 @@ struct AppSettingsSheet: View {
             } message: {
                 Text("The island code and saved game are removed from this device. Your player name and preferences stay.")
             }
+            .sheet(isPresented: $showLinkSheet) {
+                // A code and one line of instruction do not want a full
+                // screen; at that height the content floats in the middle of
+                // nothing. Half the screen is the size of the idea.
+                DiscordLinkSheet(apiClient: gameClient.apiClient) { linkedId in
+                    // The link belongs to the phone, not to a player: it is
+                    // stored here and sent on every join and reconnect, exactly
+                    // as a hand-typed ID always was.
+                    discordUserId = linkedId
+                    let config = ServerConfig.loadDefault(from: modelContext)
+                    config.discordUserId = linkedId
+                    try? modelContext.save()
+                }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+            }
         }
         .tint(Torch.Color.torch)
         .preferredColorScheme(.dark)
@@ -273,6 +286,55 @@ struct AppSettingsSheet: View {
     /// one of them is a warning people learn to ignore. So: judge on blur,
     /// where the answer is final — and immediately while typing only once the
     /// value has run past any plausible snowflake, which is unambiguous.
+
+    /// The original 18-digit field, kept as the fallback when `/link` cannot
+    /// be used. Unchanged: same validation, same paste cleanup, same warning
+    /// placed above the field because the number pad covers everything below.
+    private var discordIdField: some View {
+        VStack(alignment: .leading, spacing: 10) {
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Discord user ID")
+                                .font(Torch.Font.label(Torch.TextSize.xs))
+                                .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                .foregroundStyle(Torch.Color.textSecondary)
+                            // The server refuses a malformed ID outright — and
+                            // it does so on JOIN, where the failure would read
+                            // as "the island turned me away". Say it here
+                            // instead, ABOVE the field: the number pad covers
+                            // everything below it, which is exactly where this
+                            // warning used to sit and never be read.
+                            if showsDiscordHint {
+                                Text("A Discord user ID is a long run of digits — usually 18.")
+                                    .font(Torch.Font.body(Torch.TextSize.xs))
+                                    .foregroundStyle(Torch.Color.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .transition(.opacity)
+                            }
+                        }
+                        TextField("000000000000000000", text: $discordUserId)
+                            .keyboardType(.numberPad)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .torchField()
+                            .focused($focusedField, equals: .discord)
+                            .accessibilityLabel("Discord user ID")
+                            .accessibilityValue(showsDiscordHint
+                                ? "That doesn't look like a Discord user ID — it is a long run of digits, usually 18."
+                                : "")
+                            // A pasted ID often arrives wrapped in spaces or
+                            // angle brackets; keep only what the server accepts.
+                            .onChange(of: discordUserId) { _, value in
+                                let digits = value.filter(\.isNumber)
+                                if digits != value { discordUserId = digits }
+                            }
+                    }
+                    .padding(.vertical, 4)
+            .animation(.easeOut(duration: 0.15), value: showsDiscordHint)
+    }
+
+    private var isDiscordLinked: Bool { !discordUserId.isEmpty }
+
     private var showsDiscordHint: Bool {
         guard !discordIdLooksRight else { return false }
         return !discordFieldFocused || discordUserId.count > 25
