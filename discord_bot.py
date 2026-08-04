@@ -3,7 +3,12 @@
 
 The game server remains authoritative. This process polls its voice plan, moves
 linked Discord members who are already connected to voice, and applies the
-channel locks described by the plan. It never writes game state.
+channel locks described by the plan.
+
+It writes exactly one thing, and only through `/link`: the Discord account that
+ran the command, bound to a code the app is showing. That endpoint cannot reach
+a game. Everything else here is read-only, and the game plays out identically
+with no bot connected at all.
 """
 
 from __future__ import annotations
@@ -67,6 +72,10 @@ class SurvivorAPIError(RuntimeError):
         super().__init__(f"Survivor API {status} for {path}: {detail}")
         self.status = status
         self.path = path
+        # Kept because a refused /link is shown to whoever ran it: the server
+        # writes that sentence for a person, and swallowing it would leave
+        # them with "something went wrong" and no idea what to do next.
+        self.detail = detail
 
 
 def _required(name: str) -> str:
@@ -201,6 +210,34 @@ class SurvivorAPI:
             return payload
         raise AssertionError("unreachable")
 
+    async def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST JSON, with the same one-shot re-auth as `get`.
+
+        The bot writes exactly one thing, through exactly one endpoint: a
+        Discord account bound to a link code somebody is holding on a phone.
+        It cannot reach a game through this.
+        """
+        if self.session is None:
+            raise RuntimeError("Survivor API session is not open")
+        for attempt in range(2):
+            status, payload, detail = await self._raw_request(
+                "POST", path, json_body=body)
+            if status == 401 and attempt == 0:
+                LOG.warning("Survivor access cookie expired; authenticating again")
+                await self.authenticate()
+                continue
+            if status < 200 or status >= 300:
+                # A 4xx here is usually a wrong or stale code, and the message
+                # is meant to be read by the person who typed it.
+                message = ""
+                if isinstance(payload, dict):
+                    message = str(payload.get("message") or "")
+                raise SurvivorAPIError(status, path, message or detail)
+            if not isinstance(payload, dict):
+                raise SurvivorAPIError(status, path, "expected a JSON object")
+            return payload
+        raise AssertionError("unreachable")
+
     async def _raw_request(
         self,
         method: str,
@@ -320,6 +357,7 @@ class SurvivorDiscordClient(discord.Client):
         super().__init__(intents=intents)
         self.config = config
         self.api = SurvivorAPI(config)
+        self.tree = discord.app_commands.CommandTree(self)
         self.guild: discord.Guild | None = None
         self.channels: dict[str, discord.VoiceChannel] = {}
         self._ready_for_reconcile = asyncio.Event()
@@ -336,9 +374,34 @@ class SurvivorDiscordClient(discord.Client):
 
     async def setup_hook(self) -> None:
         await self.api.open()
+        self._register_commands()
         self._poll_task = asyncio.create_task(
             self._poll_loop(), name="survivor-voice-plan-poller"
         )
+
+    def _register_commands(self) -> None:
+        """`/link`, and nothing else the bot will ever accept from a person."""
+
+        @self.tree.command(
+            name="link",
+            description="Link your Discord account to the Survivor app",
+        )
+        @discord.app_commands.describe(code="The code the app is showing you, e.g. PALM-472")
+        async def link(interaction: discord.Interaction, code: str) -> None:
+            # Who ran this is the whole point: Discord tells us, so nobody
+            # types a snowflake and no username is matched. Ephemeral because
+            # a link code is nobody else's business.
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            try:
+                payload = await self.api.post(
+                    "/api/discord/link/claim",
+                    {"code": code, "discordUserId": str(interaction.user.id)},
+                )
+                message = payload.get("message") or "Linked."
+            except SurvivorAPIError as exc:
+                message = exc.detail or "The island could not be reached — try again."
+                LOG.warning("link claim failed for %s: %s", interaction.user, exc)
+            await interaction.followup.send(message, ephemeral=True)
 
     async def on_ready(self) -> None:
         try:
@@ -486,6 +549,34 @@ class SurvivorDiscordClient(discord.Client):
 
         self.guild = guild
         self.channels = channels
+        await self._sync_commands(guild)
+
+    async def _sync_commands(self, guild: discord.Guild) -> None:
+        """Publish `/link` to this one guild, and say plainly if we cannot.
+
+        Guild-scoped rather than global: a global command can take an hour to
+        appear, and there is exactly one server. Registration needs the
+        `applications.commands` scope on the invite — a bot added with only
+        `bot` connects, runs, mirrors voice perfectly, and simply has no slash
+        commands, with nothing anywhere saying why. Hence the loud failure.
+        """
+        self.tree.copy_global_to(guild=guild)
+        try:
+            synced = await self.tree.sync(guild=guild)
+        except discord.Forbidden:
+            LOG.error(
+                "cannot register slash commands in guild %s — the bot was "
+                "invited without the applications.commands scope. Re-invite it "
+                "with both `bot` and `applications.commands`; /link will not "
+                "appear until you do. Voice mirroring is unaffected.",
+                guild.id,
+            )
+            return
+        except discord.HTTPException as exc:
+            LOG.error("slash command registration failed: %s", exc)
+            return
+        LOG.info("registered %d slash command(s): %s",
+                 len(synced), ", ".join(f"/{c.name}" for c in synced) or "none")
 
     async def _poll_loop(self) -> None:
         try:

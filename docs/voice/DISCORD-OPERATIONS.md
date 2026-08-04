@@ -97,6 +97,37 @@ Required values:
 | `{{SURVIVOR_BASE_URL}}` | normally `https://survivor.mctech.biz` |
 | `{{SURVIVOR_ACCESS_CODE}}` | the current island access code |
 
+## Linking a Discord account
+
+Players link from the app: **Settings → Link Discord** shows a code such as
+`EMBER-441`, and they run `/link EMBER-441` in the server. Discord tells the bot
+who ran the command, so nobody copies an 18-digit ID and no username is matched
+— those change, and display names were never unique. The 18-digit field is
+still there under "Enter ID manually" for when the bot is down.
+
+The code binds to the **phone**, not to a player: the app stores
+`discordUserId` and sends it on every join and reconnect, so you link once and
+never again. Codes are single-use, last ten minutes, live only in memory, and
+do not survive a redeploy — if one stops working mid-link, ask for another.
+
+`/link` needs the **`applications.commands` scope** on the bot invite. A bot
+added with only `bot` connects, mirrors voice perfectly, and simply has no
+slash commands, with nothing saying why. The bot now logs that case explicitly
+at startup:
+
+```
+cannot register slash commands in guild … — the bot was invited without the
+applications.commands scope
+```
+
+If you see that, generate a fresh OAuth URL with **both** `bot` and
+`applications.commands` and re-add the bot. Voice mirroring is unaffected
+either way. On success it logs `registered 1 slash command(s): /link`.
+
+This is the one thing the bot writes back to the game server, through an
+endpoint that can only bind an account to a pending code — it cannot reach a
+game.
+
 **Exile Island is optional to configure and required to work.** It arrived
 after the other four, so the bot still starts without
 `DISCORD_EXILE_ISLAND_CHANNEL_ID` — it logs a warning and simply never moves
