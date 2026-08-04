@@ -12,6 +12,7 @@ from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 import seats
 import places
+from link_codes import LinkCodes, CODE_TTL_SECONDS as LINK_CODE_TTL
 from places import (DEFAULT_PLACE, PLACE_KEYS, PLACE_LABELS, place_policy,
                     effective_place, voice_plan, validate_discord_user_id)
 import push_notify
@@ -121,6 +122,11 @@ def _access_rate_limited(ip):
     if len(_access_attempts) > 10000:
         _access_attempts.clear()
     return False
+
+# Outstanding Discord link codes. Module level and in memory: a code lives ten
+# minutes, so it is not worth a file — and a new file would need adding to
+# redeploy.sh's exclude list or `rsync --delete` would eat it on every deploy.
+link_codes = LinkCodes()
 
 # ───────────────────────── Flask / Socket.IO ─────────────────────────
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
@@ -3868,6 +3874,68 @@ def api_game_state(game_id):
     response.headers.pop('ETag', None)
 
     return response
+
+# ───────────────────────── Discord account linking ──────────────────────────
+# Three doors around one short code. The phone asks for one, a person reads it
+# aloud into Discord, and the bot — which is the only party that learns who ran
+# the command — hands the account back. Nobody types a snowflake and nothing is
+# matched on a username.
+
+@app.route('/api/discord/link/start', methods=['POST'])
+@safe_api_call
+def api_discord_link_start():
+    """The phone asks for a code to show."""
+    if _access_rate_limited(_client_ip()):
+        return jsonify(success=False, message="Too many attempts. Try again shortly."), 429
+    code = link_codes.mint()
+    if code is None:
+        return jsonify(success=False,
+                       message="Too many links in flight. Try again in a few minutes."), 503
+    return jsonify(success=True, code=code,
+                   expiresInSeconds=int(LINK_CODE_TTL))
+
+
+@app.route('/api/discord/link/claim', methods=['POST'])
+@safe_api_call
+def api_discord_link_claim():
+    """The bot's only write, and the only thing it can write.
+
+    `discord_bot.py` is otherwise a strict observer. This endpoint cannot touch
+    a game: it binds a Discord account to a pending code and nothing else.
+    """
+    d = request.get_json(silent=True) or {}
+    ok, message = link_codes.claim(d.get('code'), str(d.get('discordUserId') or ''))
+    if not ok:
+        return jsonify(success=False, message=message), 400
+    logger.info("Discord account linked via code")
+    return jsonify(success=True, message=message)
+
+
+@app.route('/api/discord/link/status', methods=['POST'])
+@safe_api_call
+def api_discord_link_status():
+    """The phone polls this until somebody has run the command.
+
+    A claim is collected exactly once — the code dies the moment its answer is
+    read, so a second device polling the same code learns nothing.
+    """
+    d = request.get_json(silent=True) or {}
+    state = link_codes.status(d.get('code'))
+    if state is None:
+        return jsonify(success=False, expired=True,
+                       message="That code has expired — ask for a new one."), 404
+    return jsonify(success=True, claimed=state["claimed"],
+                   discordUserId=state["discordUserId"])
+
+
+@app.route('/api/discord/link/cancel', methods=['POST'])
+@safe_api_call
+def api_discord_link_cancel():
+    """The phone gave up or the sheet was closed."""
+    d = request.get_json(silent=True) or {}
+    link_codes.cancel(d.get('code'))
+    return jsonify(success=True)
+
 
 @app.route('/api/voice/plan/<game_id>', methods=['GET'])
 @safe_api_call

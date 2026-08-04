@@ -158,6 +158,10 @@ def main():
             'description': 'Places — derived camp locations, movement policy, voice plan for the Discord bot (53 tests)'
         },
         {
+            'file': 'tests/test_link_codes.py',
+            'description': 'Discord link codes — one-time, single-use, and useless to a guesser'
+        },
+        {
             'file': 'tests/test_seats.py',
             'description': 'Seats — six fixed colours, derived for old saves, never guessed'
         },
