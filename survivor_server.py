@@ -77,6 +77,15 @@ _ACCESS_ATTEMPT_LIMIT = 10
 _ACCESS_ATTEMPT_WINDOW = 60.0
 _access_attempts = {}
 
+# Asking for a Discord link code is not guessing at the island code, and the
+# two must not share a budget: minting used to spend the access allowance, so
+# a phone that opened the link sheet a few times could lock itself out of the
+# island entirely. Generous, because there is no secret to protect here — only
+# a ceiling on how fast one client can make the server allocate.
+_LINK_START_LIMIT = 20
+_LINK_START_WINDOW = 60.0
+_link_start_attempts = {}
+
 
 def gate_enabled():
     return bool(ACCESS_CODE or REVIEW_ACCESS_CODE)
@@ -110,18 +119,28 @@ def _client_ip():
             or request.remote_addr or 'unknown')
 
 
-def _access_rate_limited(ip):
-    """True if this IP has burned its attempt budget for the current window."""
+def _rate_limited(bucket, ip, limit, window):
+    """True if this IP has burned `bucket`'s budget for the current window."""
     now = time.time()
-    attempts = [t for t in _access_attempts.get(ip, []) if now - t < _ACCESS_ATTEMPT_WINDOW]
-    _access_attempts[ip] = attempts
-    if len(attempts) >= _ACCESS_ATTEMPT_LIMIT:
+    attempts = [t for t in bucket.get(ip, []) if now - t < window]
+    bucket[ip] = attempts
+    if len(attempts) >= limit:
         return True
     attempts.append(now)
     # Don't let the map grow unbounded under a distributed guessing attempt
-    if len(_access_attempts) > 10000:
-        _access_attempts.clear()
+    if len(bucket) > 10000:
+        bucket.clear()
     return False
+
+
+def _access_rate_limited(ip):
+    return _rate_limited(_access_attempts, ip,
+                         _ACCESS_ATTEMPT_LIMIT, _ACCESS_ATTEMPT_WINDOW)
+
+
+def _link_start_rate_limited(ip):
+    return _rate_limited(_link_start_attempts, ip,
+                         _LINK_START_LIMIT, _LINK_START_WINDOW)
 
 # Outstanding Discord link codes. Module level and in memory: a code lives ten
 # minutes, so it is not worth a file — and a new file would need adding to
@@ -3885,7 +3904,7 @@ def api_game_state(game_id):
 @safe_api_call
 def api_discord_link_start():
     """The phone asks for a code to show."""
-    if _access_rate_limited(_client_ip()):
+    if _link_start_rate_limited(_client_ip()):
         return jsonify(success=False, message="Too many attempts. Try again shortly."), 429
     code = link_codes.mint()
     if code is None:

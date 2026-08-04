@@ -223,3 +223,34 @@ class HttpDoorTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class RateLimitBudgetTest(unittest.TestCase):
+    """Asking for a link code is not guessing at the island code.
+
+    They shared a budget at first, and the failure was indirect enough to be
+    worth a test: a phone that opened the link sheet a few times spent the
+    island's ten-attempts-a-minute allowance and then could not get past the
+    access screen at all. It showed up as an unrelated UI test failing to find
+    the game-code field three tests later.
+    """
+
+    def setUp(self):
+        import survivor_server
+        self.server = survivor_server
+        survivor_server.link_codes = LinkCodes()
+        survivor_server._access_attempts.clear()
+        survivor_server._link_start_attempts.clear()
+        self.client = survivor_server.app.test_client()
+
+    def test_minting_codes_does_not_spend_the_island_allowance(self):
+        for _ in range(self.server._ACCESS_ATTEMPT_LIMIT + 2):
+            self.client.post('/api/discord/link/start', json={})
+        self.assertFalse(self.server._access_rate_limited("1.2.3.4"),
+                         "the island gate must still let a phone in")
+
+    def test_the_link_door_still_has_a_ceiling_of_its_own(self):
+        last = None
+        for _ in range(self.server._LINK_START_LIMIT + 1):
+            last = self.client.post('/api/discord/link/start', json={})
+        self.assertEqual(last.status_code, 429)
