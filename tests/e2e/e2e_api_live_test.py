@@ -167,6 +167,15 @@ def let_the_raid_through(gid):
         api("/api/reactive/complete_theft", {"gameId": gid, "playerId": target})
 
 
+def _first_takeable_index(hand):
+    """The first card in a hand that isn't a Vote Card — mirrors
+    rules_engine.takeable_indices without importing the server module."""
+    for i, c in enumerate(hand or []):
+        if (c or {}).get("type") != "vote":
+            return i
+    return None
+
+
 def play_turn(gid, game):
     """Steal, then draw, for whoever's turn it is. Returns (state, tribal_triggered)."""
     order = game["turnOrder"]
@@ -766,6 +775,18 @@ def _answer_the_island(g):
     theft = g.get("pending_theft") or {}
     if theft.get("reactive_window_open") and theft.get("targetId") == human_pid:
         let_the_raid_through(bot_gid)
+        return True
+    discards = g.get("pending_discards") or {}
+    if human_pid in (discards.get("awaiting") or []):
+        # The Sorry For You penalty: pick a card of our own to give up, the
+        # same door choose_penalty_discard opens for a real phone. Left
+        # unanswered, this races the 45s auto-forfeit and loses about 1 run
+        # in 3 — the discard window and the theft window run the same clock.
+        hand = ((g.get("players") or {}).get(human_pid) or {}).get("hand") or []
+        idx = _first_takeable_index(hand)
+        if idx is not None:
+            api("/api/reactive/choose_discard",
+                {"gameId": bot_gid, "playerId": human_pid, "cardIdx": idx})
         return True
     it = g.get("interaction") or {}
     if it:
