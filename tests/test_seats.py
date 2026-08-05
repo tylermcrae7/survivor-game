@@ -28,12 +28,40 @@ from survivor_server import GameState
 
 
 class SeatRosterTest(unittest.TestCase):
-    def test_there_are_exactly_six_seats(self):
-        """Six colours in the box, six Inheritance cards, six seats."""
-        self.assertEqual(len(seats.SEATS), 6)
-        self.assertEqual(len(set(seats.SEAT_KEYS)), 6)
-        self.assertEqual(len(set(seats.SEAT_HEX.values())), 6,
+    def test_there_are_exactly_eight_seats(self):
+        """Six colours in the printed box, plus Purple and Pink for the
+        eight-player digital extension — eight seats, eight Inheritance
+        cards."""
+        self.assertEqual(len(seats.SEATS), 8)
+        self.assertEqual(len(set(seats.SEAT_KEYS)), 8)
+        self.assertEqual(len(set(seats.SEAT_HEX.values())), 8,
                          "no two seats may share a colour")
+
+    def test_purple_and_pink_are_the_new_seats(self):
+        self.assertIn("purple", seats.SEAT_KEYS)
+        self.assertIn("pink", seats.SEAT_KEYS)
+
+    def test_new_hexes_do_not_collide_with_existing_seats_or_aliases(self):
+        """#DDA0DD (plum) already aliases to red — the new purple must not be
+        that hex, and the alias must keep winning for old clients that send it."""
+        purple_hex = seats.seat_hex("purple").upper()
+        pink_hex = seats.seat_hex("pink").upper()
+
+        other_hexes = {s["hex"].upper() for s in seats.SEATS if s["key"] != "purple"}
+        self.assertNotIn(purple_hex, other_hexes)
+        other_hexes = {s["hex"].upper() for s in seats.SEATS if s["key"] != "pink"}
+        self.assertNotIn(pink_hex, other_hexes)
+
+        self.assertNotIn(purple_hex, seats._ALIASES)
+        self.assertNotIn(pink_hex, seats._ALIASES)
+        self.assertEqual(seats.resolve_request("#DDA0DD"), ("red", True),
+                         "plum still means red for an installed client")
+
+    def test_seat_of_round_trips_purple_and_pink(self):
+        self.assertEqual(
+            seats.seat_of({"seat": "purple", "color": seats.seat_hex("purple")}),
+            "purple")
+        self.assertEqual(seats.seat_of({"color": seats.seat_hex("pink")}), "pink")
 
     def test_a_stored_seat_is_believed(self):
         self.assertEqual(seats.seat_of({"seat": "blue", "color": "#FF6B6B"}), "blue")
@@ -85,7 +113,7 @@ class SeatRosterTest(unittest.TestCase):
     def test_seats_are_handed_out_in_table_order(self):
         game = {"players": {}}
         handed = []
-        for i in range(6):
+        for i in range(len(seats.SEAT_KEYS)):
             key, error = seats.assign(game, None)
             self.assertIsNone(error)
             game["players"][f"p{i}"] = {"seat": key, "color": seats.seat_hex(key)}
@@ -93,7 +121,7 @@ class SeatRosterTest(unittest.TestCase):
         self.assertEqual(handed, list(seats.SEAT_KEYS))
         self.assertEqual(seats.free_seats(game), [])
 
-    def test_a_seventh_player_finds_no_seat(self):
+    def test_a_ninth_player_finds_no_seat(self):
         game = {"players": {f"p{i}": {"seat": k, "color": seats.seat_hex(k)}
                             for i, k in enumerate(seats.SEAT_KEYS)}}
         key, error = seats.assign(game, None)
@@ -151,7 +179,7 @@ class SeatedGameTest(unittest.TestCase):
         state = self.gs.get_game_state(self.gid)
         self.assertEqual(state["players"][pid]["seat"], "red")
         self.assertEqual(state["players"][pid]["seatLabel"], "Red")
-        self.assertEqual(len(state["seatRoster"]), 6)
+        self.assertEqual(len(state["seatRoster"]), 8)
         self.assertEqual({s["key"] for s in state["seatRoster"]}, set(seats.SEAT_KEYS))
 
     def test_a_legacy_game_is_seated_without_being_rewritten(self):

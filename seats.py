@@ -29,6 +29,11 @@ SEATS = (
     {"key": "orange", "label": "Orange", "hex": "#F9844A"},
     {"key": "green",  "label": "Green",  "hex": "#90BE6D"},
     {"key": "yellow", "label": "Yellow", "hex": "#F9C74F"},
+    # The eight-player digital extension (2026-08). Appended, never inserted —
+    # order is identity for nothing here, but SEAT_KEYS/SEAT_HEX/_BY_HEX all
+    # derive from this tuple, so appending is enough to seat two more.
+    {"key": "purple", "label": "Purple", "hex": "#9B5DE5"},
+    {"key": "pink",   "label": "Pink",   "hex": "#F06595"},
 )
 
 SEAT_KEYS = tuple(s["key"] for s in SEATS)
@@ -123,9 +128,9 @@ def resolve_request(value):
 def assign(game, requested=None):
     """Choose this player's seat. Returns (key, error message or None).
 
-    Never fails for a reason the player can do anything about: there are six
-    seats and at most six players, so a free seat always exists for anyone
-    allowed through the door.
+    Never fails for a reason the player can do anything about: there are as
+    many seats as the table allows (SEAT_KEYS) and never more players than
+    that, so a free seat always exists for anyone allowed through the door.
     """
     key, explicit = resolve_request(requested)
     taken = taken_seats(game)

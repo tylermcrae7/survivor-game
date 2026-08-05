@@ -1,14 +1,15 @@
 {
   "metadata": {
     "version": "2.0",
-    "source": "Survivor: The Tribe Has Spoken official rules + Survival Guide (67 cards), plus 6 house cards and the Let's Go To Rocks expansion",
-    "total_cards": 78,
+    "source": "Survivor: The Tribe Has Spoken official rules + Survival Guide (67 cards), plus 6 house cards, 2 digital-extension Inheritance cards, and the Let's Go To Rocks expansion",
+    "total_cards": 80,
     "official_action_cards": 67,
     "house_action_cards": 6,
     "expansion_challenge_cards": 5,
     "notes": [
       "The official box contains exactly 67 Action Cards. Deck mode 'official' builds from those 67 only.",
       "Idol Nullifier, Steal A Vote and Block A Vote (6 cards total) appear nowhere in the official Survival Guide. They are house cards, included only in deck mode 'extended'. Grant Immunity was a house card too, but Tyler's ruling retired it: 'That's not how we play.'",
+      "Inheritance (Purple) and Inheritance (Pink) are digital-only additions for the 7-8 player extension's two new seats. They are dealt only when a game is created for 7 or more players and never appear in a 3-6 player deck.",
       "The 5 challenge_* cards are the Orange Challenge Cards from Survivor: Let's Go To Rocks (2025) and are added only when a game is created with expansion=true.",
       "Setup removes the 6 Vote Cards and 9 Tribal Council Cards from the deck: each player is dealt 1 Vote Card and the extras are put away, so no Vote Cards remain in the Draw Pile."
     ],
@@ -278,6 +279,32 @@
       "reactive_only": false,
       "count": 1
     },
+    "inheritance_purple": {
+      "type": "inheritance_purple",
+      "category": "action",
+      "seat": "purple",
+      "name": "Inheritance (Purple)",
+      "description": "When the Purple player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
+    "inheritance_pink": {
+      "type": "inheritance_pink",
+      "category": "action",
+      "seat": "pink",
+      "name": "Inheritance (Pink)",
+      "description": "When the Pink player is eliminated from the game \u2014 both Survivor Character Cards turned over \u2014 you may IMMEDIATELY play this to take their whole hand instead of it going to the Discard Pile.",
+      "playable_phases": [],
+      "requires_target": false,
+      "requires_multiple_targets": false,
+      "requires_confirmation": false,
+      "reactive_only": false,
+      "count": 1
+    },
     "lets_form_an_alliance": {
       "type": "lets_form_an_alliance",
       "category": "action",
@@ -449,7 +476,7 @@
     "action": {
       "name": "Action Cards",
       "description": "Cards playable during player turns",
-      "total_cards": 35
+      "total_cards": 37
     },
     "challenge": {
       "name": "Challenge Cards",
@@ -463,7 +490,7 @@
     }
   },
   "validation": {
-    "total_expected_cards": 78,
+    "total_expected_cards": 80,
     "official_deck_cards": 67,
     "extended_deck_cards": 73,
     "required_fields": [

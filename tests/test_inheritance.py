@@ -242,6 +242,74 @@ class InheritanceEstateTest(unittest.TestCase):
         self.assertNotIn(card, hand_types(game, heir), "and the card was spent")
 
 
+class EightPlayerInheritanceTest(unittest.TestCase):
+    """Purple and Pink — the two new seats — inherit exactly like the
+    original six (mirrors InheritanceEstateTest.test_the_matching_colour_takes_the_whole_hand)."""
+
+    def setUp(self):
+        self.original_cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.original_cwd, 'survivor_cards.json'), self.tmp)
+        os.chdir(self.tmp)
+        self.gs = GameState()
+        self.gid = self.gs.create_game()
+        names_and_seats = [("Ana", "red"), ("Ben", "teal"), ("Cam", "blue"),
+                           ("Dee", "orange"), ("Eve", "green"), ("Fin", "yellow"),
+                           ("Gia", "purple"), ("Hal", "pink")]
+        self.ids = [self.gs.add_player(self.gid, n, s) for n, s in names_and_seats]
+        self.gs.start_full_game(self.gid)
+        self.game = self.gs.games[self.gid]
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def seat(self, pid):
+        return seats.seat_of(self.game["players"][pid])
+
+    def test_purple_is_inherited_by_pink(self):
+        heir = next(pid for pid in self.ids if self.seat(pid) == "pink")
+        dead = next(pid for pid in self.ids if self.seat(pid) == "purple")
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
+        self.game["players"][heir]["hand"] = [{"type": "inheritance_purple"}]
+        self.game["players"][dead]["hand"] = [{"type": "camp_raid"},
+                                              {"type": "the_spy_shack"}]
+
+        messages = self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
+
+        self.assertTrue(messages)
+        self.assertEqual(sorted(hand_types(self.game, heir)),
+                         ["camp_raid", "the_spy_shack"])
+        self.assertEqual(self.game["players"][dead]["hand"], [])
+        # The card is spent, same as any other Inheritance.
+        self.assertNotIn("inheritance_purple", hand_types(self.game, heir))
+        self.assertIn("inheritance_purple",
+                      [c.get("type") for c in self.game["discard"]])
+
+    def test_pink_is_inherited_by_purple(self):
+        heir = next(pid for pid in self.ids if self.seat(pid) == "purple")
+        dead = next(pid for pid in self.ids if self.seat(pid) == "pink")
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
+        self.game["players"][heir]["hand"] = [{"type": "inheritance_pink"}]
+        self.game["players"][dead]["hand"] = [{"type": "vote"}, {"type": "camp_raid"}]
+
+        messages = self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
+
+        self.assertTrue(messages)
+        # The dead player's ballot returns to the box, not to the heir.
+        self.assertEqual(hand_types(self.game, heir), ["camp_raid"])
+        self.assertNotIn("inheritance_pink", hand_types(self.game, heir))
+
+
+# The six colours the physical box prints. seats.SEAT_KEYS now holds eight
+# (Purple and Pink joined for the digital 7-8 player extension), but a
+# 4-player game's deck — and this legacy fixture, which rewinds it — only
+# ever held these six under the pre-colour "inheritance" catalogue.
+PRINTED_SIX = ("red", "teal", "blue", "orange", "green", "yellow")
+
+
 class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
     """A game already in flight when the card changed.
 
@@ -287,7 +355,7 @@ class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
         bound = self.all_inheritance()
         self.assertNotIn("inheritance", bound, "no legacy copy is left behind")
         self.assertEqual(sorted(bound),
-                         sorted(f"inheritance_{k}" for k in seats.SEAT_KEYS),
+                         sorted(f"inheritance_{k}" for k in PRINTED_SIX),
                          "one of each colour, exactly as printed")
 
     def test_it_is_idempotent_and_never_duplicates_a_colour(self):
@@ -313,7 +381,7 @@ class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
         bound = self.all_inheritance()
         self.assertEqual(bound.count("inheritance_red"), 1, "red is not duplicated")
         self.assertEqual(sorted(bound),
-                         sorted(f"inheritance_{k}" for k in seats.SEAT_KEYS))
+                         sorted(f"inheritance_{k}" for k in PRINTED_SIX))
 
     def test_uids_survive_the_relabel(self):
         """Relabelling in place, not rebuilding — a new dict would orphan a
