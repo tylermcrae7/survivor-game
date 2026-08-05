@@ -342,6 +342,18 @@
                             Hall of Fame
                         </button>
                     </div>
+
+                    <!-- "Light the Fire" only reveals this; the POST /api/game/create
+                         call itself waits for the explicit confirm below, so mashing
+                         the button above never creates more than one game. -->
+                    <div id="createGameConfirm" class="panel" style="display: none; margin-top: 0.8rem;">
+                        <p class="form-hint">Ready? This lights the fire with the deck settings above.</p>
+                        <button class="btn btn-enhanced touch-target" id="confirmCreateGameBtn"
+                                data-action="confirmCreateGame" style="width:100%">
+                            <svg class="icon" aria-hidden="true"><use href="#i-torch"></use></svg>
+                            Confirm — Light the Fire
+                        </button>
+                    </div>
                 </div>
 
                 <div id="joinForm" class="panel" style="display: none;">
@@ -413,6 +425,13 @@
                             Reset
                         </button>
                     </div>
+
+                    <!-- Self-leave, any player, lobby only — the server refuses
+                         once the game has started. -->
+                    <button class="btn btn-ghost btn-enhanced touch-target" data-action="leaveLobby"
+                            style="margin-top: 0.6rem; width: 100%;">
+                        Leave the lobby
+                    </button>
                 </div></div>
             </div>
 
@@ -737,7 +756,8 @@
             showLeaderboard:  () => window.SurvivorUI?.showLeaderboard(),
             leaveLeaderboard: () => window.SurvivorUI?.leaveLeaderboard(),
             toggleLeaderboardEdit: () => window.SurvivorUI?.toggleLeaderboardEdit(),
-            createGame:       () => window.SurvivorGame?.createGame(),
+            createGame:       () => window.SurvivorGame?.revealCreateForm(),
+            confirmCreateGame: () => window.SurvivorGame?.confirmCreateGame(),
             showJoinForm:     () => window.SurvivorGame?.showJoinForm(),
             joinGame:         () => window.SurvivorGame?.joinGame(),
             startFullGame:    () => window.SurvivorGame?.startFullGame(),
@@ -749,6 +769,7 @@
             resetTribal:      () => window.SurvivorGame?.resetTribal(),
             recordWinner:     () => window.SurvivorGame?.recordWinner(),
             addBot:           () => window.SurvivorGame?.addBot(),
+            leaveLobby:       () => window.SurvivorUI?.leaveLobby(),
             startNewGame:     () => window.SurvivorGame?.startNewGame(),
             copyGameCode:     () => window.SurvivorUI?.copyGameCode(),
             shareGame:        () => window.SurvivorUI?.shareGame(),
@@ -766,6 +787,7 @@
 
         // ── Backward-compat globals (tests may call these directly) ──
         window.createGame = () => _actionMap.createGame();
+        window.confirmCreateGame = () => _actionMap.confirmCreateGame();
         window.showJoinForm = () => _actionMap.showJoinForm();
         window.joinGame = () => _actionMap.joinGame();
         window.startFullGame = () => _actionMap.startFullGame();

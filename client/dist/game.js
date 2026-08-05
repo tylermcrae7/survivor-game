@@ -46,14 +46,37 @@ const TRIBAL_PHASES = {
  * Load card definitions from server
  * @returns {Promise<boolean>} Success status
  */
+function _fallbackCardDefinitions() {
+    SURVIVOR_CARDS = {
+        VOTE: {
+            type: "vote",
+            category: "vote",
+            description: "Basic vote",
+            playablePhases: ["tribal_voting"],
+            requiresConfirmation: false,
+            count: 6
+        }
+    };
+}
+
 async function loadCardDefinitions() {
     try {
         const response = await fetch('/api/cards');
         if (!response.ok) {
+            if (response.status === 401) {
+                // Expected on every gated visit before the access cookie
+                // exists — /api/cards isn't on the gate's exempt list, so it
+                // 401s until checkAccessGate() shows the code screen. Not a
+                // real failure: a successful unlock reloads the whole page
+                // (see submitAccessCode), which re-runs this fetch with the
+                // cookie in place. Stay quiet here; anything else still logs.
+                _fallbackCardDefinitions();
+                return false;
+            }
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         const cardData = await response.json();
-        
+
         // Convert JSON format to JavaScript format for compatibility
         SURVIVOR_CARDS = {};
         for (const [cardType, cardInfo] of Object.entries(cardData.cards)) {
@@ -71,7 +94,7 @@ async function loadCardDefinitions() {
                 count: cardInfo.count
             };
         }
-        
+
         // The export object captured the ORIGINAL (empty) SURVIVOR_CARDS reference
         // before this reassignment — refresh it so consumers of
         // window.SurvivorGame.SURVIVOR_CARDS (e.g. the Knowledge Is Power card
@@ -82,17 +105,7 @@ async function loadCardDefinitions() {
         return true;
     } catch (error) {
         console.error('Failed to load card definitions:', error);
-        // Fallback to basic cards
-        SURVIVOR_CARDS = {
-            VOTE: {
-                type: "vote",
-                category: "vote",
-                description: "Basic vote",
-                playablePhases: ["tribal_voting"],
-                requiresConfirmation: false,
-                count: 6
-            }
-        };
+        _fallbackCardDefinitions();
         return false;
     }
 }
@@ -550,7 +563,36 @@ async function wipeGame() {
     }
 }
 
-async function createGame() {
+// Guards createGame's actual network call — set the instant the confirm
+// button is pressed, cleared when the request settles either way. Without
+// this, a double-tap (or an impatient repeat tap while the request is still
+// in flight) created a second backend game per tap (found live: every click
+// of "Light the Fire" created a game).
+let _creatingGame = false;
+
+/**
+ * "Light the Fire" no longer creates a game by itself — it only reveals the
+ * confirm panel (toggled, same as showJoinForm). The actual POST /game/create
+ * waits for confirmCreateGame(), an explicit second step.
+ */
+function revealCreateForm() {
+    const form = document.getElementById('createGameConfirm');
+    if (form) {
+        const isVisible = form.style.display !== 'none';
+        form.style.display = isVisible ? 'none' : 'block';
+        // Opening the create confirm and the join form at once reads like two
+        // different flows fighting each other — keep only one up at a time.
+        if (!isVisible) {
+            const joinForm = document.getElementById('joinForm');
+            if (joinForm) joinForm.style.display = 'none';
+        }
+    }
+}
+
+async function confirmCreateGame() {
+    if (_creatingGame) return; // already in flight — ignore the repeat tap
+    const confirmBtn = document.getElementById('confirmCreateGameBtn');
+
     // Deck options (F7): official 67-card box by default, optional house deck and
     // optional Let's Go To Rocks Challenge Cards.
     const deckMode = document.getElementById('deckModeSelect')?.value || 'official';
@@ -565,8 +607,20 @@ async function createGame() {
         tribalPace: S.get('defaultTribalPace'),
         botStyle: S.get('defaultBotStyle'),
     } : null;
-    const result = await safeApiCall('/game/create',
-        settings ? { deckMode, expansion, settings } : { deckMode, expansion });
+
+    _creatingGame = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    let result;
+    try {
+        result = await safeApiCall('/game/create',
+            settings ? { deckMode, expansion, settings } : { deckMode, expansion });
+    } finally {
+        _creatingGame = false;
+        // Only re-enable on failure — success moves on to the join form, and
+        // this whole panel gets hidden below, so there is nothing left to
+        // double-tap.
+        if (confirmBtn && !(result && result.gameId)) confirmBtn.disabled = false;
+    }
 
     if (result && result.gameId) {
         if (window.SurvivorGame) {
@@ -583,11 +637,19 @@ async function createGame() {
         const expLabel = result.expansion ? ' + Rocks Challenges' : '';
         (window.SurvivorUI?.showToast || window.showToast)(
             `Game created (${deckLabel}${expLabel})!`, 'success');
-        showJoinForm();
+
+        // The confirm panel's job is done — hide it and open the (re-used)
+        // join form, pre-filled with the code, so the creator steps onto the
+        // island the same way anyone else joining would.
+        const createForm = document.getElementById('createGameConfirm');
+        if (createForm) createForm.style.display = 'none';
+        const joinForm = document.getElementById('joinForm');
+        if (joinForm) joinForm.style.display = 'block';
 
         const gameCodeInput = document.getElementById('gameCodeInput');
         if (gameCodeInput) {
             gameCodeInput.value = result.gameId;
+            document.getElementById('playerNameInput')?.focus();
         }
     }
 }
@@ -599,6 +661,8 @@ function showJoinForm() {
         joinForm.style.display = isVisible ? 'none' : 'block';
         if (!isVisible) {
             document.getElementById('gameCodeInput').focus();
+            const createForm = document.getElementById('createGameConfirm');
+            if (createForm) createForm.style.display = 'none';
         }
     }
 }
@@ -870,7 +934,8 @@ window.SurvivorGame = {
     passVotingBox,
     leaveGame,
     wipeGame,
-    createGame,
+    revealCreateForm,
+    confirmCreateGame,
     showJoinForm,
     joinGame,
     startFullGame,

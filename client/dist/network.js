@@ -201,6 +201,11 @@ class SocketManager {
         this.pendingEmits = []; // Queue events while disconnected
         this.roomGameId = null; // Which game's broadcast room we're in
         this.intentionalDisconnect = false; // We hung up on purpose (left/wiped)
+        // Guards the "Connection restored!" toast to one per reconnect cycle —
+        // a flaky connection can flap through several disconnect/connect pairs
+        // before settling, and each successful connect used to re-toast.
+        // Cleared on 'disconnect' so the NEXT genuine cycle can toast again.
+        this.reconnectToastShown = false;
     }
 
     /**
@@ -324,8 +329,11 @@ class SocketManager {
                     window.SurvivorUI.updateNetworkStatus(true, 'Connected');
                 }
 
-                // Show reconnected message if we were reconnecting
-                if (wasReconnecting) {
+                // Show reconnected message if we were reconnecting — but only
+                // once per cycle, even if the socket flaps through a few more
+                // connect/disconnect pairs before it truly settles.
+                if (wasReconnecting && !this.reconnectToastShown) {
+                    this.reconnectToastShown = true;
                     showToast('Connection restored!', 'success');
                     // Haptic feedback on reconnection
                     if (window.SurvivorUI && window.SurvivorUI.hapticFeedback) {
@@ -396,6 +404,9 @@ class SocketManager {
             
             this.socket.on('disconnect', (reason) => {
                 this.isConnected = false;
+                // Clear the reconnect-toast guard so the next real reconnect
+                // cycle is free to show its own "Connection restored!" once.
+                this.reconnectToastShown = false;
                 console.log('❌ Socket disconnected:', reason);
 
                 // Stop heartbeat on disconnect
@@ -747,6 +758,11 @@ const GameAPI = {
 
     async completeTheft(gameId, playerId) {
         return apiCall('/reactive/complete_theft', { gameId, playerId });
+    },
+
+    // Self-leave, lobby only — the server refuses once the game has started.
+    async leaveGame(gameId, playerId) {
+        return apiCall('/player/leave', { gameId, playerId });
     },
 
     // State sync — GET-only route on the server

@@ -276,6 +276,43 @@ function setupScreen(screenId) {
     }
 }
 
+// Mirrors survivor_server.py's MAX_PLAYERS — a client-side head start on the
+// same rule so the button reads honestly before a tap ever reaches the
+// server, which stays the real backstop (its own refusal is unchanged).
+const MAX_PLAYERS = 8;
+
+/** Lobby-only: grey out "Add a computer player" once the table is full. */
+function updateAddBotButtonState(gameState) {
+    const btn = document.querySelector('.add-bot-btn');
+    if (!btn || !gameState) return;
+    const playerCount = Object.keys(gameState.players || {}).length;
+    btn.disabled = playerCount >= MAX_PLAYERS;
+}
+
+/**
+ * Lobby-only self-leave: actually removes you from the game on the server
+ * (freeing your seat), unlike the camp menu's "Leave this game" (that one is
+ * local-only — this device forgets the game, but the game itself, and your
+ * seat, keep going). The server refuses once the game has started; its
+ * message surfaces here so the lobby doesn't just silently do nothing.
+ */
+async function leaveLobby() {
+    const gameId = window.SurvivorGame?.localGameState?.gameId;
+    const playerId = window.SurvivorGame?.localGameState?.playerId;
+    if (!gameId || !playerId) return;
+
+    try {
+        const result = await window.SurvivorNetwork?.GameAPI.leaveGame(gameId, playerId);
+        if (result?.success) {
+            window.SurvivorGame?.wipeLocalGame();
+        } else if (result?.message) {
+            showToast(result.message, 'error');
+        }
+    } catch (e) {
+        // apiCall already toasted the server's reason
+    }
+}
+
 function setupLeaderControls() {
     const gameState = window.SurvivorGame?.fullGameState;
     const localPlayerId = window.SurvivorGame?.localGameState?.playerId;
@@ -461,7 +498,6 @@ function renderVoteResults(gameState) {
             });
         });
 
-        const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
         const sortedResults = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
         resultCount = sortedResults.length;
 
@@ -479,12 +515,22 @@ function renderVoteResults(gameState) {
                 sortedResults.push([pid, currentVote.rawVoteResults[pid]]);
             });
 
+        // Bars scale against the largest count ON DISPLAY — counted rows and
+        // immune rows together — not against totalVotes (which only sums the
+        // counted rows). That mismatch used to let an immune player's
+        // uncounted-but-real vote total clamp to a 100%-wide bar even when it
+        // was smaller than another row's true share (found live: an immune
+        // player's 3-vote bar drew longer than an eliminated player's real
+        // 1-vote bar). Math.min(100, ...) was papering over the wrong
+        // denominator, not the right fix.
+        const maxCount = Math.max(1, ...sortedResults.map(([, c]) => c));
+
         // Ballots flip in one at a time — the reveal is a ceremony
         const resultsHtml = sortedResults.map(([playerId, count], i) => {
             const player = gameState.players[playerId];
             const playerName = escapeHtml(player?.name || 'Unknown');
             const isImmune = immuneIds.has(playerId);
-            const percentage = totalVotes > 0 ? Math.min(100, Math.round((count / totalVotes) * 100)) : 0;
+            const percentage = Math.round((count / maxCount) * 100);
             const isEliminated = !isImmune && currentVote.eliminated?.includes(playerId);
             const voterNames = (votersByTarget[playerId] || []).map(vid =>
                 escapeHtml(gameState.players[vid]?.name || 'Unknown')).join(', ');
@@ -2863,6 +2909,7 @@ function updateCurrentScreen(gameState) {
         case 'lobbyScreen':
             renderPlayerList(gameState);
             setupLeaderControls();
+            updateAddBotButtonState(gameState);
             break;
         case 'playingScreen':
             renderTurnInfo(gameState);
@@ -4352,6 +4399,8 @@ window.SurvivorUI = {
 
     // Screen setup
     setupLeaderControls,
+    updateAddBotButtonState,
+    leaveLobby,
 
     // Sharing
     copyGameCode,

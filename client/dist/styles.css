@@ -160,7 +160,14 @@
    BASE — ground, grain, typography, keyframes
    ══════════════════════════════════════════════════════════════ */
 @layer base {
-  html { height: 100%; }
+  /* The Story drawer sits at position:fixed with transform:translateX(102%)
+     while closed (see .story-drawer below) — a fixed element with a
+     transform still widens the document's own scrollable overflow in some
+     engines even though it is visually off past the viewport edge (found
+     live: documentElement.scrollWidth > innerWidth at 390px with the drawer
+     closed). overflow-x:hidden here is the standard fix — it only clamps the
+     horizontal axis, so normal vertical scrolling of the page is unaffected. */
+  html { height: 100%; overflow-x: hidden; }
 
   body {
     font-family: var(--font-body);
@@ -180,6 +187,7 @@
     touch-action: manipulation;
     overscroll-behavior: none;
     -webkit-touch-callout: none;
+    overflow-x: hidden;
     padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
