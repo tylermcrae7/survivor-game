@@ -1664,7 +1664,14 @@ class SurvivorRulesEngine:
 		# life. A reactive window that leaked past a council would have gone on
 		# blocking every turn after it, with no UI left to resolve it.
 		game.pop("tribalInterrupted", None)
-		game.pop("pending_theft", None)
+		theft = game.pop("pending_theft", None)
+		if theft and theft.get("_resume"):
+			# The council ended while a Sorry For You window hung open.
+			# The take was already won — resume it rather than letting
+			# the reward die with the phase.
+			result = execute_take_spec(game, theft["_resume"])
+			logger.warning("Resumed a theft the council interrupted: "
+			               f"{result.get('message')}")
 		game.pop("pending_nullifier", None)
 		
 		logger.info("Post-tribal flags reset completed")

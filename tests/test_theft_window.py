@@ -111,5 +111,19 @@ class TheWindowClosesOnItsOwnTest(unittest.TestCase):
         self.assertGreater(game["pending_theft"].get("deadline", 0), time.time())
 
 
+class TheCouncilDoesNotEatAWonStealTest(unittest.TestCase):
+    def test_post_tribal_reset_resumes_the_held_take(self):
+        gs = _fresh_gamestate()
+        gs.games["g1"] = _game_with_window(deadline=time.time() + 60)
+        game = gs.games["g1"]
+        # The reset is rules_engine.SurvivorRulesEngine._reset_post_tribal_flags
+        # (found via `grep -n "pending_theft" rules_engine.py` around line
+        # 1636) — it is what survivor_server.py's complete_tribal calls.
+        gs.rules_engine._reset_post_tribal_flags(game)
+        self.assertIsNone(game.get("pending_theft"))
+        self.assertEqual(len(game["players"]["thief"]["hand"]), 2,
+                        "the held take must execute, not evaporate")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
