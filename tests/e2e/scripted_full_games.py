@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Two scripted full games over the live HTTP API, as the final acceptance check.
+Four scripted full games over the live HTTP API, as the final acceptance check.
 
   1. A 3-player OFFICIAL game played to a Sole Survivor, verifying: character-card
      lives 2 -> 1 -> 0, Vote Cards consumed and returned each tribal, Final Tribal
@@ -8,6 +8,21 @@ Two scripted full games over the live HTTP API, as the final acceptance check.
 
   2. An EXPANSION game exercising at least 2 Challenges and the Immunity Idol
      Necklace blocking a vote at a Tribal Council.
+
+  3. A 7-player OFFICIAL game (eight-player expansion, Part A) — 6 all-double
+     tribal councils, a 5-member jury.
+
+  4. An 8-player OFFICIAL game — 7 all-double tribal councils, the Task A3
+     69-card pacing target with Purple and Pink's Inheritance in the deck,
+     and a 6-member jury at Final Tribal Council.
+
+Games 3 and 4 reuse game 1's shape through ``run_scripted_game_to_finish``,
+generalized from single- to double-elimination tribals via ``run_tribal_multi``
+(the 7-8 player table is all-doubles). Deterministic: every decision — who to
+vote for, which finalist the jury backs — is a fixed function of game state
+(fewest Survivor Character Cards left, ties broken by player id), never a
+random choice; the only randomness left is the server's own deck shuffle,
+which this script does not and cannot control over HTTP.
 
 Requires a running server:  .venv/bin/python survivor_server.py   (port 8080)
 """
@@ -135,7 +150,12 @@ def take_turn(gid):
     cp = game["turnOrder"][game.get("currentTurnIndex", 0)]
     victim = next(p for p in alive(game) if p != cp)
     api("/api/turn/steal", {"gameId": gid, "thiefId": cp, "targetId": victim})
-    api("/api/reactive/complete_theft", {"gameId": gid})
+    # If the victim is holding Sorry For You, the steal opens a reactive
+    # window instead of resolving immediately. The HTTP door requires a
+    # playerId to let it through (server-side None is meaningful, but the
+    # API layer refuses to infer it) — only the raid's own target can
+    # decline, so it must be `victim`, not the thief or an empty call.
+    api("/api/reactive/complete_theft", {"gameId": gid, "playerId": victim})
     _, resp = api("/api/turn/draw", {"gameId": gid, "playerId": cp})
     if resp.get("tribal_triggered"):
         return state(gid), True
@@ -198,6 +218,169 @@ def run_tribal(gid, target):
     returned = {name(after, pid): sum(1 for c in p["hand"] if c["type"] == "vote")
                 for pid, p in after["players"].items() if not p.get("isEliminated")}
     return after, voted_out, (spent, left_in_hands, returned)
+
+
+def run_tribal_multi(gid):
+    """
+    Full tribal council for either a single OR a double elimination —
+    generalizes ``run_tribal`` (which only ever targets one player, fine at
+    3 players where the official table is single-only) to the 7-8 player
+    extension, where every tribal is a double (Task A1: all-doubles table).
+
+    Deterministic: the 1 or 2 targets are always whoever has the fewest
+    Survivor Character Cards left (ties broken by player id), and every
+    voter's ballot is explicitly split across the targets so they are
+    unambiguously the top vote-getters — no ambiguous ladder, no tie-break
+    call needed in the common case. A tie-break IS handled defensively, in
+    case a run's random deal (idols, advantage cards) produces one anyway —
+    this drives the API, it does not touch the cascade itself.
+    """
+    game = state(gid)
+    leader = game["currentVote"]["councilLeaderId"]
+    elim_type = game["currentVote"].get("type", "single")
+    k = 2 if elim_type == "double" else 1
+
+    order = alive(game)
+    ranked = sorted(order, key=lambda p: (game["players"][p]["characterCards"], p))
+    targets = ranked[:k]
+    log(f"    tribal council — leader {name(game, leader)}, {elim_type} elimination, "
+        f"target(s) {[name(game, t) for t in targets]}")
+
+    api("/api/vote/start", {"gameId": gid, "voteType": "elimination", "playerId": leader})
+    game = state(gid)
+
+    necklace = game.get("necklaceHolder")
+    spent = 0
+    for i, voter in enumerate(alive(game)):
+        votes = max(1, game["players"][voter].get("mandatoryVotes", 1))
+        options = [p for p in alive(game) if p != voter and p != necklace]
+        # A target votes for a different target (never itself); everyone else
+        # splits their ballot round-robin across the targets so both a
+        # double's picks get real votes, not just one.
+        choices = [t for t in targets if t != voter and t in options]
+        if not choices:
+            choices = options
+        vote_for = choices[i % len(choices)]
+        _, r = api("/api/vote/cast", {"gameId": gid, "voterId": voter,
+                                      "votesData": [{"targetId": vote_for, "votes": votes}]})
+        if r.get("success"):
+            spent += votes
+        else:
+            api("/api/vote/cast", {"gameId": gid, "voterId": voter, "votesData": []})
+
+    api("/api/tribal/advance", {"gameId": gid, "phase": "immunity", "playerId": leader})
+    api("/api/vote/reveal", {"gameId": gid, "playerId": leader})
+    game = state(gid)
+    cv = game["currentVote"]
+    log(f"      votes: { {name(game, p): v for p, v in cv.get('voteResults', {}).items()} } — {cv.get('resolution')}")
+    if cv.get("tieBreakNeeded"):
+        needed = cv.get("eliminationsNeeded", k) - len(cv.get("eliminated", []))
+        chosen = list(cv.get("tiedPlayers", []))[:max(needed, 1)]
+        log(f"      tie-break needed — leader picks {[name(game, c) for c in chosen]}")
+        # The HTTP door requires `chosenId` (singular) as a required field even
+        # though the underlying method also accepts `chosenIds` for a
+        # pick-2-of-k double — send both so a single call covers either shape.
+        api("/api/vote/tiebreak", {"gameId": gid, "leaderId": cv["councilLeaderId"],
+                                   "chosenId": chosen[0], "chosenIds": chosen})
+        game = state(gid)
+        cv = game["currentVote"]
+    voted_out = list(cv.get("eliminated", []))
+
+    _, done = api("/api/tribal/complete", {"gameId": gid, "playerId": leader})
+    assert done.get("success"), done
+    return state(gid), voted_out, spent
+
+
+def run_scripted_game_to_finish(names, deck_mode="official", expansion=False, label="GAME"):
+    """
+    Play an official (or extended) game with ``len(names)`` players all the
+    way to a recorded Sole Survivor, using only the live HTTP API — the same
+    shape as GAME 1, generalized to any player count via ``run_tribal_multi``.
+    Exercises the whole elimination ledger at whatever count is passed: the
+    single/double tribal-card table (Task A1), the deck's pacing (Task A3),
+    seat-bound Inheritance (Task A2, if the random deal happens to fire one),
+    and a jury sized ``len(names) - 2`` at Final Tribal Council.
+    """
+    n = len(names)
+    log("\n" + "=" * 78)
+    log(f"{label} — scripted {n}-player {deck_mode.upper()} game to a Sole Survivor")
+    log("=" * 78)
+
+    gid, pids = new_game(names, deck_mode=deck_mode, expansion=expansion)
+    g = state(gid)
+    log(f"  game {gid} — deck {len(g['deck'])} cards, mode {g['deckMode']}, expansion {g['expansion']}")
+
+    expect(f"{label}: every player starts with 2 Survivor Character Cards",
+           all(p["characterCards"] == 2 for p in g["players"].values()),
+           {p["name"]: p["characterCards"] for p in g["players"].values()})
+    expect(f"{label}: every player is dealt 3 action cards + exactly 1 Vote Card",
+           all(len(p["hand"]) == 4 and sum(1 for c in p["hand"] if c["type"] == "vote") == 1
+               for p in g["players"].values()),
+           {p["name"]: [c["type"] for c in p["hand"]] for p in g["players"].values()})
+
+    lives_seen = {}
+    tribals = 0
+    turns = 0
+    turn_cap = 400 + 50 * n     # bigger pile at 7-8 players needs more turns
+
+    while g.get("phase") in ("playing", "tribal_council") and turns < turn_cap:
+        if g["phase"] == "playing":
+            g, triggered = take_turn(gid)
+            turns += 1
+            if not triggered:
+                continue
+
+        tribals += 1
+        g, voted_out, spent = run_tribal_multi(gid)
+
+        for pid in voted_out:
+            player = g["players"][pid]
+            lives_seen.setdefault(pid, []).append(player["characterCards"])
+            log(f"      {name(g, pid)} voted out -> {player['characterCards']} card(s)"
+                + (" — ELIMINATED, joins the jury" if player["isEliminated"] else " — still in the game"))
+
+        expect(f"{label} tribal {tribals}: at least one vote was cast", spent > 0, spent)
+
+    g = state(gid)
+    log(f"  {tribals} tribal councils, {turns} turns")
+
+    expect(f"{label}: at least one player went 2 -> 1 -> 0 character cards",
+           any(len(seen) >= 2 and seen[0] == 1 and seen[-1] == 0 for seen in lives_seen.values()),
+           {name(g, k): v for k, v in lives_seen.items()})
+    expect(f"{label}: eliminated players are exactly the jury",
+           sorted(g["jury"]) == sorted(pid for pid, p in g["players"].items() if p["isEliminated"]),
+           g["jury"])
+    expect(f"{label}: the jury has exactly {n - 2} members",
+           len(g["jury"]) == n - 2, g["jury"])
+    expect(f"{label}: final tribal fired with exactly 2 players left",
+           g["phase"] in ("final_tribal", "final") and len(alive(g)) == 2,
+           f"phase={g['phase']} alive={[name(g, p) for p in alive(g)]}")
+
+    ft = g.get("finalTribal", {})
+    expect(f"{label}: the most recently eliminated player is the Final Tribal Council Leader",
+           ft.get("leader") == g["jury"][-1], name(g, ft.get("leader", "")))
+
+    _, r = api("/api/final/advance", {"gameId": gid, "phase": "voting"})
+    expect(f"{label}: final tribal advances to voting", r.get("success"), r.get("message"))
+
+    finalists = ft["finalists"]
+    for juror in ft["jury"]:
+        api("/api/final/vote", {"gameId": gid, "juryMemberId": juror,
+                                "finalistId": finalists[0]})
+    g = state(gid)
+    ft = g["finalTribal"]
+    log(f"  jury vote ({len(ft['jury'])} jurors): "
+        f"{ {name(g, k): name(g, v) for k, v in ft['votes'].items()} }")
+    expect(f"{label}: jury vote produces a winner", ft.get("winner") == finalists[0],
+           f"winner={name(g, ft.get('winner', ''))} counts={ft.get('voteCounts')}")
+
+    _, r = api("/api/game/finish", {"gameId": gid, "winnerId": finalists[0]})
+    expect(f"{label}: winner recorded", r.get("success"), r.get("message"))
+    _, winners = api("/api/winners", method="GET")
+    winner_name = name(g, finalists[0])
+    expect(f"{label}: winner appears in the hall of fame",
+           any(w.get("winner_name") == winner_name for w in (winners or [])), winner_name)
+    log(f"  🏆 {label} Sole Survivor: {winner_name}")
 
 
 # ═════════════════════════ GAME 1 — official 3 players ═════════════════════════
@@ -447,6 +630,26 @@ for attempt in range(8):
 expect("at least 2 Challenges were played", len(challenges_run) >= 2, challenges_run)
 expect("the Necklace blocked a vote at a Tribal Council", necklace_blocked)
 
+
+# ═════════════════════════ GAME 3 — official 7 players ═════════════════════════
+# Task A1: 6 all-double tribal cards, 12 flips = 2*(7-2)+2. Task A3: 61-card
+# pacing target. A 5-member jury at Final Tribal Council.
+
+run_scripted_game_to_finish(
+    ["Uma", "Vic", "Wren", "Xavi", "Yara", "Zeke", "Ash"],
+    label="GAME 3")
+
+
+# ═════════════════════════ GAME 4 — official 8 players ═════════════════════════
+# Task A1: 7 all-double tribal cards, 14 flips = 2*(8-2)+2. Task A3: 69-card
+# pacing target, with Purple and Pink's seat-bound Inheritance in the deck.
+# A 6-member jury at Final Tribal Council — the biggest this game seats.
+
+run_scripted_game_to_finish(
+    ["Brody", "Coral", "Dev", "Ember", "Finch", "Goldie", "Haze", "Iris"],
+    label="GAME 4")
+
+
 # Scrub this run's wins from the Hall of Fame
 try:
     _, records = api("/api/winners/records", method="GET")
@@ -467,5 +670,5 @@ if failures:
     for f in failures:
         log(f"   - {f}")
     sys.exit(1)
-log("✅ Both scripted games completed with every check passing")
+log("✅ All 4 scripted games completed with every check passing")
 sys.exit(0)
