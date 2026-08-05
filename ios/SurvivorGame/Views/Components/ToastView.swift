@@ -83,13 +83,20 @@ struct NarrationHost: ViewModifier {
         // move under a finger. Better to briefly cover something than to shift
         // everything.
         //
-        // Pinned to the top rather than offset because there is no offset that
-        // clears both screens — the camp has no navigation bar and the council
-        // does. Here it lands on the camp's game-code header and the council's
-        // navigation title, which are the two least costly things on either
-        // screen to lose for a second and a half. The camp's Steal → Play →
-        // Draw tracker and the council's phase tracker both stay visible.
-        content.overlay(alignment: .top) {
+        // Trailing-aligned rather than centered, because centered sliced
+        // straight through the camp's FIRE pill (found live: four repro
+        // screenshots, a colored capsule cutting off the game code's last
+        // digit mid-stroke — that reads as broken chrome, not as "briefly
+        // covered"). The toast hugs its own content rather than stretching
+        // full width, so pinning it to the trailing edge instead moves it
+        // clear of the FIRE pill on the camp screen and clear of the
+        // centered "Tribal Council" title on the council screen, at the one
+        // vertical position that still clears both without an offset that
+        // has to be tuned per screen. It can still graze the scroll/menu
+        // icons at the far trailing edge for a long line — the quietest
+        // casualty on either bar, and rare since narration text shrinks
+        // before it grows past half the screen.
+        content.overlay(alignment: .topTrailing) {
             if let event = narration.current {
                 ToastView(message: event.message, type: .narration)
                     .padding(.horizontal, 20)
