@@ -625,10 +625,14 @@ def _final_action(game, age, rng):
 # ───────────────────────────── pacing windows ────────────────────────────────
 
 def _base_delay():
+    # The default gap between bot actions is ~1.7-3.1s (base * jitter 0.7-1.3),
+    # and every ceremony window in _windows() scales by base/1.6 — so this one
+    # number slows the whole show together. SURVIVOR_BOT_DELAY and the
+    # per-game botPace dial (chill/normal/fast) still override it on top.
     try:
-        return max(0.0, float(os.environ.get("SURVIVOR_BOT_DELAY", "1.6")))
+        return max(0.0, float(os.environ.get("SURVIVOR_BOT_DELAY", "2.4")))
     except ValueError:
-        return 1.6
+        return 2.4
 
 
 def _windows(base):
