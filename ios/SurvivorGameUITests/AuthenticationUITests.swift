@@ -90,5 +90,17 @@ final class AuthenticationUITests: XCTestCase {
             object: relaunchedLobbyCode
         )
         XCTAssertEqual(XCTWaiter.wait(for: [reconnectedSocket], timeout: 8), .completed)
+
+        // Exercise the real lobby-leave route after a process-style reconnect.
+        // The confirmation prevents an accidental tap, and success must return
+        // to the start screen only after the server has freed the seat.
+        relaunchedApp.buttons["Leave"].tap()
+        let leaveGame = relaunchedApp.buttons["Leave Game"]
+        XCTAssertTrue(leaveGame.waitForExistence(timeout: 3))
+        leaveGame.tap()
+        XCTAssertTrue(
+            relaunchedApp.buttons["create-game-button"].waitForExistence(timeout: 8),
+            "A confirmed lobby leave should clear the session and return home"
+        )
     }
 }
