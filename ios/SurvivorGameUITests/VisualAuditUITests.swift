@@ -240,6 +240,43 @@ final class VisualAuditUITests: XCTestCase {
         shot("06-ballot-torches")
     }
 
+    // MARK: - The council says how many torches go out
+
+    /// `currentVote.type` has been on the wire and decoded since before this
+    /// work, and nothing ever read it — a double council played out
+    /// identically to a single one until the reveal itself showed two
+    /// names. Now the announcement says it out loud and a persistent chip
+    /// keeps saying it for the rest of the ceremony.
+    @MainActor
+    func testCouncilAnnouncesADoubleElimination() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+
+        for pid in [camp.me] + camp.allies {
+            try api.post("/api/test/set_hand", ["gameId": gid, "playerId": pid, "hand": ["vote"]])
+        }
+
+        // Straight to the ballot: whoever holds the turn draws the council
+        // card and so leads it — the seat order is dealt, not fixed, so
+        // read it rather than assume it.
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_double"]])
+        let before = try api.get("/api/game/\(gid)/state")
+        let order = try XCTUnwrap(before["turnOrder"] as? [String])
+        let onTurn = order[((before["currentTurnIndex"] as? Int) ?? 0) % order.count]
+        let victim = try XCTUnwrap(order.first { $0 != onTurn })
+        try api.post("/api/turn/steal",
+                     ["gameId": gid, "thiefId": onTurn, "targetId": victim])
+        try api.post("/api/turn/draw", ["gameId": gid, "playerId": onTurn])
+
+        XCTAssertTrue(camp.app.staticTexts["TWO torches go out tonight."]
+                        .waitForExistence(timeout: 15),
+                      "a double council should say so out loud on the announcement")
+        XCTAssertTrue(camp.app.staticTexts["DOUBLE ELIMINATION"].exists,
+                      "and keep a badge up so the fact survives past the announcement")
+        shot("17-double-elimination-banner")
+    }
+
     // MARK: - Playing a targeted advantage from the advantage window
 
     /// Reported live: tapping Steal A Vote in the Advantage Play Phase answered

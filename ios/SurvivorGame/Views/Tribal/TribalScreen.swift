@@ -50,6 +50,24 @@ struct CeremonyTitle: View {
     }
 }
 
+/// "Two torches go out tonight" — a compact capsule (web's chip recipe,
+/// same shape as the immune pill in VoteRevealView) that stays visible
+/// through every phase after the announcement, in the ember warning tone
+/// rather than the ceremony's usual parchment. Singles get no chip: the
+/// announcement line already said it, and single is the norm.
+private struct DoubleEliminationChip: View {
+    var body: some View {
+        Text("DOUBLE ELIMINATION")
+            .font(Torch.Font.label(Torch.TextSize.xs))
+            .tracking(Torch.Track.label * Torch.TextSize.xs)
+            .foregroundStyle(Torch.Color.ember)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Torch.Color.surfaceSunken))
+            .overlay(Capsule().strokeBorder(Torch.Color.ember.opacity(0.5), lineWidth: 1))
+    }
+}
+
 struct TribalScreen: View {
     @Environment(GameClient.self) private var gameClient
     @State private var viewModel: TribalViewModel?
@@ -126,6 +144,14 @@ private struct TribalContent: View {
             .lineLimit(1)
             .minimumScaleFactor(0.5)
             .padding(.vertical, 12)
+
+            // Stays lit through Advantage/Talk/Vote/Idols/Reveal, not just
+            // the announcement — the fact should not wash out once the
+            // opening line scrolls off screen.
+            if viewModel.voteState?.type == "double" {
+                DoubleEliminationChip()
+                    .padding(.bottom, 12)
+            }
 
             // Where everyone is standing. For most of the ceremony this is the
             // locked row — a Discord bot is physically dragging players into
@@ -206,9 +232,17 @@ private struct AnnouncementPhase: View {
 
             CeremonyTitle(text: "Tribal Council")
 
-            Text("The tribe has spoken... someone will be going home tonight.")
-                .font(Torch.Font.display(Torch.TextSize.base, weight: 500, italic: true))
-                .foregroundStyle(Torch.Color.parchmentDim)
+            // Answers the question the table actually has: how many torches
+            // go out tonight. `type` has been on the wire all along and
+            // nothing read it — a double council played out identically to
+            // a single one until the results themselves showed two names.
+            Text(isDoubleElimination
+                 ? "TWO torches go out tonight."
+                 : "One torch goes out tonight.")
+                .font(Torch.Font.display(Torch.TextSize.base,
+                                          weight: isDoubleElimination ? 700 : 500,
+                                          italic: true))
+                .foregroundStyle(isDoubleElimination ? Torch.Color.ember : Torch.Color.parchmentDim)
                 .multilineTextAlignment(.center)
 
             if let leader = viewModel.councilLeader {
@@ -224,6 +258,10 @@ private struct AnnouncementPhase: View {
             }
         }
         .padding(.vertical, 24)
+    }
+
+    private var isDoubleElimination: Bool {
+        viewModel.voteState?.type == "double"
     }
 }
 
