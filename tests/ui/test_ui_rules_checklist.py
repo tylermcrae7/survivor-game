@@ -175,7 +175,12 @@ def run_checks():
         ana.wait_for_selector('[data-action="createGame"]')
 
         # ══════════════ U1 · Lobby rules ══════════════
+        # "Light the Fire" only reveals the confirm panel now (W1: a click used
+        # to create a game outright) — the explicit confirm is what actually
+        # calls POST /game/create.
         jsclick(ana, '[data-action="createGame"]')
+        ana.wait_for_selector('[data-action="confirmCreateGame"]')
+        jsclick(ana, '[data-action="confirmCreateGame"]')
         ana.wait_for_selector('#gameCodeInput')
         gid = ana.input_value('#gameCodeInput')
         jsclick(ana, '#colorSelection .color-btn[data-color="#FF6B6B"]')
