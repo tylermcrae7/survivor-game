@@ -449,6 +449,93 @@ final class VisualAuditUITests: XCTestCase {
         return last
     }
 
+    // MARK: - A steal announces itself
+
+    /// Reported live: cards left a hand and arrived in another with nothing
+    /// on anybody's screen to say so — a Do Or Die win looked like the win
+    /// paid nothing. Every take now toasts its thief, victim and count.
+    @MainActor
+    func testAStealAnnouncesItselfOnEveryPhone() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+
+        let before = try api.get("/api/game/\(gid)/state")
+        let order = try XCTUnwrap(before["turnOrder"] as? [String])
+        let onTurn = order[((before["currentTurnIndex"] as? Int) ?? 0) % order.count]
+        let victim = try XCTUnwrap(order.first { $0 != onTurn })
+        try api.post("/api/test/set_hand",
+                     ["gameId": gid, "playerId": victim,
+                      "hand": ["vote", "extra_vote", "camp_raid"]])
+        try api.post("/api/turn/steal",
+                     ["gameId": gid, "thiefId": onTurn, "targetId": victim])
+
+        let toast = camp.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'stole a card from'")).firstMatch
+        XCTAssertTrue(toast.waitForExistence(timeout: 10),
+                      "a steal must toast on every phone, not only the thief's")
+        shot("15-steal-toast")
+    }
+
+    // MARK: - The reveal keeps the votes immunity erased
+
+    /// The idol negates the votes; it should not erase them from history.
+    /// The reveal shows the immune player's would-be count, marked immune.
+    @MainActor
+    func testTheRevealShowsAnImmunePlayersUncountedVotes() throws {
+        let camp = try stage()
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+
+        for pid in [camp.me] + camp.allies {
+            try api.post("/api/test/set_hand", ["gameId": gid, "playerId": pid, "hand": ["vote"]])
+        }
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_single"]])
+        let before = try api.get("/api/game/\(gid)/state")
+        let order = try XCTUnwrap(before["turnOrder"] as? [String])
+        let onTurn = order[((before["currentTurnIndex"] as? Int) ?? 0) % order.count]
+        try api.post("/api/turn/steal",
+                     ["gameId": gid, "thiefId": onTurn,
+                      "targetId": try XCTUnwrap(order.first { $0 != onTurn })])
+        try api.post("/api/turn/draw", ["gameId": gid, "playerId": onTurn])
+
+        let opened = try api.get("/api/game/\(gid)/state")
+        let leader = try XCTUnwrap(
+            (opened["currentVote"] as? [String: Any])?["councilLeaderId"] as? String)
+        try api.post("/api/tribal/advance", ["gameId": gid, "playerId": leader,
+                                             "phase": "discussion"])
+        try api.post("/api/vote/start", ["gameId": gid, "playerId": leader,
+                                         "voteType": "elimination"])
+
+        // Three votes land on the soon-to-be-immune ally; theirs lands on me,
+        // so the reveal holds both row shapes: a counted one and an erased one.
+        let immune = camp.allies[0]
+        for pid in [camp.me] + camp.allies {
+            let target = (pid == immune) ? camp.me : immune
+            try api.post("/api/vote/cast",
+                         ["gameId": gid, "voterId": pid,
+                          "votesData": [["targetId": target, "votes": 1]]])
+        }
+
+        try api.post("/api/tribal/advance", ["gameId": gid, "playerId": leader,
+                                             "phase": "immunity"])
+        try api.post("/api/test/set_hand",
+                     ["gameId": gid, "playerId": immune, "hand": ["immunity_idol"]])
+        try api.post("/api/immunity/play", ["gameId": gid, "playerId": immune])
+
+        let sealed = try api.post("/api/vote/reveal",
+                                  ["gameId": gid, "playerId": leader])
+        if (sealed["idolWindowOpened"] as? Bool) == true
+            || (sealed["idolWindowOpened"] as? Int) == 1 {
+            try api.post("/api/vote/reveal", ["gameId": gid, "playerId": leader])
+        }
+
+        let erased = camp.app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'would have received'")).firstMatch
+        XCTAssertTrue(erased.waitForExistence(timeout: 15),
+                      "the immune player's would-be votes must be on the reveal")
+        shot("16-reveal-immune-votes")
+    }
+
     /// Read the code off the screen. The visible text is "/link PALM-472" and
     /// the spoken label spells it out, so the identifier is what carries it.
     private func waitForCode(in app: XCUIApplication) throws -> String {
