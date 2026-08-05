@@ -196,6 +196,10 @@ def main():
         {
             'file': 'tests/test_card_conservation.py',
             'description': 'Card conservation — every steal moves exactly the cards it claims, and mints none'
+        },
+        {
+            'file': 'tests/test_tie_break_eight_players.py',
+            'description': 'Tie-breakers at eight — the official cascade pinned rule-by-rule at a full table'
         }
     ]
     

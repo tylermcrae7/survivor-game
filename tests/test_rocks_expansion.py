@@ -731,7 +731,8 @@ if __name__ == '__main__':
     suite = unittest.TestSuite()
     for test_class in (TestNecklace, TestHighestBidder, TestOneNowOrTwoLater,
                        TestLowestScoreLoses, TestPullOrSteal, TestHideNSeekStub,
-                       TestChallengeParticipation, TestEightPlayerChallenges):
+                       TestChallengeParticipation, TestPoisonedBudgetHeals,
+                       TestEightPlayerChallenges):
         suite.addTests(loader.loadTestsFromTestCase(test_class))
 
     result = unittest.TextTestRunner(verbosity=2, buffer=True).run(suite)

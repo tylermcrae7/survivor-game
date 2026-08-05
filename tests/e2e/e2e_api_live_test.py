@@ -154,13 +154,26 @@ def run_tribal(gid, target):
     return state(gid), voted_out
 
 
+def let_the_raid_through(gid):
+    """Decline any open Sorry For You window on the victim's own behalf.
+
+    The complete_theft door now requires the target's playerId (only the
+    raid's target may wave it through) — read who that is from the window
+    itself. No window, no call."""
+    st = state(gid)
+    theft = (st or {}).get("pending_theft") or {}
+    target = theft.get("targetId")
+    if target:
+        api("/api/reactive/complete_theft", {"gameId": gid, "playerId": target})
+
+
 def play_turn(gid, game):
     """Steal, then draw, for whoever's turn it is. Returns (state, tribal_triggered)."""
     order = game["turnOrder"]
     cp = order[game.get("currentTurnIndex", 0)]
     victim = next(p for p in order if p != cp and not game["players"][p].get("isEliminated"))
     api("/api/turn/steal", {"gameId": gid, "thiefId": cp, "targetId": victim})
-    st, resp = api("/api/reactive/complete_theft", {"gameId": gid})  # no-op if no window
+    let_the_raid_through(gid)  # no-op if no window
     st, resp = api("/api/turn/draw", {"gameId": gid, "playerId": cp})
     triggered = bool(resp.get("tribal_triggered"))
     # Drawing ends the turn - the server advances it on its own now.
@@ -185,7 +198,10 @@ cards = resp.get("cards", {}) if isinstance(resp, dict) else {}
 check("cards_endpoint", st == 200 and bool(cards), f"{len(cards)} card types")
 official = sum(c["count"] for t, c in cards.items()
                if c.get("official") is not False and c["category"] != "challenge")
-check("official_deck_is_67_cards", official == 67, official)
+# 67 printed cards, plus the two digital seat-extension Inheritances (Purple,
+# Pink) that only ever enter a 7-8 player deck — 3-6 player games still build
+# the box bit-for-bit (pinned by test_deck_composition).
+check("official_catalogue_is_69_cards", official == 69, official)
 check("cards_metadata_not_claiming_74_official",
       resp.get("metadata", {}).get("official_action_cards") == 67,
       resp.get("metadata", {}).get("source"))
@@ -268,7 +284,7 @@ check("draw_rejection_explains_order", "steal" in str(resp.get("message", "")).l
 victim = next(p for p in g["turnOrder"] if p != first)
 st, resp = api("/api/turn/steal", {"gameId": gid, "thiefId": first, "targetId": victim})
 check("steal_endpoint", resp.get("success"), resp.get("message"))
-api("/api/reactive/complete_theft", {"gameId": gid})
+let_the_raid_through(gid)
 st, resp = api("/api/turn/steal", {"gameId": gid, "thiefId": first, "targetId": victim})
 check("double_steal_rejected", not resp.get("success"), resp.get("message"))
 st, resp = api("/api/turn/draw", {"gameId": gid, "playerId": first})
@@ -497,7 +513,7 @@ def play_expansion_game(egid):
         # Steal first so the play phase is legal
         victim = next(p for p in eg["turnOrder"] if p != cp and not eg["players"][p].get("isEliminated"))
         api("/api/turn/steal", {"gameId": egid, "thiefId": cp, "targetId": victim})
-        api("/api/reactive/complete_theft", {"gameId": egid})
+        let_the_raid_through(egid)
         eg = state(egid)
         hand = eg["players"][cp].get("hand", [])
         idx = next((i for i, c in enumerate(hand)
@@ -631,7 +647,7 @@ hg = state(hgid)
 hp = hg["turnOrder"][0]
 victim = hg["turnOrder"][1]
 api("/api/turn/steal", {"gameId": hgid, "thiefId": hp, "targetId": victim})
-api("/api/reactive/complete_theft", {"gameId": hgid})
+let_the_raid_through(hgid)
 hg = state(hgid)
 # Inject via a legal path is impossible; assert the card definition instead
 st, cardsresp = api("/api/cards", method="GET")
@@ -693,7 +709,7 @@ game = state(td_gid)
 td_cur = game["turnOrder"][game["currentTurnIndex"]]
 td_victim = next(p for p in game["turnOrder"] if p != td_cur)
 api("/api/turn/steal", {"gameId": td_gid, "thiefId": td_cur, "targetId": td_victim})
-api("/api/reactive/complete_theft", {"gameId": td_gid})
+let_the_raid_through(td_gid)
 st, resp = api("/api/turn/draw", {"gameId": td_gid, "playerId": td_cur})
 check("first_draw_succeeds", resp.get("success"), resp)
 if not resp.get("tribal_triggered"):
@@ -749,7 +765,7 @@ def _answer_the_island(g):
     exactly like a person tapping the dialogs the app shows them."""
     theft = g.get("pending_theft") or {}
     if theft.get("reactive_window_open") and theft.get("targetId") == human_pid:
-        api("/api/reactive/complete_theft", {"gameId": bot_gid})
+        let_the_raid_through(bot_gid)
         return True
     it = g.get("interaction") or {}
     if it:
@@ -813,7 +829,7 @@ check("bots_play_until_human_turn", outcome1 in ("turn", "tribal"), outcome1)
 if outcome1 == "turn":
     victim = next(p for p in g["turnOrder"] if p != human_pid)
     api("/api/turn/steal", {"gameId": bot_gid, "thiefId": human_pid, "targetId": victim})
-    api("/api/reactive/complete_theft", {"gameId": bot_gid})
+    let_the_raid_through(bot_gid)
     api("/api/turn/draw", {"gameId": bot_gid, "playerId": human_pid})
     outcome2, _ = _wait_for_human_turn()
     check("bots_keep_playing_after_human_turn", outcome2 in ("turn", "tribal"), outcome2)
