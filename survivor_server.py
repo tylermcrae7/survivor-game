@@ -1750,6 +1750,7 @@ class GameState:
             "survived_with_one_card": survived_players,
             "elimination_type": current_vote.get("type", "single"),
             "vote_results": current_vote.get("voteResults", {}),
+            "raw_vote_results": current_vote.get("rawVoteResults", {}),
             "jury_members": jury_members,
             "vote_cards_returned": len(vote_cards_returned),
             "timestamp": time.time()

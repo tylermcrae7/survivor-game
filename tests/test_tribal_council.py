@@ -699,7 +699,25 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertNotIn(immune_player_id, current_vote["tiedPlayers"][:3])
         self.assertEqual(sorted(current_vote["tiedPlayers"][:3]),
                          sorted([p for p in self.player_ids if p != immune_player_id]))
-        
+
+        raw = current_vote.get("rawVoteResults") or {}
+        self.assertGreater(raw.get(immune_player_id, 0), 0,
+                           "the reveal must remember the votes immunity erased")
+
+        # Break the tie the Leader now faces, then complete the council, and
+        # confirm the recap keeps the pre-immunity tally.
+        leader_id = current_vote["councilLeaderId"]
+        tie_broken = self.gs.tie_break(self.game_id, leaderId=leader_id,
+                                       chosenId=current_vote["tiedPlayers"][0])
+        self.assertTrue(tie_broken["success"], tie_broken.get("message"))
+
+        completed = self.gs.complete_tribal(self.game_id)
+        self.assertTrue(completed["success"], completed.get("message"))
+
+        record = game["gameHistory"][-1]
+        self.assertEqual(record.get("raw_vote_results"), raw,
+                         "the recap must keep the pre-immunity tally")
+
     # COMPREHENSIVE FINAL TRIBAL COUNCIL TESTS
     
     def test_final_tribal_triggering_with_2_players(self):
