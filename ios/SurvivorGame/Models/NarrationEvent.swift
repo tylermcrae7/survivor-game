@@ -22,6 +22,12 @@ enum NarrationEvent: Equatable, Sendable {
                count: Int, message: String?)
     /// A Sorry For You closed the window before any card moved.
     case raidBlocked(defender: String, defenderId: String?, message: String)
+    /// An Inheritance card fired: a dead player's estate moved to a living
+    /// heir. It used to happen in total silence — the transfer worked, but
+    /// nobody at the table was told. `message` is the server's own wording,
+    /// verbatim, exactly like `raidBlocked`.
+    case inheritance(heirId: String?, heir: String, deadId: String?, dead: String,
+                      count: Int, seatLabel: String?, message: String)
     case cardPlayed(player: String, card: String?, target: String?)
     case voteCast(player: String)
     case immunityPlayed(player: String)
@@ -56,6 +62,14 @@ enum NarrationEvent: Equatable, Sendable {
             guard let defender = str("defender"), let message = str("message") else { return nil }
             self = .raidBlocked(defender: defender,
                                 defenderId: data["defenderId"] as? String,
+                                message: message)
+        case "inheritance":
+            guard let heir = str("heir"), let dead = str("dead"),
+                  let message = str("message") else { return nil }
+            self = .inheritance(heirId: data["heirId"] as? String, heir: heir,
+                                deadId: data["deadId"] as? String, dead: dead,
+                                count: data["count"] as? Int ?? 0,
+                                seatLabel: str("seatLabel"),
                                 message: message)
         case "card_played":
             guard let player = str("player") else { return nil }
@@ -92,7 +106,9 @@ enum NarrationEvent: Equatable, Sendable {
 
     var priority: Priority {
         switch self {
-        case .elimination, .winner, .gameStart, .tribalStart: .critical
+        // Inheritance belongs to the elimination moment it rides in on and
+        // must not be evicted by chatter ahead of it in the queue.
+        case .elimination, .winner, .gameStart, .tribalStart, .inheritance: .critical
         case .steal, .raidBlocked, .cardPlayed, .immunityPlayed, .immunityNullified: .normal
         case .voteCast, .playerJoined: .chatter
         }
@@ -105,6 +121,8 @@ enum NarrationEvent: Equatable, Sendable {
                 ? "\(thief) stole a card from \(victim)"
                 : "\(thief) stole \(count) cards from \(victim)")
         case .raidBlocked(_, _, let message):
+            message
+        case .inheritance(_, _, _, _, _, _, let message):
             message
         case .cardPlayed(let player, let card, let target):
             if let card, let target { "\(player) played \(card) on \(target)" }
@@ -138,9 +156,10 @@ enum NarrationEvent: Equatable, Sendable {
     /// double every one of the game's most dramatic beats.
     var cue: TorchCue? {
         switch self {
-        // A blocked raid is a steal that didn't happen — same cue, no
-        // dedicated "negative" sound exists in the palette yet.
-        case .steal, .raidBlocked: .steal
+        // A blocked raid is a steal that didn't happen, and an estate
+        // passing to an heir is a steal in every way that matters to the
+        // ear — same cue for all three, no dedicated sound exists yet.
+        case .steal, .raidBlocked, .inheritance: .steal
         case .cardPlayed, .immunityPlayed, .immunityNullified: .cardPlay
         case .voteCast: .notification
         case .gameStart: .tribalGong

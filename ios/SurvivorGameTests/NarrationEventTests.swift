@@ -24,6 +24,10 @@ struct NarrationEventTests {
         #expect(NarrationEvent(type: "tribal_start", data: [:]) != nil)
         #expect(NarrationEvent(type: "player_joined",
                                data: ["player": "Ana", "count": 2]) != nil)
+        #expect(NarrationEvent(type: "inheritance", data: [
+            "heir": "Mango", "dead": "Coconut", "count": 2,
+            "message": "Mango inherits Coconut's 2 cards — Inheritance (Red) is spent",
+        ]) != nil)
     }
 
     @Test("An unknown event is ignored, not rendered and not crashed on")
@@ -104,6 +108,37 @@ struct NarrationEventTests {
         ])
         #expect(event?.cue == .steal)
         #expect(event?.priority == .normal)
+    }
+
+    /// The transfer already worked silently; only the announcement is new.
+    @Test("An Inheritance firing uses the server's own words")
+    func inheritanceUsesTheServersWords() {
+        let event = NarrationEvent(type: "inheritance", data: [
+            "heirId": "p1", "heir": "Mango", "deadId": "p2", "dead": "Coconut",
+            "count": 2, "seatLabel": "Red",
+            "message": "Mango inherits Coconut's 2 cards — Inheritance (Red) is spent",
+        ])
+        #expect(event?.message == "Mango inherits Coconut's 2 cards — Inheritance (Red) is spent")
+    }
+
+    @Test("An Inheritance with no message is dropped rather than shown blank")
+    func inheritanceWithNoMessageIsDropped() {
+        #expect(NarrationEvent(type: "inheritance", data: [
+            "heir": "Mango", "dead": "Coconut", "count": 2,
+        ]) == nil)
+    }
+
+    /// It rides in on the elimination moment, so it must not be evicted by
+    /// chatter ahead of it in the queue — unlike a steal, which is merely
+    /// `.normal`.
+    @Test("An Inheritance toasts critical, and reuses the steal cue")
+    func inheritanceCueAndPriority() {
+        let event = NarrationEvent(type: "inheritance", data: [
+            "heir": "Mango", "dead": "Coconut", "count": 2,
+            "message": "Mango inherits Coconut's 2 cards — Inheritance (Red) is spent",
+        ])
+        #expect(event?.cue == .steal)
+        #expect(event?.priority == .critical)
     }
 
     /// The server's old placeholder was the literal string "a card".
