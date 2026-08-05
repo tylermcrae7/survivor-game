@@ -14,7 +14,14 @@ import Foundation
 /// broadcast with no per-player audience, so anything this type learns to
 /// display is displayed to everyone at the table.
 enum NarrationEvent: Equatable, Sendable {
-    case steal(thief: String, victim: String, thiefId: String?, victimId: String?)
+    /// `message` is the server's own wording when it sent one — kept
+    /// server-authoritative rather than re-derived here — falling back to a
+    /// constructed line built from `count` for an older server that doesn't
+    /// send it yet.
+    case steal(thief: String, victim: String, thiefId: String?, victimId: String?,
+               count: Int, message: String?)
+    /// A Sorry For You closed the window before any card moved.
+    case raidBlocked(defender: String, defenderId: String?, message: String)
     case cardPlayed(player: String, card: String?, target: String?)
     case voteCast(player: String)
     case immunityPlayed(player: String)
@@ -42,7 +49,14 @@ enum NarrationEvent: Equatable, Sendable {
             guard let thief = str("thief"), let victim = str("victim") else { return nil }
             self = .steal(thief: thief, victim: victim,
                           thiefId: data["thiefId"] as? String,
-                          victimId: data["victimId"] as? String)
+                          victimId: data["victimId"] as? String,
+                          count: data["count"] as? Int ?? 1,
+                          message: str("message"))
+        case "raid_blocked":
+            guard let defender = str("defender"), let message = str("message") else { return nil }
+            self = .raidBlocked(defender: defender,
+                                defenderId: data["defenderId"] as? String,
+                                message: message)
         case "card_played":
             guard let player = str("player") else { return nil }
             // The server's placeholder is the literal "a card"; treat it as
@@ -79,15 +93,19 @@ enum NarrationEvent: Equatable, Sendable {
     var priority: Priority {
         switch self {
         case .elimination, .winner, .gameStart, .tribalStart: .critical
-        case .steal, .cardPlayed, .immunityPlayed, .immunityNullified: .normal
+        case .steal, .raidBlocked, .cardPlayed, .immunityPlayed, .immunityNullified: .normal
         case .voteCast, .playerJoined: .chatter
         }
     }
 
     var message: String {
         switch self {
-        case .steal(let thief, let victim, _, _):
-            "\(thief) raided \(victim)'s camp"
+        case .steal(let thief, let victim, _, _, let count, let message):
+            message ?? (count <= 1
+                ? "\(thief) stole a card from \(victim)"
+                : "\(thief) stole \(count) cards from \(victim)")
+        case .raidBlocked(_, _, let message):
+            message
         case .cardPlayed(let player, let card, let target):
             if let card, let target { "\(player) played \(card) on \(target)" }
             else if let card { "\(player) played \(card)" }
@@ -120,7 +138,9 @@ enum NarrationEvent: Equatable, Sendable {
     /// double every one of the game's most dramatic beats.
     var cue: TorchCue? {
         switch self {
-        case .steal: .steal
+        // A blocked raid is a steal that didn't happen — same cue, no
+        // dedicated "negative" sound exists in the palette yet.
+        case .steal, .raidBlocked: .steal
         case .cardPlayed, .immunityPlayed, .immunityNullified: .cardPlay
         case .voteCast: .notification
         case .gameStart: .tribalGong

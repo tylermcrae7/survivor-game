@@ -51,7 +51,59 @@ struct NarrationEventTests {
                                    data: ["thief": "Ana", "victim": "Ben",
                                           "thiefId": "p1", "victimId": "p2"])
         #expect(event == .steal(thief: "Ana", victim: "Ben",
-                                thiefId: "p1", victimId: "p2"))
+                                thiefId: "p1", victimId: "p2",
+                                count: 1, message: nil))
+    }
+
+    @Test("A steal with a count reads the number of cards, not just 'a card'")
+    func stealWithCountReadsCards() {
+        let event = NarrationEvent(type: "steal", data: [
+            "thief": "TDawg", "victim": "Mango", "count": 2,
+            "message": "TDawg stole 2 cards from Mango",
+        ])
+        #expect(event?.message == "TDawg stole 2 cards from Mango")
+    }
+
+    @Test("A steal with no count still reads — an older server never sent one")
+    func stealWithoutCountStillReads() {
+        let event = NarrationEvent(type: "steal",
+                                   data: ["thief": "A", "victim": "B"])
+        #expect(event?.message.contains("A") == true)
+        #expect(event?.message == "A stole a card from B")
+    }
+
+    @Test("Without a server message, the count builds honest wording")
+    func stealFallsBackToConstructedWording() {
+        let single = NarrationEvent(type: "steal",
+                                    data: ["thief": "Ana", "victim": "Ben", "count": 1])
+        #expect(single?.message == "Ana stole a card from Ben")
+
+        let plural = NarrationEvent(type: "steal",
+                                    data: ["thief": "Ana", "victim": "Ben", "count": 3])
+        #expect(plural?.message == "Ana stole 3 cards from Ben")
+    }
+
+    @Test("A blocked raid uses the server's own words")
+    func raidBlockedUsesTheServersWords() {
+        let event = NarrationEvent(type: "raid_blocked", data: [
+            "defender": "Mango",
+            "message": "Mango played Sorry For You — the raid fails",
+        ])
+        #expect(event?.message == "Mango played Sorry For You — the raid fails")
+    }
+
+    @Test("A blocked raid with no message is dropped rather than shown blank")
+    func raidBlockedWithNoMessageIsDropped() {
+        #expect(NarrationEvent(type: "raid_blocked", data: ["defender": "Mango"]) == nil)
+    }
+
+    @Test("A blocked raid toasts and outranks chatter, same as a steal")
+    func raidBlockedCueAndPriority() {
+        let event = NarrationEvent(type: "raid_blocked", data: [
+            "defender": "Mango", "message": "Mango played Sorry For You — the raid fails",
+        ])
+        #expect(event?.cue == .steal)
+        #expect(event?.priority == .normal)
     }
 
     /// The server's old placeholder was the literal string "a card".
