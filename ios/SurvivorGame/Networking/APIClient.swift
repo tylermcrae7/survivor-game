@@ -199,8 +199,10 @@ actor APIClient {
         ])
     }
 
-    func completeTheft(gameId: String) async throws -> ActionResponse {
-        try await post(path: "/api/reactive/complete_theft", body: ["gameId": gameId])
+    func completeTheft(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/reactive/complete_theft", body: [
+            "gameId": gameId, "playerId": playerId
+        ])
     }
 
     // MARK: - Tribal Council

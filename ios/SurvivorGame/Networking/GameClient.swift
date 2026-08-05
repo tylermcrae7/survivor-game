@@ -288,8 +288,11 @@ final class GameClient {
     }
 
     func completeTheft() async throws {
-        guard let gameId else { throw GameClientError.noGame }
-        let response = try await apiClient.completeTheft(gameId: gameId)
+        // The server now checks playerId against the raid's target — only the
+        // victim may wave a raid through. An older client that omitted it
+        // used to let the thief force their own steal past a Sorry For You.
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.completeTheft(gameId: gameId, playerId: playerId)
         guard response.success else {
             throw GameClientError.operationFailed(response.message ?? "Complete theft failed")
         }
