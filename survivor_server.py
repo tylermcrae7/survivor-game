@@ -1737,6 +1737,12 @@ class GameState:
                 f"{len(active_players)} players."
             )
 
+        # The will gets read into the same summary, whichever branch just
+        # ended the council — the eventLog and every history panel should
+        # keep the line, not just the toast the flush pipeline fires.
+        if inheritance_messages:
+            message = message + "; " + "; ".join(inheritance_messages)
+
         game.pop("pendingTurnPlayerId", None)
 
         # Record elimination in game history

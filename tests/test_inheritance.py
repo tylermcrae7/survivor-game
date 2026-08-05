@@ -352,5 +352,91 @@ class LegacyInheritanceHealsOnLoadTest(unittest.TestCase):
         self.assertIn("camp_raid", hand_types(self.game, heir))
 
 
+class InheritanceAnnouncesItselfTest(unittest.TestCase):
+    """The transfer was silent; the table deserves to hear the will read."""
+
+    def setUp(self):
+        self.original_cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.original_cwd, 'survivor_cards.json'), self.tmp)
+        os.chdir(self.tmp)
+        self.gs = GameState()
+        self.gid = self.gs.create_game()
+        self.ids = [self.gs.add_player(self.gid, n) for n in ("Ana", "Ben", "Cam", "Dee")]
+        self.gs.start_full_game(self.gid)
+        self.game = self.gs.games[self.gid]
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def seat(self, pid):
+        return seats.seat_of(self.game["players"][pid])
+
+    def test_a_firing_inheritance_records_an_alert(self):
+        """Ana is always dealt the first free seat (red) — see seats.assign —
+        so this is the same fixture InheritanceEstateTest uses, pinned to a
+        known colour for the literal-text assertion below."""
+        heir, dead = self.ids[1], self.ids[0]
+        self.assertEqual(self.seat(dead), "red")
+        card = f"inheritance_{self.seat(dead)}"
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
+        self.game["players"][heir]["hand"] = [{"type": card}]
+        self.game["players"][dead]["hand"] = [{"type": "camp_raid"},
+                                              {"type": "the_spy_shack"}]
+
+        self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
+
+        alerts = [a for a in self.game.get("_pending_alerts", [])
+                  if a["event"] == "inheritance"]
+        self.assertEqual(len(alerts), 1)
+        data = alerts[0]["data"]
+        self.assertEqual(data["count"], 2)
+        self.assertIn("inherits", data["message"])
+        self.assertIn("Inheritance (Red) is spent", data["message"])
+
+    def test_an_inheritance_that_does_not_fire_stays_quiet(self):
+        """Nobody holds the matching colour: no alert."""
+        heir, dead = self.ids[0], self.ids[1]
+        wrong = next(k for k in seats.SEAT_KEYS if k != self.seat(dead))
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
+        self.game["players"][heir]["hand"] = [{"type": f"inheritance_{wrong}"}]
+        self.game["players"][dead]["hand"] = [{"type": "camp_raid"}]
+
+        self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
+
+        self.assertFalse([a for a in self.game.get("_pending_alerts", [])
+                          if a["event"] == "inheritance"])
+
+    def test_the_council_summary_reads_the_will(self):
+        """End to end through complete_tribal (mirror
+        test_the_estate_arrives_through_a_real_elimination): the returned
+        message must contain the "inherit" line so the eventLog keeps it."""
+        game = self.game
+        heir, doomed = self.ids[0], self.ids[1]
+        card = f"inheritance_{self.seat(doomed)}"
+        game["players"][doomed]["characterCards"] = 1
+        game["players"][heir]["hand"] = [{"type": "vote"}, {"type": card}]
+        game["players"][doomed]["hand"] = [{"type": "vote"}, {"type": "camp_raid"}]
+        for pid in self.ids[2:]:
+            game["players"][pid]["hand"] = [{"type": "vote"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.gid, "elimination")
+        for voter in self.ids:
+            target = doomed if voter != doomed else heir
+            votes = max(1, game["players"][voter].get("mandatoryVotes", 1))
+            self.gs.cast_vote(self.gid, voter, [{"targetId": target, "votes": votes}])
+        self.gs.reveal_votes(self.gid)      # seals the box
+        self.gs.reveal_votes(self.gid)      # tallies
+        result = self.gs.complete_tribal(
+            self.gid, playerId=game["currentVote"].get("councilLeaderId"))
+
+        self.assertIn("inherit", result.get("message", "").lower())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

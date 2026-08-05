@@ -2300,6 +2300,25 @@ class SurvivorRulesEngine:
 			inheritance_messages.append(message)
 			logger.info(f"Inheritance ({seat}): {player_id} inherited "
 			            f"{len(estate)} cards from {eliminated_player_id}")
+
+			# A second mouth for the same news: a structured alert the flush
+			# pipeline toasts on every phone (see _record_steal_alert). Names
+			# and counts only, same redaction convention as a steal.
+			seat_label = seats.SEAT_LABELS.get(seat, seat)
+			heir_name = player.get("name", player_id)
+			dead_name = eliminated_player.get("name", eliminated_player_id)
+			count = len(estate)
+			cards = "1 card" if count == 1 else f"{count} cards"
+			game.setdefault("_pending_alerts", []).append({
+				"event": "inheritance",
+				"data": {
+					"heirId": player_id, "heir": heir_name,
+					"deadId": eliminated_player_id, "dead": dead_name,
+					"count": count, "seatLabel": seat_label,
+					"message": f"{heir_name} inherits {dead_name}'s {cards} — "
+					           f"Inheritance ({seat_label}) is spent",
+				},
+			})
 			break  # only one card per colour exists
 
 		return inheritance_messages
