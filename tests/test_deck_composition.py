@@ -255,6 +255,19 @@ class TestDeckComposition(unittest.TestCase):
                 self.assertEqual(total_tribal, exp_total,
                     f"{player_count} players: Expected {exp_total} total tribal, got {total_tribal}")
 
+    # ── Task A0: Grant Immunity leaves the island ──────────────────────────
+
+    def test_grant_immunity_is_gone_from_every_new_deck(self):
+        for mode in ("official", "extended"):
+            with self.subTest(mode=mode):
+                deck = self.gs.rules_engine.create_action_deck(deck_mode=mode)
+                self.assertNotIn("grant_immunity", [c["type"] for c in deck])
+
+    def test_extended_mode_adds_exactly_six_house_cards(self):
+        official = len(self.gs.rules_engine.create_action_deck(deck_mode="official"))
+        extended = len(self.gs.rules_engine.create_action_deck(deck_mode="extended"))
+        self.assertEqual(extended - official, 6)
+
 if __name__ == '__main__':
     print("Running Deck Composition Tests...")
     unittest.main(verbosity=2)

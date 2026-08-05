@@ -60,14 +60,13 @@ VALID_CATEGORIES = [
 ]
 
 # ───────────────────────── Deck composition (F7) ─────────────────────────
-# The official box contains 67 Action Cards. These 7 are house/homebrew extras
+# The official box contains 67 Action Cards. These 6 are house/homebrew extras
 # that ship in survivor_cards.json but are NOT in the official Survival Guide.
 # They are included only in "extended" deck mode.
 NON_OFFICIAL_CARD_TYPES = {
     "idol_nullifier",   # x2
     "steal_vote",       # x2
     "block_vote",       # x2
-    "grant_immunity",   # x1
 }
 
 # Card types that count as a vote when placed in the Voting Box (F2).
@@ -357,6 +356,38 @@ def ensure_seat_bound_inheritance(game: Dict[str, Any]) -> int:
 	return relabelled
 
 
+def ensure_no_grant_immunity(game: Dict[str, Any]) -> int:
+	"""Remove every copy of the retired Grant Immunity card. Returns how many
+	were removed.
+
+	Tyler's ruling retired the card (Task A0): "That's not how we play. The
+	other 6 can stay." A game saved under the old catalogue may still hold a
+	copy in a hand, the Draw Pile or the Discard Pile — the same three
+	containers ``_iter_game_cards`` walks. Unlike ``ensure_card_uids``, which
+	fills a gap in place, this heal removes entries outright, so it filters
+	each container directly rather than mutating what the iterator yields.
+	Idempotent.
+	"""
+	removed = 0
+	for player in (game.get("players") or {}).values():
+		if not isinstance(player, dict):
+			continue
+		hand = player.get("hand")
+		if isinstance(hand, list):
+			kept = [c for c in hand
+			        if not (isinstance(c, dict) and c.get("type") == "grant_immunity")]
+			removed += len(hand) - len(kept)
+			hand[:] = kept
+	for pile in ("deck", "discard"):
+		cards = game.get(pile)
+		if isinstance(cards, list):
+			kept = [c for c in cards
+			        if not (isinstance(c, dict) and c.get("type") == "grant_immunity")]
+			removed += len(cards) - len(kept)
+			cards[:] = kept
+	return removed
+
+
 def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
                  source: str, spec: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
 	"""
@@ -564,7 +595,7 @@ class SurvivorRulesEngine:
 		the extras are put away — so **no Vote Cards remain in the Draw Pile**.
 
 		Args:
-		deck_mode: "official" (67-card box) or "extended" (adds the 7 house cards)
+		deck_mode: "official" (67-card box) or "extended" (adds the 6 house cards)
 		expansion: True to add the 5 Orange Challenge Cards from
 		           Survivor: Let's Go To Rocks (combined mode)
 		"""
@@ -1145,7 +1176,6 @@ class SurvivorRulesEngine:
 		"im_the_leader_now": lambda: self._effect_im_the_leader_now(game, player_id, advantage_card, {}),
 		"steal_vote": lambda: self._effect_steal_vote(game, player_id, advantage_card, {"targetId": target_id}),
 		"block_vote": lambda: self._effect_block_vote(game, player_id, advantage_card, {"targetId": target_id}),
-		"grant_immunity": lambda: self._effect_grant_immunity(game, player_id, advantage_card, {"targetId": target_id})
 		}
 		
 		effect_func = advantage_effects.get(advantage_type)
@@ -1325,7 +1355,6 @@ class SurvivorRulesEngine:
 		# Generic tribal advantage effects (for backward compatibility)
 		"steal_vote": self._effect_steal_vote,
 		"block_vote": self._effect_block_vote,
-		"grant_immunity": self._effect_grant_immunity,
 		}
 
 		# Let's Go To Rocks Challenge Cards (combined mode) all start a Challenge;
@@ -2054,24 +2083,7 @@ class SurvivorRulesEngine:
 		target["voteBanned"] = True
 		
 		return {"message": f"{player['name']} blocked {target['name']} from voting"}
-		
-	def _effect_grant_immunity(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute grant immunity tribal advantage effect."""
-		target_id = params.get("targetId", player_id)  # Can target self if no target specified
-		if target_id not in game["players"]:
-			target_id = player_id
-			
-		player = game["players"][player_id]
-		target = game["players"][target_id]
-		
-		# Grant temporary immunity
-		target["temporaryImmunity"] = True
-		
-		if target_id == player_id:
-			return {"message": f"{player['name']} granted themselves immunity"}
-		else:
-			return {"message": f"{player['name']} granted immunity to {target['name']}"}
-			
+
 	# ═══════════════════════════════════════════════════════════════════════════════════
 	# GAME MECHANICS - Centralized theft, combat, and effect systems
 	# ═══════════════════════════════════════════════════════════════════════════════════

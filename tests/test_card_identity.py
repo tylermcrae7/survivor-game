@@ -226,5 +226,68 @@ class CardIdentityTest(unittest.TestCase):
             self.assertTrue(card.get("uid"))
 
 
+class GrantImmunityHealsAwayTest(unittest.TestCase):
+    """A game saved under the old rules holds `grant_immunity` in a hand, the
+    deck and the discard. The card left the catalogue (Task A0); the heal
+    removes every copy in place, the same way a pre-uid card is healed in."""
+
+    def setUp(self):
+        self.original_cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.original_cwd, 'survivor_cards.json'), self.tmp)
+        os.chdir(self.tmp)
+        self.gs = GameState()
+        self.gid = self.gs.create_game()
+        self.ids = [self.gs.add_player(self.gid, n) for n in ("Ana", "Ben", "Cam", "Dee")]
+        self.gs.start_full_game(self.gid)
+        self.game = self.gs.games[self.gid]
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _seed_legacy_card(self):
+        """One grant_immunity each in a hand, the deck and the discard — the
+        three containers the heal must sweep."""
+        pid = self.ids[0]
+        self.game["players"][pid]["hand"].append({"type": "grant_immunity", "uid": "a" * 12})
+        self.game.setdefault("deck", []).append({"type": "grant_immunity", "uid": "b" * 12})
+        self.game.setdefault("discard", []).append({"type": "grant_immunity", "uid": "c" * 12})
+
+    def test_it_is_removed_from_every_container_idempotently(self):
+        from rules_engine import ensure_no_grant_immunity, _iter_game_cards
+        self._seed_legacy_card()
+
+        removed = ensure_no_grant_immunity(self.game)
+
+        self.assertEqual(removed, 3)
+        self.assertFalse(any(c.get("type") == "grant_immunity"
+                             for c in _iter_game_cards(self.game)))
+        self.assertEqual(ensure_no_grant_immunity(self.game), 0, "idempotent")
+
+    def test_nothing_else_in_the_hand_is_touched(self):
+        from rules_engine import ensure_no_grant_immunity
+        pid = self.ids[0]
+        before_len = len(self.game["players"][pid]["hand"])
+        self._seed_legacy_card()
+
+        ensure_no_grant_immunity(self.game)
+
+        self.assertEqual(len(self.game["players"][pid]["hand"]), before_len)
+
+    def test_saved_games_lose_the_card_through_the_normal_load_path(self):
+        """Mirrors the uid heal's own test: the fix applies on an ordinary
+        reload, not just when called directly."""
+        self._seed_legacy_card()
+        self.gs._save(self.gid)
+
+        reloaded = GameState()
+        healed = reloaded.games[self.gid]
+
+        from rules_engine import _iter_game_cards
+        self.assertFalse(any(c.get("type") == "grant_immunity"
+                             for c in _iter_game_cards(healed)))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

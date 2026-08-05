@@ -35,7 +35,7 @@ BOT_NAMES = ["Coconut", "Driftwood", "Barnacle", "Mango", "Puddles", "Flint"]
 # and when The Spy Shack lets it take one (take the highest).
 CARD_VALUE = {
     "immunity_idol": 10, "sorry_for_you": 8, "extra_vote": 7,
-    "steal_vote": 6, "block_vote": 6, "grant_immunity": 6, "idol_nullifier": 6,
+    "steal_vote": 6, "block_vote": 6, "idol_nullifier": 6,
     "control_the_vote": 5, "im_the_leader_now": 5, "goodwill_gamble": 5,
     "camp_raid": 5, "the_spy_shack": 5, "knowledge_is_power": 5,
     "lets_form_an_alliance": 4,

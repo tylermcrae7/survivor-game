@@ -128,14 +128,14 @@ class TribalAdvantagePlayTest(unittest.TestCase):
 
     def test_a_target_who_is_not_at_this_table_is_refused(self):
         actor = self.ids[1]
-        self.give(actor, "grant_immunity")
+        self.give(actor, "control_the_vote")
 
         result = self.gs.play_tribal_advantage(
-            self.gid, playerId=actor, advantageType="grant_immunity",
+            self.gid, playerId=actor, advantageType="control_the_vote",
             targetId="not-a-player")
 
         self.assertFalse(result["success"])
-        self.assertIn("grant_immunity", hand_types(self.game, actor))
+        self.assertIn("control_the_vote", hand_types(self.game, actor))
 
     def test_every_targeted_advantage_refuses_an_empty_target(self):
         """Whatever the catalogue marks, the door must honour."""

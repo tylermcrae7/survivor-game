@@ -8,6 +8,7 @@ from pathlib import Path
 from functools import wraps
 from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
                           new_card, ensure_card_uids, ensure_seat_bound_inheritance,
+                          ensure_no_grant_immunity,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
 from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
 import seats
@@ -343,6 +344,12 @@ class GameState:
                 if bound:
                     logger.info(f"Bound {bound} legacy Inheritance card(s) "
                                 f"to seat colours in {gid}")
+                # Grant Immunity left the catalogue (Task A0) — sweep any
+                # copies a game in flight is still holding.
+                purged = ensure_no_grant_immunity(game)
+                if purged:
+                    logger.info(f"Removed {purged} retired Grant Immunity "
+                                f"card(s) from {gid}")
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading {self._FILE}: {e}")
             self._backup_and_reset()
@@ -396,8 +403,8 @@ class GameState:
 
         Args:
             deckMode: "official" (the 67-card box, default) or "extended"
-                      (adds the 7 house cards: Idol Nullifier, Steal A Vote,
-                      Block A Vote, Grant Immunity)
+                      (adds the 6 house cards: Idol Nullifier, Steal A Vote,
+                      Block A Vote)
             expansion: True to add the 5 Orange Challenge Cards from
                        Survivor: Let's Go To Rocks (combined mode)
             settings: optional {botPace, tribalPace, botStyle} from the
@@ -1361,7 +1368,9 @@ class GameState:
                         logger.info(f"Player {player_id} protected by immunity idol - {vote_counts[player_id]} votes negated")
                         del vote_counts[player_id]
 
-        # Apply temporary immunity (from cards like grant_immunity)
+        # Apply temporary immunity. Grant Immunity, the card that used to set
+        # this flag, was retired (Task A0) — the flag machinery stays as
+        # generic protection plumbing, and history contains games that used it.
         for player_id, player in game["players"].items():
             if player.get("temporaryImmunity", False):
                 protected_players.add(player_id)
@@ -2009,7 +2018,7 @@ class GameState:
         Args:
             gid: Game ID
             playerId: ID of the player playing the advantage
-            advantageType: Type of advantage card (e.g., 'steal_vote', 'block_vote', 'extra_vote', 'grant_immunity')
+            advantageType: Type of advantage card (e.g., 'steal_vote', 'block_vote', 'control_the_vote')
             targetId: Optional target player ID for targeted advantages
         """
         if gid not in self.games:
@@ -4438,7 +4447,7 @@ def api_create():
     Create new game with error handling.
 
     Optional JSON body:
-        deckMode:  "official" (default, the 67-card box) | "extended" (+7 house cards)
+        deckMode:  "official" (default, the 67-card box) | "extended" (+6 house cards)
         expansion: true to add the 5 Orange Challenge Cards from Let's Go To Rocks
     """
     try:

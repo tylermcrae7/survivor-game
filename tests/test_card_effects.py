@@ -113,7 +113,8 @@ class TestCardRegistry(CardEffectTestBase):
     """The card registry itself: counts, categories, required fields."""
 
     def test_card_registry_official_counts(self):
-        """The official box is 67 Action Cards; the house deck adds exactly 7."""
+        """The official box is 67 Action Cards; the house deck adds exactly 6
+        (Task A0 retired Grant Immunity: 'That's not how we play.')."""
         cards = self.gs.rules_engine.get_all_card_definitions()
 
         official_total = sum(
@@ -123,7 +124,7 @@ class TestCardRegistry(CardEffectTestBase):
         self.assertEqual(official_total, 67)
 
         house_total = sum(c["count"] for t, c in cards.items() if t in NON_OFFICIAL_CARD_TYPES)
-        self.assertEqual(house_total, 7)
+        self.assertEqual(house_total, 6)
 
         challenge_total = sum(c["count"] for c in cards.values() if c["category"] == "challenge")
         self.assertEqual(challenge_total, 5)

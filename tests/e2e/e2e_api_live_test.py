@@ -254,7 +254,7 @@ check("bottom_card_is_tribal",
 check("official_3p_deck_is_47_cards", len(g.get("deck", [])) == 47, len(g.get("deck", [])))
 check("no_house_cards_in_official_deck",
       not [c for c in g.get("deck", []) if c.get("type") in
-           ("idol_nullifier", "steal_vote", "block_vote", "grant_immunity")])
+           ("idol_nullifier", "steal_vote", "block_vote")])
 check("no_challenge_cards_without_expansion",
       not [c for c in g.get("deck", []) if str(c.get("type", "")).startswith("challenge_")])
 

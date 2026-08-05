@@ -1,18 +1,18 @@
 {
   "metadata": {
     "version": "2.0",
-    "source": "Survivor: The Tribe Has Spoken official rules + Survival Guide (67 cards), plus 7 house cards and the Let's Go To Rocks expansion",
-    "total_cards": 79,
+    "source": "Survivor: The Tribe Has Spoken official rules + Survival Guide (67 cards), plus 6 house cards and the Let's Go To Rocks expansion",
+    "total_cards": 78,
     "official_action_cards": 67,
-    "house_action_cards": 7,
+    "house_action_cards": 6,
     "expansion_challenge_cards": 5,
     "notes": [
       "The official box contains exactly 67 Action Cards. Deck mode 'official' builds from those 67 only.",
-      "Idol Nullifier, Steal A Vote, Block A Vote and Grant Immunity (7 cards total) appear nowhere in the official Survival Guide. They are house cards, included only in deck mode 'extended'.",
+      "Idol Nullifier, Steal A Vote and Block A Vote (6 cards total) appear nowhere in the official Survival Guide. They are house cards, included only in deck mode 'extended'. Grant Immunity was a house card too, but Tyler's ruling retired it: 'That's not how we play.'",
       "The 5 challenge_* cards are the Orange Challenge Cards from Survivor: Let's Go To Rocks (2025) and are added only when a game is created with expansion=true.",
       "Setup removes the 6 Vote Cards and 9 Tribal Council Cards from the deck: each player is dealt 1 Vote Card and the extras are put away, so no Vote Cards remain in the Draw Pile."
     ],
-    "last_updated": "2026-07-29"
+    "last_updated": "2026-08-05"
   },
   "cards": {
     "vote": {
@@ -143,21 +143,6 @@
       "requires_confirmation": false,
       "reactive_only": false,
       "count": 2
-    },
-    "grant_immunity": {
-      "official": false,
-      "type": "grant_immunity",
-      "category": "tribal_advantage",
-      "name": "Grant Immunity",
-      "description": "Grant temporary immunity to another player - votes against them do not count",
-      "playable_phases": [
-        "tribal_discussion"
-      ],
-      "requires_target": true,
-      "requires_multiple_targets": false,
-      "requires_confirmation": false,
-      "reactive_only": false,
-      "count": 1
     },
     "sorry_for_you": {
       "type": "sorry_for_you",
@@ -459,7 +444,7 @@
     "tribal_advantage": {
       "name": "Tribal Advantage Cards",
       "description": "Special advantages for Tribal Council",
-      "total_cards": 17
+      "total_cards": 16
     },
     "action": {
       "name": "Action Cards",
@@ -478,9 +463,9 @@
     }
   },
   "validation": {
-    "total_expected_cards": 79,
+    "total_expected_cards": 78,
     "official_deck_cards": 67,
-    "extended_deck_cards": 74,
+    "extended_deck_cards": 73,
     "required_fields": [
       "type",
       "category",
