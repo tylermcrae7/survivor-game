@@ -83,15 +83,17 @@ struct ViewModelTests {
 
     // MARK: - PlayerColor
 
-    /// Six seats, because the box holds six colours and six Inheritance
-    /// cards. The rawValue is the seat key the server speaks; the hex is only
-    /// for drawing the swatch.
+    /// Eight seats: the box's six colours plus the eight-player expansion's
+    /// purple and pink, each with its own Inheritance card. The rawValue is
+    /// the seat key the server speaks; the hex is only for drawing the swatch.
     @Test func playerColorValues() {
-        #expect(PlayerColor.allCases.count == 6)
+        #expect(PlayerColor.allCases.count == 8)
         #expect(PlayerColor.red.rawValue == "red")
         #expect(PlayerColor.red.hex == "#FF6B6B")
         #expect(PlayerColor.blue.displayName == "Blue")
-        #expect(Set(PlayerColor.allCases.map { $0.hex }).count == 6,
+        #expect(PlayerColor.purple.hex == "#9B5DE5")
+        #expect(PlayerColor.pink.hex == "#F06595")
+        #expect(Set(PlayerColor.allCases.map { $0.hex }).count == 8,
                 "no two seats may share a colour")
     }
 }

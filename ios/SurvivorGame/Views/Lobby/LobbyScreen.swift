@@ -136,7 +136,7 @@ private struct LobbyContent: View {
                 LinearGradient(colors: [Torch.Color.torch.opacity(0.5), .clear],
                                startPoint: .leading, endPoint: .trailing)
                     .frame(height: 1) // eyebrow rule
-                Text("\(viewModel.playerCount)/6")
+                Text("\(viewModel.playerCount)/8")
                     .font(Torch.Font.label(Torch.TextSize.xs))
                     .tracking(Torch.Track.label * Torch.TextSize.xs)
                     .foregroundStyle(Torch.Color.textSecondary)
@@ -197,7 +197,7 @@ private struct LobbyContent: View {
                 Label("Add a computer player", systemImage: "plus")
             }
             .buttonStyle(.torchGhost) // the web uses .btn-ghost here
-            .disabled(viewModel.playerCount >= 6)
+            .disabled(viewModel.playerCount >= 8)
             .accessibilityLabel("Add a computer player")
         }
         .padding(Torch.Spacing.md)

@@ -47,10 +47,18 @@ final class VisualAuditUITests: XCTestCase {
 
     /// Names that collide on their first letter, which is the whole reason the
     /// monogram exists — and one long enough to truncate in the camp strip.
-    private static let allyNames = ["Christopher", "Coconut", "Cleo"]
+    /// All seven begin with C on purpose: at eight players (this list plus
+    /// `playerName`) the camp strip has to disambiguate on more than a
+    /// glance at the first letter, same as it always had to for three.
+    private static let allyNames = [
+        "Christopher", "Coconut", "Cleo", "Cornelius", "Cassidy", "Clementine", "Casper",
+    ]
 
+    /// `allyCount` picks a prefix of `allyNames` — 3 by default, matching every
+    /// test written before the eight-player expansion, up to 7 for a full
+    /// eight-seat table (7 allies + `playerName`).
     @MainActor
-    private func stage(bot: Bool = false) throws -> (app: XCUIApplication,
+    private func stage(bot: Bool = false, allyCount: Int = 3) throws -> (app: XCUIApplication,
                                                      me: String, allies: [String]) {
         let created = try api.post("/api/game/create", ["expansion": true])
         gid = try XCTUnwrap(created["gameId"] as? String)
@@ -77,7 +85,7 @@ final class VisualAuditUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["lobby-game-code"].waitForExistence(timeout: 10))
 
         var allies: [String] = []
-        for name in Self.allyNames {
+        for name in Self.allyNames.prefix(allyCount) {
             let joined = try api.post("/api/player/join", ["gameId": gid, "name": name])
             allies.append(try XCTUnwrap(joined["playerId"] as? String))
         }
@@ -111,6 +119,26 @@ final class VisualAuditUITests: XCTestCase {
         XCTAssertTrue(camp.app.staticTexts["Christopher"].waitForExistence(timeout: 8),
                       "tapping a player should open their card")
         shot("02-player-detail-sheet")
+    }
+
+    // MARK: - Eight castaways at the fire
+
+    /// The eight-player expansion's whole point for this client: the camp
+    /// strip is a `ScrollView(.horizontal)` over a plain `ForEach(players)`
+    /// (see `PlayerStatusBar`), so it never needed a player-count-aware
+    /// layout — this proves that reading holds up against a real eight-seat
+    /// table instead of just the source.
+    ///
+    /// NOTE: until the server's join cap moves from 6 to 8 (Task A4), the
+    /// 7th ally join is refused and this test fails there, not at a layout
+    /// assertion — that failure mode is expected and documented, not a bug
+    /// in this test.
+    @MainActor
+    func testEightCastawaysFitTheFire() throws {
+        let camp = try stage(allyCount: 7)
+        XCTAssertTrue(camp.app.buttons["Steal card from player"].waitForExistence(timeout: 20))
+        XCTAssertEqual(camp.allies.count, 7, "all seven allies should have joined the fire")
+        shot("18-eight-player-camp")
     }
 
     // MARK: - The narration toast, over a screen that has a title

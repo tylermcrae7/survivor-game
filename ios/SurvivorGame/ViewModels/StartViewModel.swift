@@ -167,18 +167,19 @@ final class StartViewModel {
 
 // MARK: - Player Colors
 
-/// The six seats a castaway can take.
+/// The eight seats a castaway can take.
 ///
 /// The box holds 12 Survivor Character Cards, 2 of each of 6 colours, and 6
 /// Inheritance Cards — "1 OF EACH COLOR". So colour stopped being decoration
-/// the moment Inheritance bound to it.
+/// the moment Inheritance bound to it. The eight-player expansion (seats.py)
+/// adds two more seats — purple and pink — each with its own Inheritance card.
 ///
 /// This offered eight, of which three (sage, mint, teal) were near-identical
 /// greens and only three overlapped the server's six at all. That divergence
 /// is why 30 players in the saved games hold a colour that is not a seat. The
 /// rawValue is the seat key the server speaks; `hex` is only for drawing.
 enum PlayerColor: String, CaseIterable {
-    case red, teal, blue, orange, green, yellow
+    case red, teal, blue, orange, green, yellow, purple, pink
 
     var displayName: String {
         switch self {
@@ -188,6 +189,8 @@ enum PlayerColor: String, CaseIterable {
         case .orange: return "Orange"
         case .green: return "Green"
         case .yellow: return "Yellow"
+        case .purple: return "Purple"
+        case .pink: return "Pink"
         }
     }
 
@@ -202,6 +205,8 @@ enum PlayerColor: String, CaseIterable {
         case .orange: return "#F9844A"
         case .green: return "#90BE6D"
         case .yellow: return "#F9C74F"
+        case .purple: return "#9B5DE5"
+        case .pink: return "#F06595"
         }
     }
 

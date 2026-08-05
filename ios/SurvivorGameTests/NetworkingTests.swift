@@ -88,7 +88,7 @@ struct NetworkingTests {
 
     @Test @MainActor func joinCodeIsNormalizedForTheServer() {
         #expect(StartViewModel.normalizedGameCode("  ABCD1234\n") == "abcd1234")
-        #expect(PlayerColor.allCases.count == 6)
+        #expect(PlayerColor.allCases.count == 8)
     }
 
     // MARK: - Locked Island Session
