@@ -22,6 +22,64 @@
 
 ## Part A — Server math (Python)
 
+### Task A0: Grant Immunity leaves the island
+
+Tyler's ruling: "That's not how we play. The other 6 can stay." The extended house set shrinks from 7 cards to 6 (`idol_nullifier` ×2, `steal_vote` ×2, `block_vote` ×2); `grant_immunity` ×1 is removed everywhere a new deck is born, and healed out of games already in flight.
+
+**Files:**
+- Modify: `survivor_cards.json` (delete the `grant_immunity` definition; fix the `validation` totals AND the prose comment at ~line 11 that says "7 cards total")
+- Modify: `rules_engine.py` (`NON_OFFICIAL_CARD_TYPES` set and its "These 7" comment; the `grant_immunity` entry in the effects registry and any validation branch; new heal)
+- Modify: `survivor_server.py` (call the heal where the other heals run — find `ensure_card_uids` / `ensure_seat_bound_inheritance` call sites in the load path, ~line 342)
+- Modify: `bots.py` ONLY if it names `grant_immunity` (grep; remove dead references — value tables, advantage-play picks)
+- Test: `tests/test_deck_composition.py`, a heal test beside the other heal tests (grep `ensure_seat_bound_inheritance` in tests/ for the pattern's home)
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+    def test_grant_immunity_is_gone_from_every_new_deck(self):
+        for mode in ("official", "extended"):
+            deck = self.engine.create_action_deck(deck_mode=mode)
+            self.assertNotIn("grant_immunity", [c["type"] for c in deck])
+
+    def test_extended_mode_adds_exactly_six_house_cards(self):
+        official = len(self.engine.create_action_deck(deck_mode="official"))
+        extended = len(self.engine.create_action_deck(deck_mode="extended"))
+        self.assertEqual(extended - official, 6)
+```
+
+And the heal (mirroring the `ensure_seat_bound_inheritance` test file's fixtures):
+
+```python
+class GrantImmunityHealsAwayTest(unittest.TestCase):
+    def test_saved_games_lose_the_card_on_load(self):
+        """A game saved under the old rules holds the card in a hand, the
+        deck and the discard; the heal removes all three, idempotently."""
+        game = ...  # hands: one grant_immunity among others; deck+discard seeded too
+        removed = ensure_no_grant_immunity(game)
+        self.assertEqual(removed, 3)
+        self.assertEqual(ensure_no_grant_immunity(game), 0)   # idempotent
+        # and nothing else was touched
+```
+
+- [ ] **Step 2: Run to verify failure** (`.venv/bin/python tests/test_deck_composition.py`)
+
+- [ ] **Step 3: Implement**
+
+1. Delete the `grant_immunity` block from `survivor_cards.json`; reduce the validation totals by 1 (read the `validation` section and the loader check at `rules_engine.py:429-450` — a mismatch makes every boot fall back to the empty card set, which is the failure mode to fear here); fix the ~line 11 comment to name the 3 remaining house types, "6 cards total."
+2. `rules_engine.py`: drop `"grant_immunity"` from `NON_OFFICIAL_CARD_TYPES` (comment: "These 6"); remove its effects-registry line and its `_effect_grant_immunity` handler; grep `grant_immunity` across `rules_engine.py`/`survivor_server.py` for validation branches that name it and remove them. **Keep the `temporaryImmunity` player-flag checks in `reveal_votes`** — the flag machinery stays (it is generic protection plumbing and history contains games that used it); only the card that set it goes.
+3. New heal, following `ensure_card_uids`'s shape exactly (module-level in `rules_engine.py`, walks `_iter_game_cards`... note: that iterator YIELDS cards but the heal must REMOVE them, so filter each container in place instead — hands, `deck`, `discard` — return the count removed, idempotent). Call it in the server load path beside `ensure_seat_bound_inheritance`.
+4. `bots.py`: remove dead references if the grep finds any.
+5. `grep -rn "grant_immunity" tests/` — every test that plays or stages the card gets updated or removed WITH its reason recorded in the report (a test of the card's effect dies with the card; a test that merely used it as a prop gets a different prop).
+
+**Clients:** deliberately untouched. Both clients tolerate unknown/absent card types, and their catalogue entries for `grant_immunity` become vestigial rather than harmful — removing them is cosmetic and can ride any later build.
+
+- [ ] **Step 4: Run deck + heal + full suite, commit**
+
+```bash
+git add survivor_cards.json rules_engine.py survivor_server.py bots.py tests/
+git commit -m "Grant Immunity leaves the island — the house plays 6 extra cards, not 7"
+```
+
 ### Task A1: The tribal table learns 7 and 8, and stops guessing
 
 **Files:**
@@ -133,7 +191,7 @@ git commit -m "Purple and Pink join the fire, each with an Inheritance of their 
 
 The pile must give 7–8 player games the same ~6.5 turns per player that 6 gets, without touching the 3–6 composition and without duplicating scarce power.
 
-- [ ] **Step 1: The numbers.** Base action deck (official, no expansion): 52 cards. Targets: `action_total(7) = 61`, `action_total(8) = 69` — derived from `ceil(6.5×N) + 3N − tribal_count(N)`; the 6-player instance of the same formula reproduces exactly 52, which is the sanity check that the formula captures the official pacing. The supply pack fills the gap between the assembled base (52 official; +7 extended; +4 digital expansion; +2 new-seat Inheritance at 7–8p) and the target.
+- [ ] **Step 1: The numbers.** Base action deck (official, no expansion): 52 cards. Targets: `action_total(7) = 61`, `action_total(8) = 69` — derived from `ceil(6.5×N) + 3N − tribal_count(N)`; the 6-player instance of the same formula reproduces exactly 52, which is the sanity check that the formula captures the official pacing. The supply pack fills the gap between the assembled base (52 official; +6 extended after Task A0; +4 digital expansion; +2 new-seat Inheritance at 7–8p) and the target — the pack is computed as `target − base`, so it self-adjusts to whatever mode the game chose.
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -177,7 +235,7 @@ The pile must give 7–8 player games the same ~6.5 turns per player that 6 gets
 - [ ] **Step 3: Implement** (tabs). `create_action_deck(self, deck_mode="official", expansion=False, player_count=None)`:
 
 1. Build the base exactly as today, with one new filter: `inheritance_purple`/`inheritance_pink` are skipped unless `player_count and player_count >= 7`.
-2. After the base, if `player_count and player_count >= 7`, compute the target from the formula above (`tribal_count` from the Task A1 table) and top up with the **supply pack**: candidate types are every action card in the current mode EXCEPT a scarce-list (`immunity_idol`, every `inheritance_*`, `sorry_for_you`, plus `idol_nullifier`/`grant_immunity` in extended — one-and-two-copy power stays at box count); add one extra copy per candidate in descending box-count order (commonest first), cycling until the target is met. Deterministic: sort by `(-count, type)` — no RNG before the final shuffle.
+2. After the base, if `player_count and player_count >= 7`, compute the target from the formula above (`tribal_count` from the Task A1 table) and top up with the **supply pack**: candidate types are every action card in the current mode EXCEPT a scarce-list (`immunity_idol`, every `inheritance_*`, `sorry_for_you`, plus `idol_nullifier` in extended — one-and-two-copy power stays at box count); add one extra copy per candidate in descending box-count order (commonest first), cycling until the target is met. Deterministic: sort by `(-count, type)` — no RNG before the final shuffle.
 3. Thread `player_count` through `create_game_deck`/`assemble_deck` callers (read `survivor_server.py:590-610` `start_full` — it knows the player count; pass it).
 
 - [ ] **Step 4: Run the full deck + composition suites, commit**
@@ -282,7 +340,7 @@ git commit -m "Web: eight castaways fit the fire"
 
 ## Coordination notes
 
-- Order matters in Part A: **A2 and A3 must land together** (A2's new cards leak into 3–6 decks until A3's filter exists — do not commit A2 alone across a suite run). A1 first, then A2+A3 as one agent session, then A4, A5.
+- Order matters in Part A: **A0 first** (it rewrites the same `survivor_cards.json` validation totals A2 touches — one agent, sequential, so the arithmetic is done twice in order rather than merged). Then A1, then **A2 and A3 together** (A2's new cards leak into 3–6 decks until A3's filter exists — do not commit A2 alone across a suite run), then A4, A5.
 - Part B is independent of Part A (tests against current logic) and can run in parallel with A. Parts C1/C2 parallel to everything, file-disjoint.
 - The plan deliberately does NOT touch: `resolve_tribal_eliminations`, `elimination_ladder`, `_apply_three_left_rule`, `tie_break`, the jury tally, bots' strategy, or the Sorry For You gate — all verified N-agnostic. If an implementation agent believes one of these needs a change, that is a stop-and-report, not an edit.
 - 10 players is the documented single-tribe ceiling (colour distinguishability, vote scatter, council wait time); this plan intentionally builds only 7–8. A 9–10 extension would repeat A1–A3 with new rows (9p: 8 doubles; 10p: 9 doubles) plus two more seats. Twenty players means tribes-and-merge — a separate design.
