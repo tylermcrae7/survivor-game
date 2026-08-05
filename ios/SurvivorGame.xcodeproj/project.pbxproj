@@ -53,6 +53,7 @@
 		70469E5FCAC802E6B6C1F68D /* QASweepUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8896770D35DF7BAE9B3C2E78 /* QASweepUITests.swift */; };
 		727FBFD5CDA13F859F0681A4 /* legacy_no_settings.json in Resources */ = {isa = PBXBuildFile; fileRef = 94C17E55F46E2B7F3ADF0577 /* legacy_no_settings.json */; };
 		76E7B99479024C447BD3D6F8 /* StorySoFarDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */; };
+		78F742DBD5660E0BC1C74BE4 /* TribalViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B04ACC0FDBCB92A290B6C4 /* TribalViewModelTests.swift */; };
 		796171B19E1C7D9B77015169 /* GameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBD5FAB075FC347AA744261 /* GameClient.swift */; };
 		79CA9FDE5C2ACFF35DD7DD6A /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC7B695E90A4526E36793462 /* ToastView.swift */; };
 		7E6866EED3C5AD6C0C1B1D0C /* playing_midturn.json in Resources */ = {isa = PBXBuildFile; fileRef = 835B2847716E322179470F0C /* playing_midturn.json */; };
@@ -157,6 +158,7 @@
 		2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorGameApp.swift; sourceTree = "<group>"; };
 		32C075937A0671D2605E1D40 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		366803CEF79831FE786AE392 /* PlayerDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerDetailSheet.swift; sourceTree = "<group>"; };
+		40B04ACC0FDBCB92A290B6C4 /* TribalViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TribalViewModelTests.swift; sourceTree = "<group>"; };
 		44CC6A2F1EDA6D37EEE5E171 /* TorchTransitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchTransitions.swift; sourceTree = "<group>"; };
 		482BCD5B343FE8D5356071F9 /* MonogramTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonogramTests.swift; sourceTree = "<group>"; };
 		49DF7989B4B4253680A999B9 /* NarrationFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NarrationFeed.swift; sourceTree = "<group>"; };
@@ -528,6 +530,7 @@
 				DBC87F57450786729E8E86B2 /* PlayingViewModelTests.swift */,
 				B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */,
 				1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */,
+				40B04ACC0FDBCB92A290B6C4 /* TribalViewModelTests.swift */,
 				8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */,
 				2AB850D039D484EDAE79F431 /* Fixtures */,
 			);
@@ -757,6 +760,7 @@
 				DB4C1453CD6BBB7FE4C3E5F9 /* PlayingViewModelTests.swift in Sources */,
 				20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */,
 				15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */,
+				78F742DBD5660E0BC1C74BE4 /* TribalViewModelTests.swift in Sources */,
 				C85B70696006F49D5A87DB82 /* ViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

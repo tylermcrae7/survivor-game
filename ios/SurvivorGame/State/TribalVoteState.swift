@@ -7,6 +7,10 @@ struct TribalVoteState: Codable, Equatable {
     var councilLeaderId: String?
     var votes: [String: [String: Int]]?
     var voteResults: [String: Int]?
+    /// The tally before immunity zeroed out a protected player's ballots —
+    /// `voteResults` never shows them, so the reveal falls back to this to
+    /// display what they would have received. Older servers omit it.
+    var rawVoteResults: [String: Int]?
     var protectedPlayers: [String]?
     var immunityPlayed: [ImmunityRecord]?
     var tieBreakNeeded: Bool
@@ -47,6 +51,7 @@ struct TribalVoteState: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case type, phase, voteType, councilLeaderId, votes, voteResults
+        case rawVoteResults
         case protectedPlayers, immunityPlayed, tieBreakNeeded, tiedPlayers
         case eliminated, eliminationsNeeded, tieBreakResolvedBy
         case advantageCardsPlayed, cardsSpent
@@ -62,6 +67,7 @@ struct TribalVoteState: Codable, Equatable {
         councilLeaderId = try? c.decodeIfPresent(String.self, forKey: .councilLeaderId)
         votes = try? c.decodeIfPresent([String: [String: Int]].self, forKey: .votes)
         voteResults = try? c.decodeIfPresent([String: Int].self, forKey: .voteResults)
+        rawVoteResults = try? c.decodeIfPresent([String: Int].self, forKey: .rawVoteResults)
         protectedPlayers = try? c.decodeIfPresent([String].self, forKey: .protectedPlayers)
         immunityPlayed = try? c.decodeIfPresent([ImmunityRecord].self, forKey: .immunityPlayed)
         tieBreakNeeded = (try? c.decodeIfPresent(Bool.self, forKey: .tieBreakNeeded)) ?? false
@@ -76,7 +82,8 @@ struct TribalVoteState: Codable, Equatable {
     init(
         type: String? = nil, phase: TribalPhase = .waiting, voteType: String? = nil,
         councilLeaderId: String? = nil, votes: [String: [String: Int]]? = nil,
-        voteResults: [String: Int]? = nil, protectedPlayers: [String]? = nil,
+        voteResults: [String: Int]? = nil, rawVoteResults: [String: Int]? = nil,
+        protectedPlayers: [String]? = nil,
         immunityPlayed: [ImmunityRecord]? = nil, tieBreakNeeded: Bool = false,
         tiedPlayers: [String]? = nil, eliminated: [String]? = nil,
         eliminationsNeeded: Int? = nil, tieBreakResolvedBy: String? = nil,
@@ -88,6 +95,7 @@ struct TribalVoteState: Codable, Equatable {
         self.councilLeaderId = councilLeaderId
         self.votes = votes
         self.voteResults = voteResults
+        self.rawVoteResults = rawVoteResults
         self.protectedPlayers = protectedPlayers
         self.immunityPlayed = immunityPlayed
         self.tieBreakNeeded = tieBreakNeeded

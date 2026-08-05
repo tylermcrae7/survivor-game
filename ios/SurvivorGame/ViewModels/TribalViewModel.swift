@@ -73,12 +73,24 @@ final class TribalViewModel {
         return tied.compactMap { gameState?.players[$0] }
     }
 
-    var voteResults: [(player: PlayerState, votes: Int)] {
-        guard let results = voteState?.voteResults else { return [] }
-        return results.compactMap { (id, count) in
+    /// Every counted ballot, plus a row for anyone immunity protected — their
+    /// idol zeroes `voteResults` but the raw pre-immunity tally in
+    /// `rawVoteResults` remembers what they would have received. Sorted the
+    /// same way regardless, so an older server missing `rawVoteResults`
+    /// (nothing to add) renders exactly as it always did.
+    var voteResults: [(player: PlayerState, votes: Int, isImmune: Bool)] {
+        let counted = voteState?.voteResults ?? [:]
+        var rows = counted.compactMap { (id, count) -> (player: PlayerState, votes: Int, isImmune: Bool)? in
             guard let player = gameState?.players[id] else { return nil }
-            return (player, count)
-        }.sorted { $0.votes > $1.votes }
+            return (player, count, false)
+        }
+        let raw = voteState?.rawVoteResults ?? [:]
+        for playerId in protectedPlayers where counted[playerId] == nil {
+            guard let votes = raw[playerId], votes > 0,
+                  let player = gameState?.players[playerId] else { continue }
+            rows.append((player, votes, true))
+        }
+        return rows.sorted { $0.votes > $1.votes }
     }
 
     var protectedPlayers: [String] { voteState?.protectedPlayers ?? [] }

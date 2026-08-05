@@ -24,6 +24,7 @@ struct VoteRevealView: View {
                         maxVotes: maxVotes,
                         isEliminated: viewModel.voteState?.eliminated?.contains(result.player.id) ?? false,
                         isTied: viewModel.voteState?.tiedPlayers?.contains(result.player.id) ?? false,
+                        isImmune: result.isImmune,
                         barDelay: (showAllVotes ? Double(index) * 0.32 : 0) + 0.56
                     )
                     .ballotFlip(index: showAllVotes ? index : 0)
@@ -66,6 +67,9 @@ private struct VoteResultRow: View {
     let maxVotes: Int
     let isEliminated: Bool
     let isTied: Bool
+    /// Immunity erased these ballots before the count — this row shows what
+    /// `rawVoteResults` remembers, dimmed so it never reads as a real result.
+    var isImmune: Bool = false
     let barDelay: Double
     @State private var grown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -85,16 +89,28 @@ private struct VoteResultRow: View {
 
                 Spacer()
 
-                // Vote count
+                if isImmune {
+                    Text("immune")
+                        .font(Torch.Font.label(Torch.TextSize.xs))
+                        .tracking(Torch.Track.label * Torch.TextSize.xs)
+                        .foregroundStyle(Torch.Color.textFaint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Torch.Color.surfaceSunken))
+                        .overlay(Capsule().strokeBorder(Torch.Color.line, lineWidth: 1))
+                }
+
+                // Vote count — dimmed for an immune row, since it never counted.
                 HStack(spacing: 4) {
                     ForEach(0..<votes, id: \.self) { _ in
                         Image(systemName: "flame.fill")
                             .font(.caption)
-                            .foregroundStyle(Torch.Color.torch)
+                            .foregroundStyle(isImmune ? Torch.Color.textFaint : Torch.Color.torch)
                     }
                     Text("\(votes)")
                         .font(Torch.Font.display(27, weight: 900))
-                        .foregroundStyle(isEliminated ? CouncilPalette.eliminatedRed : Torch.Color.flame)
+                        .foregroundStyle(isImmune ? Torch.Color.textFaint
+                                         : (isEliminated ? CouncilPalette.eliminatedRed : Torch.Color.flame))
                 }
 
                 if isTied {
@@ -102,6 +118,10 @@ private struct VoteResultRow: View {
                         .foregroundStyle(Torch.Color.warning)
                 }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(isImmune
+                ? "\(player.name) would have received \(votes) votes — immune, they don't count"
+                : "\(player.name), \(votes) votes")
 
             resultBar
         }

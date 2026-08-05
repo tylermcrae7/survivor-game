@@ -195,6 +195,22 @@ struct StateDecodingTests {
         #expect(vote.tieBreakNeeded == false)
     }
 
+    /// The reveal keeps the votes immunity erased — `rawVoteResults` is the
+    /// pre-nullification tally, alongside `voteResults` and
+    /// `protectedPlayers`. Optional throughout: an older server never sends it.
+    @Test func rawVoteResultsDecodes() throws {
+        let json = #"{"phase":"reveal","voteResults":{},"rawVoteResults":{"p1":3},"protectedPlayers":["p1"]}"#
+        let state = try JSONDecoder().decode(TribalVoteState.self, from: Data(json.utf8))
+        #expect(state.rawVoteResults?["p1"] == 3)
+    }
+
+    @Test func rawVoteResultsIsAbsentOnAnOlderServer() throws {
+        let json = #"{"phase":"reveal","voteResults":{"p2":2}}"#
+        let state = try JSONDecoder().decode(TribalVoteState.self, from: Data(json.utf8))
+        #expect(state.rawVoteResults == nil)
+        #expect(state.voteResults?["p2"] == 2)
+    }
+
     /// The server writes dictionaries into `immunityPlayed`
     /// (survivor_server.py `play_immunity`), never player-id strings. This
     /// field was typed `[String]?` and decoded behind a `try?`, so it silently
