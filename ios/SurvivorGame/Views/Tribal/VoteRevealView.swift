@@ -125,6 +125,15 @@ private struct VoteResultRow: View {
 
             resultBar
         }
+        // Every row shares this width, not just its own content's — an
+        // immune row's extra "IMMUNE" chip and flame icons used to make ITS
+        // card wider than a plain eliminated row's, so the honest fraction
+        // below was being multiplied by two different bar tracks (found
+        // live: an uncounted 3-vote bar drawing far more than 3x a real
+        // 1-vote bar). Matches the maxWidth idiom every sibling Tribal view
+        // already uses (EliminationView, ImmunityView, VotingView,
+        // AdvantagePlayView).
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background {
             shape.fill(CouncilPalette.surfaceSunken)
@@ -165,6 +174,24 @@ private struct VoteResultRow: View {
     }
 
     private var fraction: CGFloat {
-        maxVotes > 0 ? CGFloat(votes) / CGFloat(maxVotes) : 0
+        VoteBarScale.fraction(votes: votes, maxVotes: maxVotes)
+    }
+}
+
+/// The reveal's bar-fill math, pulled out of the view so it's testable
+/// without standing up a `TribalViewModel`.
+///
+/// `maxVotes` MUST already be the largest count across every row the reveal
+/// is showing — counted ballots and immune "would have received" tallies
+/// together (`VoteRevealView.maxVotes`, from `TribalViewModel.voteResults`,
+/// already merges both). Scale each row against that one shared number and
+/// the bars compare honestly: an immune row with more raw votes than an
+/// eliminated row's real tally legitimately draws longer, and one with
+/// fewer legitimately draws shorter — proportion, not "eliminated always
+/// wins".
+enum VoteBarScale {
+    static func fraction(votes: Int, maxVotes: Int) -> CGFloat {
+        guard maxVotes > 0 else { return 0 }
+        return CGFloat(votes) / CGFloat(maxVotes)
     }
 }

@@ -104,6 +104,7 @@
 		DA5CA61FD9E6B322609D4926 /* TribalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72402B76C4C264F0CFCEAEBB /* TribalViewModel.swift */; };
 		DB4C1453CD6BBB7FE4C3E5F9 /* PlayingViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBC87F57450786729E8E86B2 /* PlayingViewModelTests.swift */; };
 		DBC0D1C582276BEA9294C27D /* PlayerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7806AB1E8CC9FAECDAFBDD /* PlayerState.swift */; };
+		DCE24B88D6FCD8EEFBEEB478 /* VoteBarScaleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754972255F7D3BA715370263 /* VoteBarScaleTests.swift */; };
 		DDD85C98F787B379FB3AC283 /* JuryVotingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39578F0E0D230CFE23F755 /* JuryVotingView.swift */; };
 		DEFEFEA48DFBA0950729B94E /* MonogramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482BCD5B343FE8D5356071F9 /* MonogramTests.swift */; };
 		DF3A2759B5C79FE061E34B34 /* survivor_cards.json in Resources */ = {isa = PBXBuildFile; fileRef = 7A28D71C09386EDFF87566C8 /* survivor_cards.json */; };
@@ -184,6 +185,7 @@
 		744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStatusBar.swift; sourceTree = "<group>"; };
 		75049F5671D0DF640BE3220F /* FinalTribalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinalTribalState.swift; sourceTree = "<group>"; };
 		7519B7FA5A92C991D2A06F0B /* CardAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardAnimations.swift; sourceTree = "<group>"; };
+		754972255F7D3BA715370263 /* VoteBarScaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoteBarScaleTests.swift; sourceTree = "<group>"; };
 		75FA1D6F26BC0F94002F4A81 /* CardDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailSheet.swift; sourceTree = "<group>"; };
 		760A57B8F82EA8824DDB71EC /* FixtureDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureDecodingTests.swift; sourceTree = "<group>"; };
 		77B14D26CBDB75B91E4F38B4 /* Fraunces-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces-Variable.ttf"; sourceTree = "<group>"; };
@@ -532,6 +534,7 @@
 				1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */,
 				40B04ACC0FDBCB92A290B6C4 /* TribalViewModelTests.swift */,
 				8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */,
+				754972255F7D3BA715370263 /* VoteBarScaleTests.swift */,
 				2AB850D039D484EDAE79F431 /* Fixtures */,
 			);
 			path = SurvivorGameTests;
@@ -762,6 +765,7 @@
 				15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */,
 				78F742DBD5660E0BC1C74BE4 /* TribalViewModelTests.swift in Sources */,
 				C85B70696006F49D5A87DB82 /* ViewModelTests.swift in Sources */,
+				DCE24B88D6FCD8EEFBEEB478 /* VoteBarScaleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
