@@ -588,6 +588,21 @@ final class GameClient {
 
     // MARK: - Session Management
 
+    /// Self-leave, lobby only. The server frees the seat and drops the
+    /// player entirely; a started game refuses it ("the game has started —
+    /// a torch can't just walk away") and an older server that predates the
+    /// route 404s. Either way that's a thrown error, not a silent local
+    /// reset — the caller only actually leaves once the server has agreed,
+    /// same contract as every other lobby action.
+    func leaveLobby() async throws {
+        guard let gameId, let playerId else { throw GameClientError.noGame }
+        let response = try await apiClient.leaveGame(gameId: gameId, playerId: playerId)
+        guard response.success else {
+            throw GameClientError.operationFailed(response.message ?? "Couldn't leave the lobby")
+        }
+        leaveGame()
+    }
+
     func leaveGame() {
         clearSavedSession()
         disconnect()

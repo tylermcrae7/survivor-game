@@ -5,6 +5,7 @@ import Foundation
 final class LobbyViewModel {
     var error: ViewModelError?
     var isStarting = false
+    var isLeaving = false
 
     private let gameClient: GameClient
 
@@ -54,7 +55,16 @@ final class LobbyViewModel {
         }
     }
 
-    func leaveGame() {
-        gameClient.leaveGame()
+    /// Self-leave, lobby only — refused once the game has started, and a
+    /// 404 from an older server that predates the route surfaces the same
+    /// way. Both land here, same as every other lobby action's error path.
+    func leaveLobby() async {
+        isLeaving = true
+        defer { isLeaving = false }
+        do {
+            try await gameClient.leaveLobby()
+        } catch {
+            self.error = .from(error)
+        }
     }
 }

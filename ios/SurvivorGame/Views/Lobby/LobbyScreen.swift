@@ -5,6 +5,7 @@ struct LobbyScreen: View {
     @State private var viewModel: LobbyViewModel?
     @State private var showRename = false
     @State private var newName = ""
+    @State private var showLeaveConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -13,9 +14,15 @@ struct LobbyScreen: View {
                     .navigationTitle("Game Lobby")
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button("Leave") {
-                                vm.leaveGame()
+                            // Destructive per Torch idiom (AppSettingsSheet's
+                            // "Forget This Island"): role .destructive + the
+                            // danger color, gated behind a confirmation —
+                            // leaving is semi-destructive, not a single tap.
+                            Button("Leave", role: .destructive) {
+                                showLeaveConfirm = true
                             }
+                            .foregroundStyle(Torch.Color.danger)
+                            .disabled(vm.isLeaving)
                         }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
@@ -33,6 +40,18 @@ struct LobbyScreen: View {
                             Task { await vm.renameSelf(to: newName) }
                         }
                         Button("Cancel", role: .cancel) {}
+                    }
+                    .confirmationDialog(
+                        "Leave this lobby?",
+                        isPresented: $showLeaveConfirm,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Leave Game", role: .destructive) {
+                            Task { await vm.leaveLobby() }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("You'll need the game code to rejoin.")
                     }
             } else {
                 ProgressView()

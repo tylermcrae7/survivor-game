@@ -330,6 +330,16 @@ actor APIClient {
         ])
     }
 
+    /// Self-leave, lobby only — the server refuses once the game has started
+    /// (`success: false`, a named reason) and an older server that predates
+    /// the route 404s. Both are ordinary thrown errors from `request(_:)`,
+    /// same as every other action here.
+    func leaveGame(gameId: String, playerId: String) async throws -> ActionResponse {
+        try await post(path: "/api/player/leave", body: [
+            "gameId": gameId, "playerId": playerId
+        ])
+    }
+
     func updateGameSettings(gameId: String, playerId: String, settings: [String: String]) async throws -> ActionResponse {
         try await post(path: "/api/game/update_settings", body: [
             "gameId": gameId, "playerId": playerId, "settings": settings
