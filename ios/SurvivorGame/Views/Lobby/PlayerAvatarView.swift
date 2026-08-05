@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PlayerAvatarView: View {
+    @Environment(GameClient.self) private var gameClient
     let player: PlayerState
     var size: CGFloat = 48
     var showName: Bool = true
@@ -10,6 +11,14 @@ struct PlayerAvatarView: View {
     /// avatar tappable would nest a button in a button — SwiftUI hands the tap
     /// to the inner one and the outer action is swallowed.
     var onTap: (() -> Void)? = nil
+
+    /// Collision-resolved against the rest of the alive table (Coconut and
+    /// Cornelius both default to "CO" — see `PlayerState.uniqueMonograms`).
+    /// Falls back to the player's own default when they're not in that scope
+    /// (eliminated, or no game state at all, as in a preview).
+    private var monogram: String {
+        gameClient.gameState?.uniqueMonograms[player.id] ?? player.monogram
+    }
 
     var body: some View {
         if let onTap {
@@ -38,10 +47,10 @@ struct PlayerAvatarView: View {
                     .fill(player.swiftUIColor)
                     .frame(width: size, height: size)
 
-                Text(player.monogram)
+                Text(monogram)
                     // Two characters need to be smaller than one to sit inside
                     // the same disc — 32pt is the smallest circle in the app.
-                    .font(.system(size: size * (player.monogram.count > 1 ? 0.34 : 0.42),
+                    .font(.system(size: size * (monogram.count > 1 ? 0.34 : 0.42),
                                   weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)

@@ -178,6 +178,66 @@ extension PlayerState {
     private static func cap(_ c: Character) -> String {
         String(String(c).uppercased().prefix(1))
     }
+
+    /// Disambiguates `monogram` across a roster: two castaways landing on the
+    /// same default — Coconut and Cornelius both "CO" — get the smallest fix
+    /// that still tells them apart, first letter + the first character
+    /// (after the shared default) where their names actually diverge
+    /// (Coconut → "CC", Cornelius → "CR"), rather than both wearing the same
+    /// two letters (found live: an eight-player camp strip with two blue-ish
+    /// "CO" circles). Names that don't collide keep the plain default.
+    ///
+    /// Pure function of `players`, so every phone lands on the same labels
+    /// from the same synced state — see `GameState.uniqueMonograms` for the
+    /// scope every avatar actually reads (the alive roster).
+    ///
+    /// A name that's a strict prefix of its collision partner's ("Co" vs
+    /// "Cor") has no character of its own left to diverge on past the shared
+    /// default, so it keeps it. A tie that never resolves — identical names,
+    /// or every character exhausted on both sides — keeps the default too;
+    /// two castaways can legitimately share a monogram.
+    static func uniqueMonograms(for players: [PlayerState]) -> [String: String] {
+        var byDefault: [String: [PlayerState]] = [:]
+        for player in players {
+            byDefault[monogram(for: player.name), default: []].append(player)
+        }
+
+        var result: [String: String] = [:]
+        for (defaultMono, group) in byDefault {
+            if group.count == 1 {
+                result[group[0].id] = defaultMono
+            } else {
+                for player in group {
+                    result[player.id] = disambiguate(player, among: group, default: defaultMono)
+                }
+            }
+        }
+        return result
+    }
+
+    /// `player` against every OTHER member of its collision group, scanning
+    /// from the character right after the shared default (index 1 — index 0
+    /// is the first letter every default already keeps) for the smallest
+    /// index where `player`'s character isn't matched by any other member at
+    /// that same index. A peer with no character left at that index (it's
+    /// shorter than `player`) never blocks the match — it simply can't
+    /// contest it.
+    private static func disambiguate(
+        _ player: PlayerState, among group: [PlayerState], default defaultMono: String
+    ) -> String {
+        let mine = Array(player.name).map(cap)
+        let others = group.filter { $0.id != player.id }.map { Array($0.name).map(cap) }
+
+        var index = 1
+        while index < mine.count {
+            let stillTied = others.contains { $0.indices.contains(index) && $0[index] == mine[index] }
+            if !stillTied {
+                return mine[0] + mine[index]
+            }
+            index += 1
+        }
+        return defaultMono
+    }
 }
 
 struct CardInstance: Codable, Equatable, Identifiable {

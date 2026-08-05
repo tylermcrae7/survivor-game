@@ -255,21 +255,26 @@ private struct OccupantStrip: View {
 }
 
 private struct OccupantChip: View {
+    @Environment(GameClient.self) private var gameClient
     let player: PlayerState
     let isMe: Bool
     let size: CGFloat
+
+    /// Collision-resolved the same way the avatars are — see
+    /// `PlayerAvatarView.monogram`. This band is the exact case that rule
+    /// exists for: "C, C, C" for Coconut, Cleo and Christopher identifies
+    /// nobody.
+    private var monogram: String {
+        gameClient.gameState?.uniqueMonograms[player.id] ?? player.monogram
+    }
 
     var body: some View {
         Circle()
             .fill(player.swiftUIColor)
             .frame(width: size, height: size)
             .overlay {
-                // Same two-letter monogram the avatars use — a band showing
-                // "C, C, C" for Coconut, Cleo and Christopher identifies
-                // nobody, and this row exists precisely to say who wandered
-                // off with whom.
-                Text(player.monogram)
-                    .font(.system(size: size * (player.monogram.count > 1 ? 0.38 : 0.45),
+                Text(monogram)
+                    .font(.system(size: size * (monogram.count > 1 ? 0.38 : 0.45),
                                   weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)

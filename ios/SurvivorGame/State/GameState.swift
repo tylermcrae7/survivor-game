@@ -168,6 +168,15 @@ struct GameState: Codable, Equatable {
         turnOrder.compactMap { players[$0] }
     }
 
+    /// Every alive player's monogram, collision-resolved against each other —
+    /// see `PlayerState.uniqueMonograms`. Scoped to `activePlayers`, not the
+    /// full roster: an eliminated castaway isn't competing for a seat at
+    /// today's table and keeps their own plain default (`PlayerAvatarView`
+    /// falls back to it when a lookup here misses).
+    var uniqueMonograms: [String: String] {
+        PlayerState.uniqueMonograms(for: activePlayers)
+    }
+
     /// Who is standing in `placeKey`, in turn order — snuffed players
     /// included. They used to be filtered out as having left the island, which
     /// stopped being true when the dead were pinned to the Camp Fire: this
