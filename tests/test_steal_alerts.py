@@ -75,5 +75,43 @@ class DeadCodeGoneTest(unittest.TestCase):
         self.assertFalse(hasattr(interactions.InteractionEngine, "_steal_random"))
 
 
+class AlertsNeverLeakToClientsTest(unittest.TestCase):
+    """_pending_alerts is server plumbing — it must not ride the state payload."""
+    def setUp(self):
+        import survivor_server
+        self.gs = survivor_server.GameState.__new__(survivor_server.GameState)
+        # Minimal instance: reuse the real engine + games dict without file IO
+        from rules_engine import SurvivorRulesEngine
+        self.gs.rules_engine = SurvivorRulesEngine()
+        self.gs.games = {"g1": _game({"a": [], "b": ["extra_vote"]})}
+        self.gs.games["g1"].update({"phase": "playing", "turnOrder": ["a", "b"],
+                                    "currentTurnIndex": 0})
+        self.gs._save = lambda gid: None
+
+    def test_state_payload_carries_no_underscore_keys(self):
+        self.gs.games["g1"]["_pending_alerts"] = [{"event": "steal", "data": {}}]
+        state = self.gs.get_game_state("g1")
+        self.assertFalse([k for k in state if k.startswith("_")],
+                         "top-level underscore keys are server-side only")
+
+
+class SorryForYouRecordsABlockedRaidTest(unittest.TestCase):
+    def test_blocking_the_raid_leaves_a_raid_blocked_alert(self):
+        from rules_engine import SurvivorRulesEngine
+        engine = SurvivorRulesEngine()
+        game = _game({"thief": ["extra_vote", "camp_raid"], "victim": ["sorry_for_you"]})
+        game["pending_theft"] = {"thiefId": "thief", "thiefIds": ["thief"],
+                                 "targetId": "victim", "source": "steal",
+                                 "reactive_window_open": True}
+        card = engine.resolve_card({"type": "sorry_for_you"})
+        engine.execute_reactive_interrupt(game, "victim", "thief", card)
+        alerts = [a for a in game.get("_pending_alerts", [])
+                  if a["event"] == "raid_blocked"]
+        self.assertEqual(len(alerts), 1)
+        data = alerts[0]["data"]
+        self.assertIn("Sorry For You", data["message"])
+        self.assertIn("Victim", data["message"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

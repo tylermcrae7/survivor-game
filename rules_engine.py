@@ -1827,6 +1827,16 @@ class SurvivorRulesEngine:
 			names = [game["players"][t]["name"] for t in awaiting]
 			lines.append(f"{' and '.join(names)} must choose a card to discard")
 
+		defender = game["players"][player_id]
+		game.setdefault("_pending_alerts", []).append({
+			"event": "raid_blocked",
+			"data": {
+				"defenderId": player_id, "defender": defender.get("name", "?"),
+				"thiefIds": list(thief_ids),
+				"message": f"{defender.get('name', '?')} played Sorry For You — the raid fails",
+			},
+		})
+
 		return {
 			"message": f"Sorry for you! The raid fails — {'; '.join(lines)}",
 			"awaiting_discards": awaiting,

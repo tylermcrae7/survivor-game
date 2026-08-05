@@ -676,6 +676,10 @@ class GameState:
             if isinstance(holder, dict):
                 for key in [k for k in holder if k.startswith("_")]:
                     del holder[key]
+        # Top-level underscore keys are server plumbing (pending alert
+        # flushes) — same rule as the hidden holders: never on the wire.
+        for key in [k for k in enriched_game if k.startswith("_")]:
+            del enriched_game[key]
         # Where everyone is standing, derived fresh from the phase. Clients read
         # players[pid].place and never have to know about placeChoice — that
         # keeps a stale choice from ever showing someone at the wrong place.
@@ -3484,6 +3488,27 @@ def emit_game_event(gid, event_type, data=None):
     except Exception as e:
         logger.warning(f"Failed to emit game event: {e}")
 
+def _flush_steal_alerts(gid):
+    """Announce any takes the engine recorded since the last flush.
+
+    Reads the LIVE game (not the client copy) and emits one narrator event
+    per alert; every phone's toast pipeline picks these up. Safe to call
+    when there is nothing to say, and when `game_state` (module-level,
+    created at server startup) doesn't exist yet — bare-unittest contexts
+    that exercise the rules engine directly never construct it.
+    """
+    try:
+        game = game_state.games.get(gid)
+        if not game:
+            return
+        for alert in game.pop("_pending_alerts", []) or []:
+            try:
+                emit_game_event(gid, alert["event"], alert["data"])
+            except Exception as e:
+                logger.error(f"Steal alert emit failed for {gid}: {e}")
+    except NameError:
+        return
+
 def _emit_narrator_events(gid, action, request_data, narrator_before, game_after, result):
     """Emit rich game events for the narrator based on action type"""
     try:
@@ -3494,31 +3519,13 @@ def _emit_narrator_events(gid, action, request_data, narrator_before, game_after
             player = players.get(player_id)
             return player.get('name', 'Unknown') if player else 'Unknown'
 
-        # Steal action
-        if action == 'steal_card':
-            # The route requires `thiefId` (api_steal), and both clients send
-            # it — reading `playerId` here made every steal in the game's
-            # history narrate as "Unknown".
-            thief_id = request_data.get('thiefId') or request_data.get('playerId')
-            target_id = request_data.get('targetId')
-            # A raid that moved nothing must not be narrated as a theft. A
-            # steal returns success when the target had no reachable cards, and
-            # again when a Sorry For You window opens — at which point the
-            # theft is only *pending* and may be cancelled outright.
-            moved = isinstance(result, dict) and result.get('stolen_cards')
-            pending = isinstance(result, dict) and result.get('reactive_window')
-            if moved and not pending:
-                emit_game_event(gid, 'steal', {
-                    'thief': get_player_name(thief_id),
-                    'victim': get_player_name(target_id),
-                    # IDs as well as names: names are not unique (only colours
-                    # are), so a client cannot reliably match a name to a seat.
-                    'thiefId': thief_id,
-                    'victimId': target_id,
-                })
+        # Steal action — announced by _flush_steal_alerts instead: the engine
+        # records thief/victim/count/message on the live game as soon as
+        # cards move, so this narrated only from `steal_card`'s own result and
+        # double-toasted the flush.
 
         # Card play
-        elif action == 'play_card':
+        if action == 'play_card':
             player_id = request_data.get('playerId')
             card_index = request_data.get('cardIndex')
             # Try to get card name from result or player's hand
@@ -3662,13 +3669,15 @@ def handle(action, required):
                 return jsonify(success=False, message="Invalid action"), 400
 
             result = getattr(game_state, action)(gid, **kwargs)
-            
+
         except Exception as e:
             gid = d.get('gameId', 'unknown')
             logger.error(f"API operation={action} gameId={gid} error: {e}")
             error_msg = f"Operation {action} failed: {str(e)}"
             return jsonify(success=False, message=error_msg), 500
-    
+
+        _flush_steal_alerts(gid)
+
         if isinstance(result, dict):
             if "success" in result:
                 if not result.get("success", False):
@@ -4615,6 +4624,7 @@ def api_complete_theft():
     try:
         result = game_state.complete_pending_theft(game_id)
         if result.get("success"):
+            _flush_steal_alerts(game_id)
             socketio.emit('game_updated', game_state.get_game_state(game_id), room=game_id)
         return result
     except Exception as e:
@@ -4762,6 +4772,7 @@ bot_runner = None
 
 def _bot_broadcast(gid, action):
     """Bots act outside any request context — push fresh state to the room."""
+    _flush_steal_alerts(gid)
     game_data = game_state.get_game_state(gid) or {}
     socketio.emit('state_update', game_data, to=gid)
 
