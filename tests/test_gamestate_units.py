@@ -820,6 +820,96 @@ class TestGameStateUnits(unittest.TestCase):
             self.assertEqual(len(game["players"]), 4)
 
 
+# ── Task S4: leaving a lobby, and start_full_game naming its refusal ──────
+#
+# These exercise the REAL survivor_server.GameState (not the TestableGameState
+# mock above) — leave_game and start_full_game's refusal text are the actual
+# production methods, so a mock copy would prove nothing.
+
+class LobbyLeaveTest(unittest.TestCase):
+    """A castaway can leave an unlit lobby, and only an unlit lobby."""
+
+    def setUp(self):
+        from survivor_server import GameState
+        self.original_cwd = os.getcwd()
+        self.test_dir = tempfile.mkdtemp()
+        os.chdir(self.test_dir)
+        self.gs = GameState()
+        self.gid = self.gs.create_game()
+        self.alice = self.gs.add_player(self.gid, "Alice", "red")
+        self.bob = self.gs.add_player(self.gid, "Bob", "blue")
+        self.cara = self.gs.add_player(self.gid, "Cara", "green")
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_leaving_in_the_lobby_succeeds_and_frees_the_seat(self):
+        result = self.gs.leave_game(self.gid, playerId=self.bob)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertIn("Bob", result["message"])
+
+        game = self.gs.games[self.gid]
+        self.assertNotIn(self.bob, game["players"])
+        self.assertNotIn(self.bob, game.get("turnOrder", []))
+
+        # The freed name and colour are available to a new join
+        check = self.gs.validate_new_player(self.gid, "Dee", "blue")
+        self.assertTrue(check["success"], check.get("message"))
+
+    def test_leaving_after_the_game_has_started_is_refused(self):
+        self.gs.start_full_game(self.gid)
+        result = self.gs.leave_game(self.gid, playerId=self.bob)
+        self.assertFalse(result["success"])
+        self.assertIn("started", result["message"])
+        self.assertIn(self.bob, self.gs.games[self.gid]["players"],
+                       "a refused leave must not remove the player")
+
+    def test_leaving_as_an_unknown_player_is_refused(self):
+        result = self.gs.leave_game(self.gid, playerId="not-a-real-player-id")
+        self.assertFalse(result["success"])
+        self.assertEqual(len(self.gs.games[self.gid]["players"]), 3)
+
+
+class StartFullGameReasonsTest(unittest.TestCase):
+    """start_full_game's refusal names why, instead of one flat message."""
+
+    def setUp(self):
+        from survivor_server import GameState
+        self.original_cwd = os.getcwd()
+        self.test_dir = tempfile.mkdtemp()
+        os.chdir(self.test_dir)
+        self.gs = GameState()
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_unknown_game_says_not_found(self):
+        result = self.gs.start_full_game("no-such-game")
+        self.assertFalse(result["success"])
+        self.assertIn("not found", result["message"].lower())
+
+    def test_already_started_names_the_phase(self):
+        gid = self.gs.create_game()
+        for name in ("Alice", "Bob", "Cara"):
+            self.gs.add_player(gid, name)
+        self.gs.start_full_game(gid)
+        result = self.gs.start_full_game(gid)
+        self.assertFalse(result["success"])
+        self.assertIn("started", result["message"])
+        self.assertIn("playing", result["message"])
+
+    def test_too_few_players_names_the_count(self):
+        gid = self.gs.create_game()
+        self.gs.add_player(gid, "Alice")
+        self.gs.add_player(gid, "Bob")
+        result = self.gs.start_full_game(gid)
+        self.assertFalse(result["success"])
+        self.assertIn("3", result["message"])
+        self.assertIn("2", result["message"])
+
+
 if __name__ == '__main__':
     # Configure test runner
     unittest.main(verbosity=2, buffer=True)

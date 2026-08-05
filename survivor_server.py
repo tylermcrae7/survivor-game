@@ -607,8 +607,15 @@ class GameState:
         3 Action Cards are dealt face down to each player.
         """
         g = self.games.get(gid)
-        if not g or g.get("phase") != "lobby" or len(g["players"]) < 3:
-            return {"success": False, "message": "Game cannot be started."}
+        if not g:
+            return {"success": False, "message": "Game not found"}
+        if g.get("phase") != "lobby":
+            return {"success": False,
+                    "message": f"The game has already started (phase: {g.get('phase')})"}
+        if len(g["players"]) < 3:
+            return {"success": False,
+                    "message": f"Need at least 3 players to start — only "
+                               f"{len(g['players'])} here"}
 
         deck_mode = g.get("deckMode", "official")
         expansion = bool(g.get("expansion"))
@@ -2505,6 +2512,39 @@ class GameState:
         self._save(gid)
         logger.info(f"Bot {name} ({playerId}) removed from game {gid}")
         return {"success": True, "message": f"{name} walks back into the jungle"}
+
+    def leave_game(self, gid, playerId=None, **kwargs):
+        """A player leaves their own lobby seat — self-leave only.
+
+        Lobby-phase only: once the game is running, turn order, hands, and
+        vote counts all assume the seated roster is fixed — a torch can't
+        just walk away mid-game. Removing the player dict frees their seat
+        automatically, since seats derive from who is actually still here.
+        """
+        g = self.games.get(gid)
+        if not g:
+            return {"success": False, "message": "Game not found"}
+        if g.get("phase") != "lobby":
+            return {"success": False,
+                    "message": "The game has started — a torch can't just walk away"}
+        player = g["players"].get(playerId)
+        if not player:
+            return {"success": False, "message": "Invalid player ID"}
+
+        name = player.get("name", "Someone")
+        was_leader = player.get("isCouncilLeader")
+        del g["players"][playerId]
+        if playerId in g.get("turnOrder", []):
+            g["turnOrder"].remove(playerId)
+        # A departing leader hands the torch to the first remaining player
+        if was_leader and g["players"]:
+            first = next(iter(g["players"]))
+            g["players"][first]["isCouncilLeader"] = True
+            if "currentVote" in g:
+                g["currentVote"]["councilLeaderId"] = first
+        self._save(gid)
+        logger.info(f"{name} ({playerId}) left game {gid}")
+        return {"success": True, "message": f"{name} leaves the lobby"}
 
     def rename_player(self, gid, playerId=None, newName=None, **kwargs):
         """Rename a player. Only allowed in the lobby — once the game starts,
@@ -4618,6 +4658,8 @@ def api_rename():  return handle('rename_player',['playerId','newName'])
 def api_add_bot():    return handle('add_bot',[])
 @app.route('/api/player/remove_bot',methods=['POST'])
 def api_remove_bot(): return handle('remove_bot',['playerId'])
+@app.route('/api/player/leave',methods=['POST'])
+def api_leave(): return handle('leave_game',['playerId'])
 @app.route('/api/game/finish',methods=['POST'])
 def api_finish():  return handle('record_winner',['winnerId'])
 @app.route('/api/tribal/reset',methods=['POST'])
