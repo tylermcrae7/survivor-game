@@ -718,17 +718,28 @@ class SurvivorRulesEngine:
 	def _create_tribal_council_cards(self, player_count: int) -> List[Dict[str, Any]]:
 		"""Create tribal council cards based on player count mapping."""
 		tribal_cards = []
-		
-		# Official rules table - per-player tribal council card counts
+
+		# Official rules table - per-player tribal council card counts.
+		# 7 and 8 are the digital extension, all doubles per the official trend
+		# (6p is already all-doubles): 2*(N-2)+2 flips supplied at every count.
 		tribal_config = {
 		3: {"single": 4, "double": 0},
 		4: {"single": 2, "double": 2},
 		5: {"single": 2, "double": 3},
-		6: {"single": 0, "double": 5}
+		6: {"single": 0, "double": 5},
+		7: {"single": 0, "double": 6},
+		8: {"single": 0, "double": 7},
 		}
-		
-		config = tribal_config.get(player_count, {"single": 2, "double": 2})
-		
+
+		config = tribal_config.get(player_count)
+		if config is None:
+			# The old fallback quietly dealt the 4-player set — an 8-player
+			# game got 6 flips against the 12 it needed and survived only on
+			# the emergency reshuffle. Out-of-range is a caller bug: say so.
+			raise ValueError(
+				f"No tribal council configuration for {player_count} players "
+				f"(supported: 3-8)")
+
 		# Get tribal council card definitions
 		single_def = self.get_card_definition('tribal_council_single')
 		double_def = self.get_card_definition('tribal_council_double')

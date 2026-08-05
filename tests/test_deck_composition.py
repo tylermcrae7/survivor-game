@@ -187,21 +187,21 @@ class TestDeckComposition(unittest.TestCase):
                 f"Deck {i} has different composition than first deck")
     
     def test_invalid_player_counts(self):
-        """Test that invalid player counts are handled gracefully"""
-        # Test edge cases
-        invalid_counts = [0, 1, 2, 7, 8, 10, -1]
-        
+        """Counts outside the supported 3-8 range must raise, loudly.
+
+        The old fallback quietly dealt the 4-player tribal set for any
+        unrecognised count — an 8-player game got 6 flips against the 12 it
+        needed and limped along on the emergency reshuffle. Task A1 removed
+        that silent default: out-of-range is a caller bug, and it says so.
+        """
+        invalid_counts = [0, 1, 2, 9, 10, -1]
+
         for count in invalid_counts:
             with self.subTest(player_count=count):
-                # Should not crash, should return some reasonable default
-                try:
-                    deck = self.gs.rules_engine.create_deck(count)
-                    # Should return some deck (likely default for 4 players)
-                    self.assertGreater(len(deck), 0, f"Should return non-empty deck for count {count}")
-                except Exception as e:
-                    # If it raises exception, should be a reasonable error
-                    self.assertIn("player", str(e).lower(), 
-                        f"Exception for count {count} should mention players: {e}")
+                with self.assertRaises(ValueError) as ctx:
+                    self.gs.rules_engine.create_deck(count)
+                self.assertIn("player", str(ctx.exception).lower(),
+                    f"Exception for count {count} should mention players: {ctx.exception}")
     
     def test_tribal_council_card_properties(self):
         """Test that tribal council cards have correct properties"""
@@ -238,6 +238,8 @@ class TestDeckComposition(unittest.TestCase):
             (4, 2, 2, 4),  # 4 players: 2 single, 2 double, 4 total
             (5, 2, 3, 5),  # 5 players: 2 single, 3 double, 5 total
             (6, 0, 5, 5),  # 6 players: 0 single, 5 double, 5 total
+            (7, 0, 6, 6),  # extension: all doubles, 12 flips = 2(7-2)+2
+            (8, 0, 7, 7),  # extension: all doubles, 14 flips = 2(8-2)+2
         ]
         
         for player_count, exp_single, exp_double, exp_total in test_matrix:
@@ -254,6 +256,16 @@ class TestDeckComposition(unittest.TestCase):
                     f"{player_count} players: Expected {exp_double} double, got {double_count}")
                 self.assertEqual(total_tribal, exp_total,
                     f"{player_count} players: Expected {exp_total} total tribal, got {total_tribal}")
+
+    def test_flip_supply_always_exceeds_need_by_exactly_two(self):
+        """2 lives x (N-2) players out, +2 spare flips for idol saves —
+        the margin the official table keeps at every count."""
+        for n in range(3, 9):
+            with self.subTest(players=n):
+                cards = self.gs.rules_engine._create_tribal_council_cards(n)
+                flips = sum(2 if c["elimination_type"] == "double" else 1
+                            for c in cards)
+                self.assertEqual(flips, 2 * (n - 2) + 2)
 
     # ── Task A0: Grant Immunity leaves the island ──────────────────────────
 
