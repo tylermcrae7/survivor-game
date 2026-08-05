@@ -18,7 +18,7 @@ final class NarrationFeed {
     /// deliver a dozen events between two frames, and nobody reads twelve
     /// toasts. Beyond this the lowest-priority oldest entry is dropped.
     private let capacity = 3
-    private let dwell: Duration
+    private let minDwell: Duration
     private let gap: Duration
 
     private var queue: [NarrationEvent] = []
@@ -26,8 +26,8 @@ final class NarrationFeed {
     private var lastCue: (cue: TorchCue, at: ContinuousClock.Instant)?
     private let clock = ContinuousClock()
 
-    init(dwell: Duration = .milliseconds(1800), gap: Duration = .milliseconds(250)) {
-        self.dwell = dwell
+    init(minDwell: Duration = .milliseconds(2400), gap: Duration = .milliseconds(350)) {
+        self.minDwell = minDwell
         self.gap = gap
     }
 
@@ -80,11 +80,21 @@ final class NarrationFeed {
                 let event = queue.removeFirst()
                 current = event
                 play(event.cue)
-                try? await Task.sleep(for: dwell)
+                try? await Task.sleep(for: dwell(for: event))
                 current = nil
                 try? await Task.sleep(for: gap)
             }
         }
+    }
+
+    /// Long enough to actually read: a floor for short lines, ~60ms per
+    /// character for longer ones, capped so a wordy event can't dam the queue.
+    /// Internal rather than private, matching `queueDepthForTesting` and
+    /// `pendingForTesting` above — this is the whole pacing rule and the
+    /// tests need to see its math directly, not just infer it from timing.
+    func dwell(for event: NarrationEvent) -> Duration {
+        let byLength = Duration.milliseconds(event.message.count * 60)
+        return max(minDwell, min(byLength, .milliseconds(4200)))
     }
 
     /// Never the same cue twice inside a beat. TorchSound deliberately layers

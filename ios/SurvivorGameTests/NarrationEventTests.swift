@@ -166,7 +166,7 @@ struct NarrationFeedTests {
 
     @Test("Repeated ballots collapse into one line")
     func chatterCoalesces() {
-        let feed = NarrationFeed(dwell: .milliseconds(1), gap: .milliseconds(1))
+        let feed = NarrationFeed(minDwell: .milliseconds(1), gap: .milliseconds(1))
         for name in ["Ana", "Ben", "Cam"] {
             feed.enqueue(NarrationEvent(type: "vote_cast", data: ["player": name])!)
         }
@@ -177,7 +177,7 @@ struct NarrationFeedTests {
 
     @Test("A burst is bounded — nobody reads a dozen toasts")
     func queueIsBounded() {
-        let feed = NarrationFeed(dwell: .seconds(60), gap: .seconds(60))
+        let feed = NarrationFeed(minDwell: .seconds(60), gap: .seconds(60))
         for i in 0..<12 {
             feed.enqueue(NarrationEvent(type: "card_played",
                                         data: ["player": "P\(i)", "card": "Camp Raid"])!)
@@ -187,7 +187,7 @@ struct NarrationFeedTests {
 
     @Test("An elimination gets through a queue full of chatter")
     func criticalEventsSurviveTheCap() {
-        let feed = NarrationFeed(dwell: .seconds(60), gap: .seconds(60))
+        let feed = NarrationFeed(minDwell: .seconds(60), gap: .seconds(60))
         for name in ["A", "B", "C", "D", "E"] {
             feed.enqueue(NarrationEvent(type: "player_joined",
                                         data: ["player": name, "count": 1])!)
@@ -198,10 +198,41 @@ struct NarrationFeedTests {
 
     @Test("A reset silences the previous game")
     func resetClears() {
-        let feed = NarrationFeed(dwell: .seconds(60), gap: .seconds(60))
+        let feed = NarrationFeed(minDwell: .seconds(60), gap: .seconds(60))
         feed.enqueue(NarrationEvent(type: "winner", data: ["player": "Ana"])!)
         feed.reset()
         #expect(feed.current == nil)
         #expect(feed.pendingForTesting.isEmpty)
+    }
+
+    /// A short line still gets the floor — nobody reads faster than that just
+    /// because the sentence was short.
+    @Test("A short message dwells the floor, not less")
+    func dwellFloorsShortMessages() {
+        let feed = NarrationFeed()
+        let event = NarrationEvent(type: "raid_blocked",
+                                   data: ["defender": "X",
+                                          "message": String(repeating: "a", count: 10)])!
+        #expect(feed.dwell(for: event) == .milliseconds(2400))
+    }
+
+    /// ~60ms per character once the line is long enough to clear the floor.
+    @Test("A longer message dwells proportional to its length")
+    func dwellScalesWithLength() {
+        let feed = NarrationFeed()
+        let event = NarrationEvent(type: "raid_blocked",
+                                   data: ["defender": "X",
+                                          "message": String(repeating: "a", count: 60)])!
+        #expect(feed.dwell(for: event) == .milliseconds(3600))
+    }
+
+    /// A wordy event cannot dam the queue behind it.
+    @Test("A wordy message caps its dwell rather than stalling the queue")
+    func dwellCapsLongMessages() {
+        let feed = NarrationFeed()
+        let event = NarrationEvent(type: "raid_blocked",
+                                   data: ["defender": "X",
+                                          "message": String(repeating: "a", count: 200)])!
+        #expect(feed.dwell(for: event) == .milliseconds(4200))
     }
 }
