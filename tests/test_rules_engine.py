@@ -16,13 +16,15 @@ import tempfile
 os.chdir(tempfile.mkdtemp())
 
 # Test 1: Rules Engine Standalone
-from rules_engine import SurvivorRulesEngine, NON_OFFICIAL_CARD_TYPES
+from rules_engine import SurvivorRulesEngine, NON_OFFICIAL_CARD_TYPES, NEW_SEAT_INHERITANCE_CARD_TYPES
 rules = SurvivorRulesEngine()
 card_count = len(rules.card_definitions['cards'])
 assert card_count > 0, 'card registry failed to load'
 official_cards = sum(
     c['count'] for t, c in rules.get_all_card_definitions().items()
-    if t not in NON_OFFICIAL_CARD_TYPES and c['category'] != 'challenge'
+    if t not in NON_OFFICIAL_CARD_TYPES
+    and t not in NEW_SEAT_INHERITANCE_CARD_TYPES
+    and c['category'] != 'challenge'
 )
 assert official_cards == 67, f'official deck should be 67 cards, got {official_cards}'
 print(f'✅ Rules engine loaded {card_count} card types ({official_cards} official cards)')
@@ -60,7 +62,8 @@ never_playable = [t for t, c in rules.get_all_card_definitions().items()
                   if not c.get('playable_phases')
                   and c['category'] != 'tribal_council']
 assert sorted(never_playable) == sorted(f'inheritance_{s}' for s in
-                                        ('red', 'teal', 'blue', 'orange', 'green', 'yellow')), \
+                                        ('red', 'teal', 'blue', 'orange', 'green',
+                                         'yellow', 'purple', 'pink')), \
     f'only the colour-bound Inheritance cards are unplayable by hand, got {never_playable}'
 print(f'✅ Effect registry covers all {len(rules.card_effects_registry)} playable card types')
 

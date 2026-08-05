@@ -43,12 +43,19 @@ class TestDeckComposition(unittest.TestCase):
             4: {"single": 2, "double": 2},
             5: {"single": 2, "double": 3},
             6: {"single": 0, "double": 5},
+            7: {"single": 0, "double": 6},
+            8: {"single": 0, "double": 7},
         }
 
         # The official box holds 67 Action Cards. Setup removes the 9 Tribal Council
         # Cards and the 6 Vote Cards (1 dealt per player, extras put away), leaving
         # 52 cards in the Draw Pile before the Tribal Council Cards are shuffled back in.
+        # 7-8 players restore the ~6.5 turns/player pacing with a supply pack
+        # (Task A3): action_total(N) = ceil(6.5*N) + 3N - tribal_count(N).
         self.expected_action_cards = 52
+        self.expected_action_cards_by_count = {
+            3: 52, 4: 52, 5: 52, 6: 52, 7: 61, 8: 69,
+        }
         
     def tearDown(self):
         """Clean up test environment"""
@@ -70,7 +77,15 @@ class TestDeckComposition(unittest.TestCase):
     def test_deck_composition_6_players(self):
         """Test deck composition for 6-player game"""
         self._test_player_count_deck_composition(6)
-    
+
+    def test_deck_composition_7_players(self):
+        """Test deck composition for 7-player game (Task A3 pacing target)"""
+        self._test_player_count_deck_composition(7)
+
+    def test_deck_composition_8_players(self):
+        """Test deck composition for 8-player game (Task A3 pacing target)"""
+        self._test_player_count_deck_composition(8)
+
     def _test_player_count_deck_composition(self, player_count):
         """Test deck composition for specific player count"""
         # Create deck using rules engine
@@ -109,7 +124,8 @@ class TestDeckComposition(unittest.TestCase):
         
         # Verify minimum deck size (action cards + tribal cards)
         # Should have all action cards plus the calculated tribal cards
-        expected_deck_size = self.expected_action_cards + expected_total_tribal
+        expected_deck_size = (self.expected_action_cards_by_count[player_count]
+                               + expected_total_tribal)
 
         self.assertEqual(len(deck), expected_deck_size,
             f"Player count {player_count}: Expected {expected_deck_size} cards, got {len(deck)}")
@@ -268,6 +284,69 @@ class TestDeckComposition(unittest.TestCase):
                 self.assertEqual(flips, 2 * (n - 2) + 2)
 
     # ── Task A0: Grant Immunity leaves the island ──────────────────────────
+
+    # ── Task A3: The deck grows with the table ──────────────────────────────
+
+    def test_seven_and_eight_player_decks_hit_the_pacing_target(self):
+        for n, target in ((7, 61), (8, 69)):
+            with self.subTest(players=n):
+                deck = self.gs.rules_engine.create_action_deck(player_count=n)
+                self.assertEqual(len(deck), target)
+
+    def test_three_to_six_player_decks_are_untouched(self):
+        """The official 52-card pile, bit for bit — no new-seat Inheritance,
+        no supply pack, exactly what the box prints."""
+        for n in range(3, 7):
+            with self.subTest(players=n):
+                deck = self.gs.rules_engine.create_action_deck(player_count=n)
+                types = [c["type"] for c in deck]
+                self.assertEqual(len(deck), 52)
+                self.assertNotIn("inheritance_purple", types)
+                self.assertNotIn("inheritance_pink", types)
+
+    def test_a_deck_with_no_player_count_is_also_untouched(self):
+        """Existing callers pass no player_count — default must preserve
+        today's behaviour exactly."""
+        deck = self.gs.rules_engine.create_action_deck()
+        types = [c["type"] for c in deck]
+        self.assertEqual(len(deck), 52)
+        self.assertNotIn("inheritance_purple", types)
+        self.assertNotIn("inheritance_pink", types)
+
+    def test_the_supply_pack_never_duplicates_power(self):
+        deck = self.gs.rules_engine.create_action_deck(player_count=8)
+        counts = Counter(c["type"] for c in deck)
+        base = {t: d.get("count", 0)
+                for t, d in self.gs.rules_engine.card_definitions["cards"].items()}
+        for scarce in ("immunity_idol", "inheritance_red", "inheritance_purple",
+                       "sorry_for_you"):
+            self.assertLessEqual(counts.get(scarce, 0), base.get(scarce, 1),
+                                 f"{scarce} must stay as scarce as the box made it")
+
+    def test_the_supply_pack_is_deterministic(self):
+        a = sorted(c["type"] for c in self.gs.rules_engine.create_action_deck(player_count=8))
+        b = sorted(c["type"] for c in self.gs.rules_engine.create_action_deck(player_count=8))
+        self.assertEqual(a, b, "same table, same composition — only the shuffle varies")
+
+    def test_seven_and_eight_player_decks_include_the_new_seat_inheritance(self):
+        for n in (7, 8):
+            with self.subTest(players=n):
+                deck = self.gs.rules_engine.create_action_deck(player_count=n)
+                types = [c["type"] for c in deck]
+                self.assertIn("inheritance_purple", types)
+                self.assertIn("inheritance_pink", types)
+                self.assertEqual(types.count("inheritance_purple"), 1)
+                self.assertEqual(types.count("inheritance_pink"), 1)
+
+    def test_extended_and_expansion_modes_also_hit_the_pacing_target_at_eight(self):
+        """The supply pack self-adjusts to whatever mode the game chose —
+        the target is fixed, the pack just fills whatever gap is left."""
+        for deck_mode in ("official", "extended"):
+            for expansion in (False, True):
+                with self.subTest(deck_mode=deck_mode, expansion=expansion):
+                    deck = self.gs.rules_engine.create_action_deck(
+                        deck_mode=deck_mode, expansion=expansion, player_count=8)
+                    self.assertEqual(len(deck), 69)
 
     def test_grant_immunity_is_gone_from_every_new_deck(self):
         for mode in ("official", "extended"):

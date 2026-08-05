@@ -114,17 +114,26 @@ class TestCardRegistry(CardEffectTestBase):
 
     def test_card_registry_official_counts(self):
         """The official box is 67 Action Cards; the house deck adds exactly 6
-        (Task A0 retired Grant Immunity: 'That's not how we play.')."""
+        (Task A0 retired Grant Immunity: 'That's not how we play.'); the
+        7-8 player extension adds 2 more new-seat Inheritance cards (Task A2)
+        that never enter a 3-6 player deck (Task A3)."""
+        from rules_engine import NEW_SEAT_INHERITANCE_CARD_TYPES
         cards = self.gs.rules_engine.get_all_card_definitions()
 
         official_total = sum(
             c["count"] for t, c in cards.items()
-            if t not in NON_OFFICIAL_CARD_TYPES and c["category"] != "challenge"
+            if t not in NON_OFFICIAL_CARD_TYPES
+            and t not in NEW_SEAT_INHERITANCE_CARD_TYPES
+            and c["category"] != "challenge"
         )
         self.assertEqual(official_total, 67)
 
         house_total = sum(c["count"] for t, c in cards.items() if t in NON_OFFICIAL_CARD_TYPES)
         self.assertEqual(house_total, 6)
+
+        new_seat_total = sum(c["count"] for t, c in cards.items()
+                             if t in NEW_SEAT_INHERITANCE_CARD_TYPES)
+        self.assertEqual(new_seat_total, 2)
 
         challenge_total = sum(c["count"] for c in cards.values() if c["category"] == "challenge")
         self.assertEqual(challenge_total, 5)

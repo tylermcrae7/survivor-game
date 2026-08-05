@@ -606,11 +606,15 @@ class GameState:
 
         deck_mode = g.get("deckMode", "official")
         expansion = bool(g.get("expansion"))
+        player_count = len(g["players"])
 
         # Setup order matters: deal from the shuffled Action Cards FIRST (step 3),
         # then assemble the Tribal Council Cards into what's left (step 5). Dealing
         # from an already-assembled deck can put a Tribal Council Card in a hand.
-        action_deck = self.rules_engine.create_action_deck(deck_mode=deck_mode, expansion=expansion)
+        # player_count restores the ~6.5 turns/player pacing at 7-8 players
+        # (Task A3) — 3-6 stay the untouched official pile.
+        action_deck = self.rules_engine.create_action_deck(
+            deck_mode=deck_mode, expansion=expansion, player_count=player_count)
 
         for player in g["players"].values():
             player["hand"] = []

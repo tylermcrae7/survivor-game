@@ -8,6 +8,7 @@ game mechanics and server infrastructure.
 
 import json
 import logging
+import math
 import random
 import time
 import uuid
@@ -67,6 +68,39 @@ NON_OFFICIAL_CARD_TYPES = {
     "idol_nullifier",   # x2
     "steal_vote",       # x2
     "block_vote",       # x2
+}
+
+# The two Inheritance cards for the digital-only 7-8 player extension's new
+# seats (Task A2). They must never appear in a 3-6 player deck — the official
+# 67-card box is pinned bit for bit — so create_action_deck only includes
+# them when player_count is 7 or more.
+NEW_SEAT_INHERITANCE_CARD_TYPES = {
+    "inheritance_purple",
+    "inheritance_pink",
+}
+
+# Official tribal-council-card table (rules Setup step 4): the count of
+# single/double elimination cards per player count. 7 and 8 are the digital
+# extension, all doubles per the official trend (6p is already all-doubles):
+# every count supplies exactly 2*(N-2)+2 flips — 2 lives x (N-2) players out,
+# +2 spare for idol saves.
+TRIBAL_COUNCIL_CONFIG = {
+    3: {"single": 4, "double": 0},
+    4: {"single": 2, "double": 2},
+    5: {"single": 2, "double": 3},
+    6: {"single": 0, "double": 5},
+    7: {"single": 0, "double": 6},
+    8: {"single": 0, "double": 7},
+}
+
+# Supply-pack candidates (Task A3) never include these — one-and-two-copy
+# power stays at box count no matter how thin the pile needs to get. Every
+# inheritance_* is scarce too (checked separately: it's a prefix, not a
+# fixed set) — one per seat, never duplicated.
+SUPPLY_PACK_SCARCE_TYPES = {
+    "immunity_idol",
+    "sorry_for_you",
+    "idol_nullifier",   # only ever a candidate in extended mode anyway
 }
 
 # Card types that count as a vote when placed in the Voting Box (F2).
@@ -582,11 +616,13 @@ class SurvivorRulesEngine:
 		a player's opening hand. Use ``create_action_deck`` + ``assemble_deck`` when
 		dealing; this convenience wrapper is for callers that just want a ready deck.
 		"""
-		action_deck = self.create_action_deck(deck_mode=deck_mode, expansion=expansion)
+		action_deck = self.create_action_deck(deck_mode=deck_mode, expansion=expansion,
+		                                      player_count=player_count)
 		return self.assemble_deck(action_deck, player_count, deck_mode=deck_mode, expansion=expansion)
 
 	def create_action_deck(self, deck_mode: str = "official",
-	                       expansion: bool = False) -> List[Dict[str, Any]]:
+	                       expansion: bool = False,
+	                       player_count: Optional[int] = None) -> List[Dict[str, Any]]:
 		"""
 		Build and shuffle the Action Card pile, with no Tribal Council Cards in it.
 
@@ -598,39 +634,90 @@ class SurvivorRulesEngine:
 		deck_mode: "official" (67-card box) or "extended" (adds the 6 house cards)
 		expansion: True to add the 5 Orange Challenge Cards from
 		           Survivor: Let's Go To Rocks (combined mode)
+		player_count: None (default) preserves the 3-6 player composition
+		           exactly — the official pile, bit for bit, no new-seat
+		           Inheritance, no supply pack. 7 or 8 restores the ~6.5
+		           turns/player pacing 6p gets (Task A3): the two new-seat
+		           Inheritance cards join the pile, and a deterministic
+		           "supply pack" of duplicated common cards tops it up to the
+		           pacing target — never duplicating scarce power.
 		"""
-		deck = []
-		total_action_cards = 0
 		official_only = (deck_mode or "official") != "extended"
+		include_new_seats = bool(player_count and player_count >= 7)
 
-		# Add action cards from definitions (excluding tribal_council + vote cards)
-		for card_type, card_data in self.card_definitions.get('cards', {}).items():
+		def eligible(card_type, card_data):
 			category = card_data.get('category')
 			if category == 'tribal_council':
-				continue  # Skip tribal council cards - added separately
+				return False  # Tribal council cards are added separately
 			if category == 'vote' and card_type == 'vote':
-				continue  # Vote Cards are dealt at setup, never left in the deck
+				return False  # Vote Cards are dealt at setup, never left in the deck
 			if official_only and card_type in NON_OFFICIAL_CARD_TYPES:
-				continue  # House cards only appear in "extended" mode
+				return False  # House cards only appear in "extended" mode
 			if category == 'challenge' and not expansion:
-				continue  # Orange Challenge Cards only in combined expansion mode
+				return False  # Orange Challenge Cards only in combined expansion mode
 			if card_type in PHYSICAL_ONLY_CARD_TYPES:
-				continue  # Sleight-of-hand cards don't work on a screen
+				return False  # Sleight-of-hand cards don't work on a screen
+			if card_type in NEW_SEAT_INHERITANCE_CARD_TYPES and not include_new_seats:
+				return False  # Purple/Pink Inheritance only exist at 7-8 players
+			return True
 
-			# Add the specified count of each card type (compact format)
+		deck = []
+		for card_type, card_data in self.card_definitions.get('cards', {}).items():
+			if not eligible(card_type, card_data):
+				continue
 			for _ in range(card_data.get('count', 0)):
-				card = new_card(card_data["type"])
-				deck.append(card)
-				total_action_cards += 1
+				deck.append(new_card(card_data["type"]))
+
+		if include_new_seats:
+			deck.extend(self._supply_pack(eligible, player_count, base_count=len(deck)))
 
 		# Shuffle action cards
 		random.shuffle(deck)
 
 		logger.info(
-			f"Created {deck_mode} action pile ({'with' if expansion else 'no'} expansion): "
-			f"{total_action_cards} cards"
+			f"Created {deck_mode} action pile ({'with' if expansion else 'no'} expansion"
+			f"{f', {player_count}p' if player_count else ''}): {len(deck)} cards"
 		)
 		return deck
+
+	def _supply_pack(self, eligible, player_count: int,
+	                 base_count: int) -> List[Dict[str, Any]]:
+		"""
+		The pack that restores 6p's ~6.5 turns/player pacing at 7-8 players.
+
+		``target = ceil(6.5*N) + 3N - tribal_count(N)`` — the 6-player instance
+		of the same formula reproduces exactly 52, the sanity check that it
+		captures the official pacing. The pack tops up ``target - base_count``
+		with duplicated common cards: one extra copy per candidate type, in
+		descending box-count order (commonest first), cycling until the target
+		is met. Deterministic — sorted by (-count, type), no RNG before the
+		final shuffle in ``create_action_deck``. Scarce power (Immunity Idol,
+		every Inheritance, Sorry For You, Idol Nullifier in extended mode) is
+		never duplicated — one-and-two-copy power stays at box count.
+		"""
+		config = TRIBAL_COUNCIL_CONFIG.get(player_count)
+		tribal_count = sum(config.values()) if config else 0
+		target = math.ceil(6.5 * player_count) + 3 * player_count - tribal_count
+		needed = target - base_count
+		if needed <= 0:
+			return []
+
+		candidates = [
+			(card_type, card_data.get('count', 0))
+			for card_type, card_data in self.card_definitions.get('cards', {}).items()
+			if eligible(card_type, card_data)
+			and card_type not in SUPPLY_PACK_SCARCE_TYPES
+			and not card_type.startswith('inheritance_')
+		]
+		candidates.sort(key=lambda type_and_count: (-type_and_count[1], type_and_count[0]))
+		if not candidates:
+			return []  # defensive; the catalogue always has eligible types
+
+		pack = []
+		while len(pack) < needed:
+			card_type, _ = candidates[len(pack) % len(candidates)]
+			pack.append(new_card(card_type))
+		return pack
 
 	def assemble_deck(self, action_deck: List[Dict[str, Any]], player_count: int,
 	                  deck_mode: str = "official", expansion: bool = False) -> List[Dict[str, Any]]:
@@ -719,19 +806,10 @@ class SurvivorRulesEngine:
 		"""Create tribal council cards based on player count mapping."""
 		tribal_cards = []
 
-		# Official rules table - per-player tribal council card counts.
-		# 7 and 8 are the digital extension, all doubles per the official trend
-		# (6p is already all-doubles): 2*(N-2)+2 flips supplied at every count.
-		tribal_config = {
-		3: {"single": 4, "double": 0},
-		4: {"single": 2, "double": 2},
-		5: {"single": 2, "double": 3},
-		6: {"single": 0, "double": 5},
-		7: {"single": 0, "double": 6},
-		8: {"single": 0, "double": 7},
-		}
-
-		config = tribal_config.get(player_count)
+		# Official rules table - per-player tribal council card counts
+		# (module-level TRIBAL_COUNCIL_CONFIG — also the pacing target's source
+		# of tribal_count(N) in create_action_deck's supply pack).
+		config = TRIBAL_COUNCIL_CONFIG.get(player_count)
 		if config is None:
 			# The old fallback quietly dealt the 4-player set — an 8-player
 			# game got 6 flips against the 12 it needed and survived only on
