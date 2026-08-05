@@ -184,6 +184,18 @@ def main():
         {
             'file': 'tests/test_narrator_events.py',
             'description': 'Narrator events — the commentary actually fires, names the right people, and leaks no peeked cards'
+        },
+        {
+            'file': 'tests/test_steal_alerts.py',
+            'description': 'Steal alerts — every card movement leaves a record, and no alert leaks a card identity'
+        },
+        {
+            'file': 'tests/test_theft_window.py',
+            'description': 'Sorry For You window — victim-only decline, the timeout, and the council that must not eat a won steal'
+        },
+        {
+            'file': 'tests/test_card_conservation.py',
+            'description': 'Card conservation — every steal moves exactly the cards it claims, and mints none'
         }
     ]
     
