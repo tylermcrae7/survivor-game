@@ -76,6 +76,17 @@ struct CardIdentityTests {
         #expect(resolved.uid == "xyz789")
     }
 
+    /// The server and app each ship a copy of the card catalog. An eight-player
+    /// server paired with an older app catalog made Purple and Pink inheritance
+    /// cards render as unknown cards, while a retired Grant Immunity card could
+    /// still appear in the client registry.
+    @Test("The bundled catalog matches the eight-player deck")
+    func bundledCatalogMatchesEightPlayerDeck() {
+        #expect(CardCatalog.shared.info(for: "inheritance_purple")?.name == "Inheritance (Purple)")
+        #expect(CardCatalog.shared.info(for: "inheritance_pink")?.name == "Inheritance (Pink)")
+        #expect(CardCatalog.shared.info(for: "grant_immunity") == nil)
+    }
+
     /// Why the hand grid keys on position and not on `card.id`.
     ///
     /// Shipped as a build that talked to a server without uids, and the fallback
