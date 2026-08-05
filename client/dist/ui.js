@@ -465,18 +465,33 @@ function renderVoteResults(gameState) {
         const sortedResults = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
         resultCount = sortedResults.length;
 
+        // Immune players still drew votes that no longer count toward
+        // elimination — the reveal remembers them. Append their raw tally
+        // after the counted rows above (never re-sorted into contention for
+        // who goes home) so the room can see what immunity erased.
+        const alreadyCounted = new Set(sortedResults.map(([pid]) => pid));
+        const immuneIds = new Set();
+        (currentVote.protectedPlayers || [])
+            .filter(pid => (currentVote.rawVoteResults?.[pid] || 0) > 0 && !alreadyCounted.has(pid))
+            .sort((a, b) => (currentVote.rawVoteResults[b] || 0) - (currentVote.rawVoteResults[a] || 0))
+            .forEach(pid => {
+                immuneIds.add(pid);
+                sortedResults.push([pid, currentVote.rawVoteResults[pid]]);
+            });
+
         // Ballots flip in one at a time — the reveal is a ceremony
         const resultsHtml = sortedResults.map(([playerId, count], i) => {
             const player = gameState.players[playerId];
             const playerName = escapeHtml(player?.name || 'Unknown');
-            const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
-            const isEliminated = currentVote.eliminated?.includes(playerId);
+            const isImmune = immuneIds.has(playerId);
+            const percentage = totalVotes > 0 ? Math.min(100, Math.round((count / totalVotes) * 100)) : 0;
+            const isEliminated = !isImmune && currentVote.eliminated?.includes(playerId);
             const voterNames = (votersByTarget[playerId] || []).map(vid =>
                 escapeHtml(gameState.players[vid]?.name || 'Unknown')).join(', ');
 
             return `
                 <div class="vote-result-card ${isEliminated ? 'eliminated' : ''}"
-                     style="animation-delay: ${i * 320}ms">
+                     style="animation-delay: ${i * 320}ms${isImmune ? '; opacity: 0.55' : ''}">
                     <div class="vote-result-header">
                         <div class="vote-result-player">
                             <div class="vote-result-avatar" style="background: ${escapeHtml(player?.color || '#666')}">
@@ -484,15 +499,16 @@ function renderVoteResults(gameState) {
                             </div>
                             <span class="vote-result-name">${playerName}</span>
                             ${isEliminated ? `<span class="vote-result-eliminated-badge">${icon('torch-out')} VOTED OUT</span>` : ''}
+                            ${isImmune ? `<span class="vote-result-eliminated-badge" style="color: var(--text-faint)">IMMUNE — votes don't count</span>` : ''}
                         </div>
                         <div class="vote-result-count">
-                            <span class="vote-count-number">${count}</span>
+                            <span class="vote-count-number"${isImmune ? ` style="color: var(--text-faint)"` : ''}>${count}</span>
                             <span class="vote-count-label">vote${count !== 1 ? 's' : ''}</span>
                         </div>
                     </div>
                     <div class="vote-result-bar-container">
                         <div class="vote-result-bar ${isEliminated ? 'eliminated' : ''}"
-                             style="width: ${percentage}%"></div>
+                             style="width: ${percentage}%${isImmune ? '; opacity: 0.5' : ''}"></div>
                     </div>
                     <div class="vote-result-voters">
                         <span class="voters-label">Voted by</span>
@@ -3044,7 +3060,7 @@ function showRaidDialog(gameState, pending, thiefName) {
         if (allowBtn) allowBtn.addEventListener('click', async () => {
             hideModal();
             try {
-                await window.SurvivorNetwork?.GameAPI.completeTheft(gameId);
+                await window.SurvivorNetwork?.GameAPI.completeTheft(gameId, myId);
             } catch (e) { showToast(e.message || 'Could not resolve the raid', 'error'); }
         });
     }, 0);

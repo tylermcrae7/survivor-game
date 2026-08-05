@@ -745,8 +745,8 @@ const GameAPI = {
         return apiCall('/interaction/act', { gameId, playerId, action, value });
     },
 
-    async completeTheft(gameId) {
-        return apiCall('/reactive/complete_theft', { gameId });
+    async completeTheft(gameId, playerId) {
+        return apiCall('/reactive/complete_theft', { gameId, playerId });
     },
 
     // State sync — GET-only route on the server
