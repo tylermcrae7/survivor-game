@@ -3585,6 +3585,21 @@ def _flush_steal_alerts(gid):
     except NameError:
         return
 
+def _append_event_log(gid, result):
+    """The Story So Far entry every successful action leaves behind.
+
+    handle() does this for every routed action; the hand-rolled reactive
+    routes must do it too or a raid that met a Sorry For You vanishes
+    from history (found live: the web drawer froze on "Theft initiated").
+    """
+    if not isinstance(result, dict) or not result.get("message") \
+            or not result.get("success", True):
+        return
+    log_list = game_state.games.get(gid, {}).setdefault("eventLog", [])
+    log_msg = result.get("log_message") or result["message"]
+    log_list.append({"t": time.time(), "msg": str(log_msg)[:200]})
+    del log_list[:-120]
+
 def _emit_narrator_events(gid, action, request_data, narrator_before, game_after, result):
     """Emit rich game events for the narrator based on action type"""
     try:
@@ -3802,14 +3817,8 @@ def handle(action, required):
         # Refusals change nothing and stay between the server and the actor, and
         # a result carrying a redacted log_message uses it — the full message may
         # name hidden cards that only the actor should see.
-        if isinstance(result, dict) and result.get("message") \
-                and result.get("success", True) \
-                and action not in ('add_bot', 'remove_bot', 'rename_player',
-                                   'move_place'):
-            log_list = game_state.games.get(gid, {}).setdefault("eventLog", [])
-            log_msg = result.get("log_message") or result["message"]
-            log_list.append({"t": time.time(), "msg": str(log_msg)[:200]})
-            del log_list[:-120]
+        if action not in ('add_bot', 'remove_bot', 'rename_player', 'move_place'):
+            _append_event_log(gid, result)
 
         # A state change may put a bot on the clock
         if bot_runner:
@@ -4680,6 +4689,8 @@ def api_reactive_play():
     try:
         result = game_state.handle_reactive_card_play(game_id, player_id, card_idx, theft_context)
         if result.get("success"):
+            _append_event_log(game_id, result)
+            _flush_steal_alerts(game_id)
             socketio.emit('game_updated', game_state.get_game_state(game_id), room=game_id)
         return result
     except Exception as e:
@@ -4705,6 +4716,7 @@ def api_complete_theft():
     try:
         result = game_state.complete_pending_theft(game_id, playerId=player_id)
         if result.get("success"):
+            _append_event_log(game_id, result)
             _flush_steal_alerts(game_id)
             socketio.emit('game_updated', game_state.get_game_state(game_id), room=game_id)
         return result

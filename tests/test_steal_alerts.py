@@ -113,5 +113,46 @@ class SorryForYouRecordsABlockedRaidTest(unittest.TestCase):
         self.assertIn("Victim", data["message"])
 
 
+class ReactiveRoutesWriteHistoryTest(unittest.TestCase):
+    """The two hand-rolled routes must log outcomes like every handled action."""
+
+    def setUp(self):
+        import survivor_server
+        from tests.test_theft_window import _fresh_gamestate, _game_with_window
+        self.server = survivor_server
+        self.gs = _fresh_gamestate()
+        self.gs.games["g1"] = _game_with_window()
+        self.server.game_state = self.gs
+        self.client = self.server.app.test_client()
+
+    def test_declining_lands_the_outcome_in_the_event_log(self):
+        response = self.client.post('/api/reactive/complete_theft',
+                                     json={"gameId": "g1", "playerId": "victim"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+
+        log = self.gs.games["g1"].get("eventLog") or []
+        self.assertTrue(log, "the decline must leave a Story So Far entry")
+        self.assertIn("Thief", log[-1]["msg"])
+        self.assertIn("Victim", log[-1]["msg"])
+        self.assertIn("took 2 cards", log[-1]["msg"])
+
+    def test_blocking_lands_sorry_for_you_in_the_event_log(self):
+        # victim's hand[0] is sorry_for_you (see _game_with_window)
+        response = self.client.post('/api/reactive/play_card',
+                                     json={"gameId": "g1", "playerId": "victim",
+                                           "cardIdx": 0})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+
+        log = self.gs.games["g1"].get("eventLog") or []
+        self.assertTrue(log, "a blocked raid must leave a Story So Far entry")
+        self.assertIn("Sorry for you! The raid fails", log[-1]["msg"])
+
+        # The raid_blocked alert must be flushed here, not left for a bot
+        # broadcast to pick up later.
+        self.assertFalse(self.gs.games["g1"].get("_pending_alerts"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
