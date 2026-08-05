@@ -2565,9 +2565,11 @@ class GameState:
         if theft_result.get("success"):
             stolen_cards = theft_result.get("stolen_cards", [])
             self._save(gid)
+            n = len(stolen_cards)
+            cards_word = "a card" if n == 1 else f"{n} cards"
             return {
-                "success": True, 
-                "message": f"Stole {len(stolen_cards)} card(s) from {target.get('name', 'player')}",
+                "success": True,
+                "message": f"{thief.get('name', 'Someone')} stole {cards_word} from {target.get('name', 'player')}",
                 "stolen_cards": stolen_cards
             }
         else:
@@ -3444,10 +3446,13 @@ class GameState:
         if theft_result.get("success"):
             stolen_cards = theft_result.get("stolen_cards", [])
             target_name = game["players"][target_id].get("name", "player")
+            thief_name = game["players"].get(thief_id, {}).get("name", "Someone")
             self._save(gid)
+            n = len(stolen_cards)
+            cards_word = "a card" if n == 1 else f"{n} cards"
             return {
                 "success": True,
-                "message": f"Stole {len(stolen_cards)} card(s) from {target_name}",
+                "message": f"{thief_name} stole {cards_word} from {target_name}",
                 "stolen_cards": stolen_cards
             }
         else:

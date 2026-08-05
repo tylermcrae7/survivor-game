@@ -63,22 +63,6 @@ class InteractionEngine:
         if len(it["log"]) > 40:
             it["log"] = it["log"][-40:]
 
-    @staticmethod
-    def _steal_random(game: Dict[str, Any], thief_id: str, victim_id: str, count: int) -> int:
-        """Move up to ``count`` random cards from victim to thief. Returns moved."""
-        thief = game["players"][thief_id]
-        victim = game["players"][victim_id]
-        moved = 0
-        for _ in range(count):
-            hand = victim.get("hand") or []
-            reachable = takeable_indices(hand)
-            if not reachable:
-                break
-            card = hand.pop(random.choice(reachable))
-            thief.setdefault("hand", []).append(card)
-            moved += 1
-        return moved
-
     def _finish(self, game: Dict[str, Any], it: Dict[str, Any], summary: str) -> Dict[str, Any]:
         it["phase"] = "complete"
         it["awaiting"] = []

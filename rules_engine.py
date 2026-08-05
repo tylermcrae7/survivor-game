@@ -157,6 +157,28 @@ REQUIRED_CARD_FIELDS = [
 # a hidden resume spec; the take executes only if the victim declines. If they
 # play the card, EVERY thief in the gate discards 1 — the Guide's multi-taker rule.
 
+def _record_steal_alert(game, thief_id, victim_id, count, source=None):
+	"""Leave a structured record for the server layer to announce.
+
+	Names and counts only — an alert crosses every phone in the room, so a
+	card identity here would undo the redaction the take messages keep.
+	"""
+	if count <= 0:
+		return
+	thief = game["players"].get(thief_id, {})
+	victim = game["players"].get(victim_id, {})
+	cards = "a card" if count == 1 else f"{count} cards"
+	game.setdefault("_pending_alerts", []).append({
+		"event": "steal",
+		"data": {
+			"thiefId": thief_id, "thief": thief.get("name", "?"),
+			"victimId": victim_id, "victim": victim.get("name", "?"),
+			"count": count, "source": source or "steal",
+			"message": f"{thief.get('name', '?')} stole {cards} from {victim.get('name', '?')}",
+		},
+	})
+
+
 def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
 	"""Perform the actual card-taking a gate was holding back."""
 	victim = game["players"].get(spec.get("victimId"))
@@ -186,6 +208,8 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 			return {"success": True,
 			        "message": f"{victim.get('name')} had no cards to take",
 			        "moved": 0}
+		for pid, n in taken.items():
+			_record_steal_alert(game, pid, spec["victimId"], n, spec.get("source"))
 		moved = [f"{names(pid)} took {n} card{'' if n == 1 else 's'}"
 		         for pid, n in taken.items()]
 		if len(moved) == 1:
@@ -210,6 +234,7 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 			                   "only Control The Vote can take a Vote Card"}
 		card = hand.pop(idx)
 		thief.setdefault("hand", []).append(card)
+		_record_steal_alert(game, spec["thiefId"], spec["victimId"], 1, spec.get("source"))
 		card_name = spec.get("cardName") or card.get("name", "a card")
 		return {"success": True,
 		        "message": f"{names(spec['thiefId'])} took {card_name} from {victim.get('name')}",
@@ -228,6 +253,7 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 			if card.get("type") == wanted:
 				hand.pop(i2)
 				thief.setdefault("hand", []).append(card)
+				_record_steal_alert(game, spec["thiefId"], spec["victimId"], 1, spec.get("source"))
 				return {"success": True,
 				        "message": f"{names(spec['thiefId'])} demanded and received "
 				                   f"{card.get('name', wanted)} from {victim.get('name')}"}
@@ -241,6 +267,7 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 			if card.get("type") == "vote":
 				stolen = hand.pop(i2)
 				thief.setdefault("hand", []).append(stolen)
+				_record_steal_alert(game, spec["thiefId"], spec["victimId"], 1, spec.get("source"))
 				return {"success": True,
 				        "message": f"{names(spec['thiefId'])} took {victim.get('name')}'s Vote Card "
 				                   "— they must use it at this Tribal Council"}
@@ -341,7 +368,7 @@ def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
 	if not victim or victim.get("isEliminated"):
 		return False, {"success": True, "message": "Their camp stands empty"}
 
-	spec = {**spec, "victimId": victim_id}
+	spec = {**spec, "victimId": victim_id, "source": source}
 	live_thieves = [t for t in thief_ids
 	                if t in game["players"] and t != victim_id]
 	if not live_thieves:
@@ -2072,7 +2099,8 @@ class SurvivorRulesEngine:
 				extra_stolen = target["hand"].pop(random.choice(reachable))
 				thief["hand"].append(extra_stolen)
 				stolen_cards.append(f"(+{extra_stolen.get('type', 'unknown')} from Camp Raid)")
-				
+
+		_record_steal_alert(game, thief_id, target_id, len(stolen_cards))
 		logger.info(f"Player {thief_id} stole {len(stolen_cards)} cards from {target_id}")
 		return {"success": True, "stolen_cards": stolen_cards}
 		
