@@ -2620,6 +2620,23 @@ function renderTribalCeremony(gameState) {
     const leader = gameState.players?.[leaderId];
     const iAmLeader = leaderId === window.SurvivorGame?.localGameState?.playerId;
     const leaderName = escapeHtml(leader?.name || 'The Council Leader');
+    const isDoubleElimination = currentVote.type === 'double';
+
+    // The fact survives past the announcement: every ceremony screen's eyebrow
+    // keeps saying it (not just the opening line), so it's visible through
+    // Advantage/Discussion/Voting even though this function isn't re-run once
+    // Voting is the active screen — the DOM text is set ahead of time here.
+    const eyebrowScreens = {
+        tribalAdvantageScreen: 'idol',
+        tribalDiscussionScreen: 'speech',
+        votingScreen: 'ballot'
+    };
+    Object.entries(eyebrowScreens).forEach(([screenId, iconName]) => {
+        const eyebrowEl = document.querySelector(`#${screenId} .eyebrow`);
+        if (eyebrowEl) {
+            eyebrowEl.innerHTML = `${icon(iconName)} Tribal council${isDoubleElimination ? ' · Double Elimination' : ''}`;
+        }
+    });
 
     const leaderBar = (label, action, iconName) => iAmLeader
         ? `<div class="game-actions" style="margin-top:1rem">
@@ -2634,6 +2651,14 @@ function renderTribalCeremony(gameState) {
     if (currentScreen === 'tribalAnnouncementScreen') {
         const phraseEl = document.getElementById('tribalLeaderPhrase');
         const contentEl = document.getElementById('tribalAnnouncementContent');
+        const elimLineEl = document.getElementById('ceremonyEliminationLine');
+        if (elimLineEl) {
+            elimLineEl.textContent = isDoubleElimination
+                ? 'TWO torches go out tonight.'
+                : 'One torch goes out tonight.';
+            elimLineEl.style.color = isDoubleElimination ? 'var(--warning)' : '';
+            elimLineEl.style.fontWeight = isDoubleElimination ? '700' : '';
+        }
         if (phraseEl) phraseEl.innerHTML = `
             <p class="leader-phrase">Welcome to Tribal Council. If anyone has a Tribal
             Advantage Card, you may play it now — or anytime before we vote.</p>
