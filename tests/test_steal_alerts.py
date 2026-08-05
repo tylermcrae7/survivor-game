@@ -99,6 +99,8 @@ class SorryForYouRecordsABlockedRaidTest(unittest.TestCase):
     def test_blocking_the_raid_leaves_a_raid_blocked_alert(self):
         from rules_engine import SurvivorRulesEngine
         engine = SurvivorRulesEngine()
+        # Thief holds two discardable cards — a real choice, so the table
+        # is left waiting on them.
         game = _game({"thief": ["extra_vote", "camp_raid"], "victim": ["sorry_for_you"]})
         game["pending_theft"] = {"thiefId": "thief", "thiefIds": ["thief"],
                                  "targetId": "victim", "source": "steal",
@@ -111,6 +113,24 @@ class SorryForYouRecordsABlockedRaidTest(unittest.TestCase):
         data = alerts[0]["data"]
         self.assertIn("Sorry For You", data["message"])
         self.assertIn("Victim", data["message"])
+        self.assertIn("Thief must choose a card to give up", data["message"])
+
+    def test_an_automatic_discard_gets_no_suffix(self):
+        """One discardable card is not a decision — nobody is left waiting."""
+        from rules_engine import SurvivorRulesEngine
+        engine = SurvivorRulesEngine()
+        game = _game({"thief": ["extra_vote"], "victim": ["sorry_for_you"]})
+        game["pending_theft"] = {"thiefId": "thief", "thiefIds": ["thief"],
+                                 "targetId": "victim", "source": "steal",
+                                 "reactive_window_open": True}
+        card = engine.resolve_card({"type": "sorry_for_you"})
+        engine.execute_reactive_interrupt(game, "victim", "thief", card)
+        alerts = [a for a in game.get("_pending_alerts", [])
+                  if a["event"] == "raid_blocked"]
+        self.assertEqual(len(alerts), 1)
+        data = alerts[0]["data"]
+        self.assertIn("Sorry For You", data["message"])
+        self.assertNotIn("must choose a card to give up", data["message"])
 
 
 class ReactiveRoutesWriteHistoryTest(unittest.TestCase):
