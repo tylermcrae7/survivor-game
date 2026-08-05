@@ -27,8 +27,13 @@ import time
 logger = logging.getLogger(__name__)
 
 # Names the island gives its constructs. The UI marks bots with a badge, so
-# these just need to be friendly and distinct from likely human names.
-BOT_NAMES = ["Coconut", "Driftwood", "Barnacle", "Mango", "Puddles", "Flint"]
+# these just need to be friendly and distinct from likely human names. Nine
+# names for at most seven bots (an eight-seat table keeps one human), so the
+# "Coconut 2" numeric-suffix fallback in add_bot should never fire again —
+# it stays only as a backstop. First two letters kept distinct so the camp
+# strip's monograms never collide.
+BOT_NAMES = ["Coconut", "Driftwood", "Barnacle", "Mango", "Puddles", "Flint",
+             "Tiki", "Lagoon", "Guava"]
 
 
 # How much a bot wants each card — used when giving one up (give the lowest)
