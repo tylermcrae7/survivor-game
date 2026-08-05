@@ -3405,17 +3405,24 @@ class GameState:
             hand.insert(card_idx, played_card)
             return {"success": False, "message": interrupt_result.get("message", "Reactive interrupt failed")}
 
-    def complete_pending_theft(self, gid):
+    def complete_pending_theft(self, gid, playerId=None, **kwargs):
         """Complete a pending theft when target chooses not to play reactive cards."""
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        
+
         game = self.games[gid]
         pending_theft = game.get("pending_theft")
-        
+
         if not pending_theft or not pending_theft.get("reactive_window_open"):
             return {"success": False, "message": "No pending theft to complete"}
-        
+
+        # Only the raid's target may let it through. None = the server
+        # itself: the bot driver answering for a bot victim, or the
+        # expiry sweep declaring silence a decline.
+        if playerId is not None and playerId != pending_theft.get("targetId"):
+            return {"success": False,
+                    "message": "Only the raid's target can let it through"}
+
         thief_id = pending_theft.get("thiefId")
         target_id = pending_theft.get("targetId")
         resume = pending_theft.get("_resume")
@@ -4620,9 +4627,14 @@ def api_complete_theft():
     game_id = data.get('gameId')
     if not game_id:
         return {"success": False, "message": "Game ID required"}, 400
-    
+
+    player_id = data.get('playerId')
+    if not player_id:
+        return {"success": False,
+                "message": "playerId required — only the raid's target can let a raid through"}, 400
+
     try:
-        result = game_state.complete_pending_theft(game_id)
+        result = game_state.complete_pending_theft(game_id, playerId=player_id)
         if result.get("success"):
             _flush_steal_alerts(game_id)
             socketio.emit('game_updated', game_state.get_game_state(game_id), room=game_id)
