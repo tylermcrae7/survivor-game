@@ -598,6 +598,10 @@ final class VisualAuditUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'would have received'")).firstMatch
         XCTAssertTrue(erased.waitForExistence(timeout: 15),
                       "the immune player's would-be votes must be on the reveal")
+        // The bars grow in staggered over ~2s; a shot taken the instant the
+        // text lands catches a half-grown bar and audits nothing but the
+        // animation's opening frame.
+        Thread.sleep(forTimeInterval: 2.5)
         shot("16-reveal-immune-votes")
     }
 
