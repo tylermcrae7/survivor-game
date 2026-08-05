@@ -46,7 +46,10 @@ class RocksTestBase(unittest.TestCase):
 
         self.gs = GameState()
         self.game_id = self.gs.create_game(deckMode="official", expansion=True)
-        colors = ["red", "blue", "green", "yellow", "orange", "purple"]
+        # 8 entries so PLAYER_COUNT can go up to the Task A4 cap; the first 6
+        # are unchanged so existing 3-6 player tests see the same seats they
+        # always did.
+        colors = ["red", "blue", "green", "yellow", "orange", "purple", "teal", "pink"]
         self.player_ids = [
             self.gs.add_player(self.game_id, f"Player{i + 1}", colors[i])
             for i in range(self.PLAYER_COUNT)
@@ -543,7 +546,7 @@ class TestPullOrSteal(RocksTestBase):
     """Setup: 1 Purple Rock + (players - 1) Grey Rocks — one rock per player."""
 
     def test_setup_matches_the_player_count_table(self):
-        for count, grey in ((3, 2), (4, 3), (5, 4), (6, 5)):
+        for count, grey in ((3, 2), (4, 3), (5, 4), (6, 5), (7, 6), (8, 7)):
             with self.subTest(players=count):
                 self.PLAYER_COUNT = count
                 self.setUp()
@@ -683,6 +686,43 @@ class TestPoisonedBudgetHeals(RocksTestBase):
             MAX_CHALLENGE_ACTIONS)
 
 
+class TestEightPlayerChallenges(RocksTestBase):
+    """Task A5 smoke tests: every digitally-playable Challenge seats all 8
+    players and runs to completion. The setups audited in Task A5 (Highest
+    Bidder 10+1, 1 Now or 2 Later 5+1, Lowest Score Loses 5+3) are fixed bags
+    regardless of player count — the Guide gives no bigger table, and the
+    odds shift is acceptable house behaviour — so these tests exist to prove
+    they still seat and finish at 8, not to pin new numbers. Pull or Steal
+    already scales its bag with ``_pull_or_steal_grey``, covered by
+    TestPullOrSteal.test_setup_matches_the_player_count_table."""
+    PLAYER_COUNT = 8
+
+    def _run(self, card_type):
+        self.start_challenge(card_type)
+        challenge = self.play_out()
+        self.assertEqual(challenge["phase"], "complete")
+        self.assertIsNotNone(challenge["winnerId"])
+        self.assertEqual(len(challenge["order"]), self.PLAYER_COUNT,
+                         "every one of the 8 players took part")
+        return challenge
+
+    def test_highest_bidder_completes_with_eight(self):
+        self._run("challenge_highest_bidder")
+
+    def test_one_now_or_two_later_completes_with_eight(self):
+        self._run("challenge_1_now_or_2_later")
+
+    def test_lowest_score_loses_completes_with_eight(self):
+        self._run("challenge_lowest_score_loses")
+
+    def test_pull_or_steal_completes_with_eight(self):
+        challenge = self._run("challenge_pull_or_steal")
+        # The bag is empty at completion (every rock has been pulled); the
+        # 1-purple-+-(players-1)-grey table is what filled it, one per player.
+        self.assertEqual(len(challenge["rocks"]), 8,
+                         "1 purple + (players-1) grey = one rock per player")
+
+
 if __name__ == '__main__':
     print("🪨 Testing Survivor: Let's Go To Rocks (combined mode)")
     print("=" * 70)
@@ -691,7 +731,7 @@ if __name__ == '__main__':
     suite = unittest.TestSuite()
     for test_class in (TestNecklace, TestHighestBidder, TestOneNowOrTwoLater,
                        TestLowestScoreLoses, TestPullOrSteal, TestHideNSeekStub,
-                       TestChallengeParticipation):
+                       TestChallengeParticipation, TestEightPlayerChallenges):
         suite.addTests(loader.loadTestsFromTestCase(test_class))
 
     result = unittest.TextTestRunner(verbosity=2, buffer=True).run(suite)
