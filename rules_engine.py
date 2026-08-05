@@ -9,6 +9,7 @@ game mechanics and server infrastructure.
 import json
 import logging
 import random
+import time
 import uuid
 from pathlib import Path
 
@@ -386,6 +387,9 @@ def request_take(game: Dict[str, Any], thief_ids: List[str], victim_id: str,
 		"source": source,
 		"reactive_window_open": True,
 		"_resume": spec,
+		# keep in step with THEFT_WINDOW_SECONDS in survivor_server.py
+		"openedAt": time.time(),
+		"deadline": time.time() + 60.0,
 	}
 	return True, {
 		"success": True,

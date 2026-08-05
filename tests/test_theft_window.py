@@ -75,5 +75,41 @@ class TheRouteRequiresThePlayerTest(unittest.TestCase):
         self.assertIn("playerId", response.get_json()["message"])
 
 
+class TheWindowClosesOnItsOwnTest(unittest.TestCase):
+    def setUp(self):
+        self.gs = _fresh_gamestate()
+
+    def test_an_expired_window_executes_the_take(self):
+        self.gs.games["g1"] = _game_with_window(deadline=time.time() - 1)
+        self.gs.get_game_state("g1")
+        game = self.gs.games["g1"]
+        self.assertIsNone(game.get("pending_theft"))
+        self.assertEqual(len(game["players"]["thief"]["hand"]), 2)
+        self.assertEqual(len(game["players"]["victim"]["hand"]), 1)
+
+    def test_a_live_window_is_left_alone(self):
+        self.gs.games["g1"] = _game_with_window(deadline=time.time() + 60)
+        self.gs.get_game_state("g1")
+        self.assertTrue(self.gs.games["g1"].get("pending_theft"))
+
+    def test_a_window_from_before_deadlines_is_stamped_not_executed(self):
+        """A deploy lands mid-game: heal on read, don't fire instantly."""
+        self.gs.games["g1"] = _game_with_window()   # no deadline key
+        self.gs.get_game_state("g1")
+        window = self.gs.games["g1"]["pending_theft"]
+        self.assertIsNotNone(window, "healed, not swept")
+        self.assertGreater(window.get("deadline", 0), time.time())
+
+    def test_new_windows_are_born_with_a_deadline(self):
+        from rules_engine import request_take
+        game = _game_with_window()
+        game.pop("pending_theft")
+        pending, _ = request_take(
+            game, ["thief"], "victim", "Do Or Die",
+            {"kind": "random_each", "takes": [{"thiefId": "thief", "count": 2}]})
+        self.assertTrue(pending)
+        self.assertGreater(game["pending_theft"].get("deadline", 0), time.time())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

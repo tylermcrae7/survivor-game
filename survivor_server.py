@@ -68,6 +68,11 @@ REVIEW_ACCESS_CODE = os.environ.get('SURVIVOR_REVIEW_ACCESS_CODE', '').strip()
 # wedged a table forever; this is the way out.
 PENALTY_DISCARD_SECONDS = 45.0
 
+# How long a Sorry For You window stays open before silence means "take it".
+# Long enough to find the card and think; short enough that a backgrounded
+# phone can't freeze the table. Bots answer in seconds and never see it.
+THEFT_WINDOW_SECONDS = 60.0
+
 ACCESS_COOKIE = 'survivor_access'
 ACCESS_COOKIE_MAX_AGE = 90 * 24 * 3600  # one season
 _ACCESS_EXEMPT_PATHS = ('/api/access', '/api/access/check', '/api/ping')
@@ -657,6 +662,7 @@ class GameState:
     def get_game_state(self, gid):
         """Returns the complete state of a game (hidden challenge info stripped)."""
         self._sweep_expired_discards(gid)
+        self._sweep_expired_theft(gid)
         game = self.games.get(gid)
         if not game: return None
         # Backstop, on the live object rather than the copy so the identity is
@@ -1169,6 +1175,30 @@ class GameState:
         window["awaiting"] = []
         logger.info(f"Penalty discard window expired in game {gid} — forfeited")
         self._close_pending_discards(gid)
+        return True
+
+    def _sweep_expired_theft(self, gid):
+        """Silence is a decline: an expired Sorry For You window executes.
+
+        Same shape as _sweep_expired_discards, and for the same reason — a
+        blocking window with no way out once wedged a game forever. Runs on
+        the read path; somebody is always looking.
+        """
+        game = self.games.get(gid)
+        window = (game or {}).get("pending_theft")
+        if not window or not window.get("reactive_window_open"):
+            return False
+        deadline = window.get("deadline")
+        if deadline is None:
+            # Opened before deadlines existed (a deploy mid-game): heal on
+            # read rather than fire on sight.
+            window["deadline"] = time.time() + THEFT_WINDOW_SECONDS
+            return False
+        if time.time() < deadline:
+            return False
+        logger.info(f"Sorry For You window expired in {gid} — the take executes")
+        self.complete_pending_theft(gid)
+        _flush_steal_alerts(gid)
         return True
 
     def _discard_block_reason(self, game):
@@ -2554,7 +2584,9 @@ class GameState:
                 "thiefIds": [thief_id],
                 "targetId": target_id,
                 "source": "steal",
-                "reactive_window_open": True
+                "reactive_window_open": True,
+                "openedAt": time.time(),
+                "deadline": time.time() + THEFT_WINDOW_SECONDS,
             }
             self._save(gid)
             return {
