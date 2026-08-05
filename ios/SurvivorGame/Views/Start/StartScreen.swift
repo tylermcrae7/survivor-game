@@ -180,7 +180,7 @@ private struct CreateGameSheet: View {
                 Section {
                     Picker("Deck", selection: $viewModel.deckMode) {
                         Text("Official — the 67-card box").tag("official")
-                        Text("Extended — +7 house cards").tag("extended")
+                        Text("Extended — +6 house cards").tag("extended")
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
@@ -194,7 +194,7 @@ private struct CreateGameSheet: View {
                         .foregroundStyle(Torch.Color.torch)
                         .textCase(nil)
                 } footer: {
-                    Text("Extended adds Idol Nullifier, Steal A Vote, Block A Vote and Grant Immunity. Rocks adds the 5 Orange Challenge Cards.")
+                    Text("Extended adds Idol Nullifier, Steal A Vote and Block A Vote. Rocks adds the 5 Orange Challenge Cards.")
                         .font(Torch.Font.body(Torch.TextSize.xs))
                         .foregroundStyle(Torch.Color.textSecondary)
                 }
