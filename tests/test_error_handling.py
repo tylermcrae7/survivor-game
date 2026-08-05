@@ -80,18 +80,59 @@ def test_add_player_errors():
         assert result["success"] is False
         assert "already taken" in result["message"]
 
-        # Fill the game up to the 6-player maximum
-        for i in range(2, 7):
+        # Fill the game up to the 8-player maximum (Task A4)
+        for i in range(2, 9):
             assert gs.validate_new_player(game_id, f"Player{i}", f"color{i}")["success"] is True
             gs.add_player(game_id, f"Player{i}", f"color{i}")
 
-        # Test: Game full (7th player)
-        result = gs.validate_new_player(game_id, "Player7", "color7")
+        # Test: Game full (9th player)
+        result = gs.validate_new_player(game_id, "Player9", "color9")
         print(f"Game full: {result}")
         assert result["success"] is False
-        assert "maximum 6 players" in result["message"]
+        assert "maximum 8 players" in result["message"]
 
         print("✅ player join validation tests passed!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_eight_player_cap_and_bots():
+    """Task A4: the caps move to 8 — a 7th and 8th player join, a 9th is
+    refused, and add_bot can fill an all-computer lobby to 8 as well."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing the eight-player cap ===")
+        game_id = gs.create_game()
+
+        for i in range(1, 9):
+            result = gs.validate_new_player(game_id, f"Human{i}", None)
+            assert result["success"] is True, f"player {i} should be able to join: {result}"
+            pid = gs.add_player(game_id, f"Human{i}")
+            assert pid, f"player {i} should have been added"
+
+        result = gs.validate_new_player(game_id, "Human9", None)
+        assert result["success"] is False
+        assert "maximum 8 players" in result["message"]
+        assert gs.add_bot(game_id)["success"] is False, \
+            "add_bot must also refuse a full table"
+        print("✅ a 7th and 8th human join; a 9th is refused")
+
+        print("=== Testing add_bot fills an empty lobby to 8 ===")
+        bot_game_id = gs.create_game()
+        for i in range(8):
+            result = gs.add_bot(bot_game_id)
+            assert result["success"] is True, f"bot {i + 1} should have joined: {result}"
+        game = gs.games[bot_game_id]
+        assert len(game["players"]) == 8
+        names = [p["name"] for p in game["players"].values()]
+        assert len(set(names)) == 8, f"every bot needs a distinct name: {names}"
+
+        result = gs.add_bot(bot_game_id)
+        assert result["success"] is False, "a 9th bot must be refused"
+        print("✅ add_bot fills an all-computer lobby to 8, and stops there")
+
+        print("✅ eight-player cap tests passed!\n")
     finally:
         os.chdir(original_cwd)
         shutil.rmtree(tmp, ignore_errors=True)
@@ -466,6 +507,7 @@ if __name__ == "__main__":
 
     try:
         test_add_player_errors()
+        test_eight_player_cap_and_bots()
         test_steal_card_errors()
         test_cast_vote_errors()
         test_advance_tribal_phase_errors()

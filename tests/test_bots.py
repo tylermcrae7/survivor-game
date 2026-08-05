@@ -47,15 +47,16 @@ def test_add_remove_bot():
         assert gs.games[gid]["players"][bot_id]["isBot"] is True
         assert bot_id in gs.games[gid]["turnOrder"]
 
-        # Test: bot names never collide
+        # Test: bot names never collide, even past bots.py's 6-name roster
+        # (Task A4 moved the cap to 8, one human + 7 bots)
         names = {result["name"]}
-        for _ in range(4):
+        for _ in range(6):
             r = gs.add_bot(gid)
             assert r["success"], r
             names.add(r["name"])
-        assert len(names) == 5
+        assert len(names) == 7
 
-        # Test: seventh player refused (cap 6)
+        # Test: ninth player refused (cap 8)
         r = gs.add_bot(gid)
         print(f"Over cap: {r}")
         assert r["success"] is False

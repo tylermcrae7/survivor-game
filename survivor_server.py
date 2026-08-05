@@ -64,6 +64,11 @@ ALLOWED_ORIGINS = os.environ.get(
 # extra secret to manage and stale cookies die the moment the code changes.
 ACCESS_CODE = os.environ.get('SURVIVOR_ACCESS_CODE', '').strip()
 REVIEW_ACCESS_CODE = os.environ.get('SURVIVOR_REVIEW_ACCESS_CODE', '').strip()
+
+# Eight seats at the fire (Task A4) — six printed colours plus Purple and
+# Pink (seats.py). One source of truth for both the human-join and add_bot
+# capacity guards.
+MAX_PLAYERS = 8
 # How long a raider has to choose which card they give up before the game
 # picks for them. A blocking window with no way out is how the web app once
 # wedged a table forever; this is the way out.
@@ -459,11 +464,12 @@ class GameState:
         if not is_valid:
             return {"success": False, "message": error}
 
-        # Table size first: at six players every seat is also taken, and
-        # "maximum 6 players" explains the rule where "every seat is taken"
+        # Table size first: at MAX_PLAYERS every seat is also taken, and
+        # "maximum N players" explains the rule where "every seat is taken"
         # only describes the symptom.
-        if len(g["players"]) >= 6:
-            return {"success": False, "message": "Game is full — maximum 6 players."}
+        if len(g["players"]) >= MAX_PLAYERS:
+            return {"success": False,
+                    "message": f"Game is full — maximum {MAX_PLAYERS} players."}
 
         # Colour is a seat now, not a free-form value. An unrecognised one is
         # not an error — it falls through to auto-assign, because an installed
@@ -2435,12 +2441,23 @@ class GameState:
             return {"success": False, "message": "Game not found"}
         if g.get("phase") != "lobby":
             return {"success": False, "message": "Computer players can only join in the lobby"}
-        if len(g["players"]) >= 6:
-            return {"success": False, "message": "Game is full — maximum 6 players."}
+        if len(g["players"]) >= MAX_PLAYERS:
+            return {"success": False,
+                    "message": f"Game is full — maximum {MAX_PLAYERS} players."}
 
         taken_names = {p.get("name", "").lower() for p in g["players"].values()}
         name = next((n for n in bots_module.BOT_NAMES
                      if n.lower() not in taken_names), None)
+        if name is None:
+            # bots.py's roster is 6 names — out of scope to extend here — but
+            # MAX_PLAYERS is 8, so an all-computer lobby can ask for a 7th and
+            # 8th. Extend deterministically with a numeric suffix rather than
+            # refusing a legal bot.
+            for suffix in range(2, MAX_PLAYERS + 1):
+                name = next((f"{base} {suffix}" for base in bots_module.BOT_NAMES
+                            if f"{base} {suffix}".lower() not in taken_names), None)
+                if name:
+                    break
         if name is None:
             return {"success": False, "message": "The island is out of computer players"}
 
