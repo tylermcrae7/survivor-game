@@ -1239,6 +1239,8 @@ class SurvivorRulesEngine:
 					return False, "The Spy Shack requires choosing which card to take (takeIndex)"
 
 		elif card_type == "reward_challenge_do_or_die":
+			if params.get("targetId") == player_id:
+				return False, "Do Or Die needs an opponent — you can't challenge yourself"
 			if params.get("choice") not in ("rock", "paper", "scissors"):
 				return False, "Do Or Die requires your secret throw: rock, paper or scissors"
 			if game.get("interaction"):

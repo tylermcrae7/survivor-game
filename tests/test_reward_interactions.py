@@ -90,6 +90,13 @@ class TestDoOrDie(InteractionTestBase):
         self.assertIn("reward_challenge_do_or_die",
                       [c["type"] for c in self.hand(self.me)])
 
+    def test_you_cannot_challenge_yourself(self):
+        self.give_card(self.me, "reward_challenge_do_or_die")
+        result = self.play(self.me, "reward_challenge_do_or_die",
+                           targetId=self.me, choice="rock")
+        self.assertFalse(result["success"])
+        self.assertIn("yourself", result["message"])
+
     def test_opponent_makes_a_real_throw_and_winner_steals_two(self):
         opponent = self.start(choice="rock")
         it = self.game["interaction"]
