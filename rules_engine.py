@@ -1273,16 +1273,25 @@ class SurvivorRulesEngine:
 			
 		# Execute the effect
 		effect_result = effect_func()
-		
-		# Record the played advantage
-		current_vote.setdefault("advantageCardsPlayed", []).append({
-		"player": player_id,
-		"type": advantage_type,
-		"target": target_id
-		})
-		
+
+		# Record the played advantage — this list is broadcast to the whole
+		# room (the "Advantages Played" history), so a secret effect (Steal A
+		# Vote, Block A Vote) must not appear in it: that would announce
+		# exactly who did what to whom, on a different channel than the
+		# eventLog/narrator leaks this same task closes.
+		if not effect_result.get("secret"):
+			current_vote.setdefault("advantageCardsPlayed", []).append({
+			"player": player_id,
+			"type": advantage_type,
+			"target": target_id
+			})
+
 		logger.info(f"Player {player_id} played tribal advantage {advantage_type}")
-		return {"success": True, "message": effect_result.get("message", f"Played {advantage_type} advantage")}
+		response = {"success": True,
+		            "message": effect_result.get("message", f"Played {advantage_type} advantage")}
+		if effect_result.get("secret"):
+			response["secret"] = True
+		return response
 		
 	# ═══════════════════════════════════════════════════════════════════════════════════
 	# CATEGORY-SPECIFIC VALIDATION METHODS
@@ -2148,34 +2157,45 @@ class SurvivorRulesEngine:
 		}
 
 	def _effect_steal_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute steal vote tribal advantage effect."""
+		"""Execute steal vote tribal advantage effect.
+
+		Task S2: an end-game secret. The actor's own response still says who
+		and what; the room never hears it — see "secret" below, which
+		`handle()`'s eventLog append and the `card_played` narrator event both
+		respect.
+		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
 			return {"message": "Steal vote requires a valid target player"}
-			
+
 		stealer = game["players"][player_id]
 		target = game["players"][target_id]
-		
+
 		# Remove one vote from target (they can't vote)
 		target["voteBanned"] = True
 		# Give extra vote to stealer
 		stealer["extraVotes"] = stealer.get("extraVotes", 0) + 1
-		
-		return {"message": f"{stealer['name']} stole a vote from {target['name']}"}
-		
+
+		return {"message": f"{stealer['name']} stole a vote from {target['name']}",
+		        "secret": True}
+
 	def _effect_block_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
-		"""Execute block vote tribal advantage effect."""
+		"""Execute block vote tribal advantage effect.
+
+		Task S2: same secrecy contract as Steal A Vote — see its docstring.
+		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
 			return {"message": "Block vote requires a valid target player"}
-			
+
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
+
 		# Block target from voting this tribal council
 		target["voteBanned"] = True
-		
-		return {"message": f"{player['name']} blocked {target['name']} from voting"}
+
+		return {"message": f"{player['name']} blocked {target['name']} from voting",
+		        "secret": True}
 
 	# ═══════════════════════════════════════════════════════════════════════════════════
 	# GAME MECHANICS - Centralized theft, combat, and effect systems

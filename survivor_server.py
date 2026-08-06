@@ -2836,6 +2836,12 @@ class GameState:
             response["challenge_started"] = challenge_started
         if effect_result.get("start_interaction"):
             response["interaction_started"] = bool(game.get("interaction"))
+        # Task S2: an effect that marked itself secret (Steal A Vote, Block A
+        # Vote) rides that flag up to the top level of the response — this is
+        # the `result` handle() inspects, not the nested `card_effect` blob —
+        # so its eventLog append and card_played narrator event both skip it.
+        if effect_result.get("secret"):
+            response["secret"] = True
         return response
 
     # ═══════════════════════════ Reward Challenge Interactions ═══════════════════════════
@@ -3640,9 +3646,13 @@ def _append_event_log(gid, result):
     handle() does this for every routed action; the hand-rolled reactive
     routes must do it too or a raid that met a Sorry For You vanishes
     from history (found live: the web drawer froze on "Theft initiated").
+
+    Task S2: a result marked `secret` (Steal A Vote, Block A Vote) never
+    lands here — the actor still gets the message on their own HTTP
+    response, but the table's shared history stays dark.
     """
     if not isinstance(result, dict) or not result.get("message") \
-            or not result.get("success", True):
+            or not result.get("success", True) or result.get("secret"):
         return
     log_list = game_state.games.get(gid, {}).setdefault("eventLog", [])
     log_msg = result.get("log_message") or result["message"]
@@ -3664,8 +3674,11 @@ def _emit_narrator_events(gid, action, request_data, narrator_before, game_after
         # cards move, so this narrated only from `steal_card`'s own result and
         # double-toasted the flush.
 
-        # Card play
-        if action == 'play_card':
+        # Card play — a secret effect (Task S2: Steal A Vote, Block A Vote)
+        # never narrates to the room. The actor already has the full message
+        # on their own HTTP response; state (voteBanned, extraVotes) still
+        # rides the ordinary push below.
+        if action == 'play_card' and not (isinstance(result, dict) and result.get('secret')):
             player_id = request_data.get('playerId')
             card_index = request_data.get('cardIndex')
             # Try to get card name from result or player's hand

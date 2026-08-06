@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Structured steal alerts: every card movement leaves a record to announce."""
-import os, sys, unittest
+import os, shutil, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -172,6 +172,156 @@ class ReactiveRoutesWriteHistoryTest(unittest.TestCase):
         # The raid_blocked alert must be flushed here, not left for a bot
         # broadcast to pick up later.
         self.assertFalse(self.gs.games["g1"].get("_pending_alerts"))
+
+
+class SecretTribalAdvantagesTest(unittest.TestCase):
+    """Steal A Vote and Block A Vote work in the dark, as end-game secrets should.
+
+    Task S2 contract: a secret card effect (a) never lands in the eventLog,
+    (b) never emits the `card_played` narrator event, (c) still returns its
+    full message to the ACTOR's own HTTP response, (d) still mutates state
+    normally — the target's own phone sees WHAT happened without being told
+    WHO. Control The Vote is deliberately excluded: the Guide's own card is
+    public by design.
+    """
+
+    def setUp(self):
+        self.original_cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.original_cwd, 'survivor_cards.json'), self.tmp)
+        os.chdir(self.tmp)
+        import survivor_server
+        self.server = survivor_server
+        self.gs = survivor_server.GameState()
+        survivor_server.game_state = self.gs
+        self.client = survivor_server.app.test_client()
+
+        self.gid = self.gs.create_game()
+        self.ids = [self.gs.add_player(self.gid, n) for n in ("Ana", "Ben", "Cam", "Dee")]
+        self.gs.start_full_game(self.gid)
+        self.game = self.gs.games[self.gid]
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = [{"type": "vote"}]
+        self.gs.rules_engine.sync_vote_counters(self.game)
+        self.gs._trigger_tribal_council(self.game, "single")
+        self.game["currentVote"]["phase"] = "advantage_play"
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def give(self, pid, card_type):
+        self.game["players"][pid]["hand"].append({"type": card_type})
+
+    def post(self, path, payload):
+        return self.client.post(path, json=payload)
+
+    # ── the effects mark themselves secret ──────────────────────────────
+
+    def test_effects_mark_themselves_secret(self):
+        actor, victim = self.ids[1], self.ids[2]
+        engine = self.gs.rules_engine
+        self.assertTrue(
+            engine._effect_steal_vote(self.game, actor, {}, {"targetId": victim}).get("secret"))
+        self.assertTrue(
+            engine._effect_block_vote(self.game, actor, {}, {"targetId": victim}).get("secret"))
+
+    # ── played through the tribal advantage door ────────────────────────
+
+    def test_steal_vote_leaves_no_trace_in_the_room(self):
+        from tests.test_narrator_events import captured_events, of_type
+        actor, victim = self.ids[1], self.ids[2]
+        self.give(actor, "steal_vote")
+        before_log = len(self.game.get("eventLog") or [])
+
+        with captured_events() as events:
+            res = self.post('/api/tribal/advantage',
+                             {"gameId": self.gid, "playerId": actor,
+                              "advantageType": "steal_vote", "targetId": victim})
+
+        body = res.get_json()
+        self.assertTrue(body["success"], body.get("message"))
+        # (c) the actor's own HTTP response still carries the full message
+        self.assertIn(self.game["players"][victim]["name"], body["message"])
+        # (d) state mutates normally — the target really loses their vote
+        self.assertTrue(self.game["players"][victim]["voteBanned"])
+        self.assertEqual(self.game["players"][actor].get("extraVotes"), 1)
+        # (a) never lands in the eventLog
+        self.assertEqual(len(self.game.get("eventLog") or []), before_log)
+        # (b) never emits card_played — nor anything else naming the actor
+        self.assertEqual(of_type(events, 'card_played'), [])
+        # Not recorded in the room-facing "Advantages Played" history either
+        self.assertFalse(self.game["currentVote"].get("advantageCardsPlayed"))
+
+    def test_block_vote_leaves_no_trace_in_the_room(self):
+        from tests.test_narrator_events import captured_events, of_type
+        actor, victim = self.ids[1], self.ids[2]
+        self.give(actor, "block_vote")
+        before_log = len(self.game.get("eventLog") or [])
+
+        with captured_events() as events:
+            res = self.post('/api/tribal/advantage',
+                             {"gameId": self.gid, "playerId": actor,
+                              "advantageType": "block_vote", "targetId": victim})
+
+        body = res.get_json()
+        self.assertTrue(body["success"], body.get("message"))
+        self.assertIn(self.game["players"][victim]["name"], body["message"])
+        self.assertTrue(self.game["players"][victim]["voteBanned"])
+        self.assertEqual(len(self.game.get("eventLog") or []), before_log)
+        self.assertEqual(of_type(events, 'card_played'), [])
+        self.assertFalse(self.game["currentVote"].get("advantageCardsPlayed"))
+
+    # ── the same secrecy holds through the ordinary turn route ──────────
+
+    def test_steal_vote_via_the_generic_play_card_route_stays_dark_too(self):
+        """Tribal advantage cards are also playable through the ordinary turn
+        route while a council is in session — the same secrecy must hold."""
+        from tests.test_narrator_events import captured_events, of_type
+        actor, victim = self.ids[1], self.ids[2]
+        self.give(actor, "steal_vote")
+        idx = len(self.game["players"][actor]["hand"]) - 1
+        before_log = len(self.game.get("eventLog") or [])
+
+        with captured_events() as events:
+            res = self.post('/api/turn/play_card',
+                             {"gameId": self.gid, "playerId": actor, "cardIdx": idx,
+                              "params": {"targetId": victim}})
+
+        body = res.get_json()
+        self.assertTrue(body["success"], body.get("message"))
+        self.assertTrue(self.game["players"][victim]["voteBanned"])
+        self.assertEqual(len(self.game.get("eventLog") or []), before_log)
+        self.assertEqual(of_type(events, 'card_played'), [])
+
+    # ── Control The Vote is unaffected — it stays loud by design ────────
+
+    def test_control_the_vote_stays_loud(self):
+        actor, victim = self.ids[1], self.ids[2]
+        self.give(actor, "control_the_vote")
+        before_log = len(self.game.get("eventLog") or [])
+
+        res = self.post('/api/tribal/advantage',
+                         {"gameId": self.gid, "playerId": actor,
+                          "advantageType": "control_the_vote", "targetId": victim})
+
+        body = res.get_json()
+        self.assertTrue(body["success"], body.get("message"))
+        self.assertGreater(len(self.game.get("eventLog") or []), before_log)
+        self.assertTrue(self.game["currentVote"].get("advantageCardsPlayed"))
+
+    # ── the Voting Box already skips a banned voter — pinned here ───────
+
+    def test_a_banned_voter_never_appears_in_the_waiting_on_refusal(self):
+        actor, victim = self.ids[1], self.ids[2]
+        self.give(actor, "steal_vote")
+        self.post('/api/tribal/advantage',
+                  {"gameId": self.gid, "playerId": actor,
+                   "advantageType": "steal_vote", "targetId": victim})
+        self.assertTrue(self.game["players"][victim]["voteBanned"])
+
+        missing = self.gs._ballot_box_missing(self.game)
+        self.assertNotIn(self.game["players"][victim]["name"], missing)
 
 
 if __name__ == "__main__":
