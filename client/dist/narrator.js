@@ -67,6 +67,14 @@ const NARRATOR_TEMPLATES = {
         "Double the power! {player} will cast two votes!"
     ],
 
+    // Alliances — the two partners get a blocking overlay instead (see
+    // handleGameEvent's 'alliance' case); this is what the rest of the
+    // table sees in their place.
+    alliance_formed: [
+        "{initiator} forms an alliance with {ally} — they raid {victim}'s camp together!",
+        "An alliance is struck! {initiator} and {ally} descend on {victim}'s camp."
+    ],
+
     // Tribal Council
     tribal_drawn: [
         "A Tribal Council card! The torches are lit. Someone's going home tonight.",
@@ -595,6 +603,20 @@ class GameNarrator {
             case 'winner':
                 this.narrateWinner(player, event.votes);
                 break;
+            case 'alliance': {
+                // The two partners get a blocking overlay — a moment, not a
+                // mystery card that just silently appeared in their hand.
+                // Everyone else at the table gets the ordinary narration.
+                const myId = window.SurvivorGame?.localGameState?.playerId;
+                if (myId && (myId === event.initiatorId || myId === event.allyId)) {
+                    this.showAllianceOverlay(event, myId);
+                } else {
+                    this.queueNarration('alliance_formed', {
+                        initiator: event.initiator, ally: event.ally, victim: event.victim
+                    }, 'card_play');
+                }
+                break;
+            }
             default:
                 console.log('Narrator: unhandled event type:', type, event);
         }
@@ -776,6 +798,31 @@ class GameNarrator {
         while (this.historyEl.children.length > this.maxEvents) {
             this.historyEl.removeChild(this.historyEl.lastChild);
         }
+    }
+
+    // The two alliance partners get a blocking overlay — mirrors the raid
+    // dialog's presentation (showModal, no close button, dismissed by tap).
+    // `showModal`/`hideModal`/`icon`/`escapeHtml` are ui.js globals; both
+    // scripts share the page's global scope, same as every other narration
+    // reaching into the DOM the UI module owns.
+    showAllianceOverlay(event, myId) {
+        const partnerName = myId === event.initiatorId ? event.ally : event.initiator;
+        const victimName = event.victim || 'their camp';
+        SoundManager.play('card_play');
+        const content = `
+            <div class="raid-dialog">
+                <div class="raid-mark">${icon('idol', 'raid-icon')}</div>
+                <p class="raid-line">You and <strong>${escapeHtml(partnerName)}</strong> just formed
+                an alliance — together you raided <strong>${escapeHtml(victimName)}</strong>'s camp.</p>
+                <p class="picker-hint">The spoils are in your hand.</p>
+                <button class="btn btn-primary touch-target" data-alliance-dismiss>Continue</button>
+            </div>
+        `;
+        showModal(content, { title: 'An Alliance Is Formed', showClose: false });
+        setTimeout(() => {
+            document.querySelector('[data-alliance-dismiss]')
+                ?.addEventListener('click', () => hideModal(), { once: true });
+        }, 0);
     }
 
     // Specific narration methods

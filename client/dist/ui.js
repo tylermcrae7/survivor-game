@@ -673,6 +673,7 @@ function renderImmunityPlayers(gameState) {
         const safeId = escapeHtml(player.id);
         const isMe = player.id === me;
         const shielded = !!player.immunityIdolProtection;
+        const nullified = !!player.idolNullified;
         const actions = [];
         // Your idol protects you (or an ally — tap their row while holding it)
         if (iHoldIdol && !myself.immunityPlayed && !shielded) {
@@ -688,10 +689,18 @@ function renderImmunityPlayers(gameState) {
                               ${icon('x')} Nullify
                           </button>`);
         }
+        // A nullified idol stops advertising protection — the label flips so
+        // it doesn't stay lit forever after a nullifier lands (server already
+        // drops these players from protectedPlayers at reveal; the label just
+        // never caught up before).
+        const shieldLabel = shielded
+            ? (nullified
+                ? ` <span class="panel-sub" style="color: var(--warning)">· IDOL NULLIFIED — votes count</span>`
+                : ` <span class="panel-sub">· protected</span>`)
+            : '';
         return `
             <div class="immunity-player" data-player-id="${safeId}">
-                <span>${safeName}${isMe ? ' (you)' : ''}${shielded
-                    ? ` <span class="panel-sub">· protected</span>` : ''}</span>
+                <span>${safeName}${isMe ? ' (you)' : ''}${shieldLabel}</span>
                 <div class="immunity-actions">${actions.join('')}</div>
             </div>
         `;
@@ -1440,13 +1449,26 @@ function escapeHtml(text) {
 function renderVoteTargets(gameState) {
     const container = document.getElementById('voteTargets');
     if (!container) return;
-    
+
     const playerId = window.SurvivorGame?.localGameState.playerId;
+
+    // A banned ballot never renders — the owner sees only what happened to
+    // them, never who did it (Steal A Vote / Block A Vote stay dark at the
+    // table; nothing here is shown to anyone else).
+    if (gameState.players?.[playerId]?.voteBanned) {
+        container.innerHTML = `
+            <p class="panel-sub" style="text-align:center">
+                Your vote was taken tonight — who took it stays in the shadows.
+            </p>
+        `;
+        return;
+    }
+
     const eligibleTargets = window.SurvivorGame?.getEligibleVoteTargets(gameState, playerId) || [];
-    
+
     const html = eligibleTargets.map(player => createVoteTargetElement(player)).join('');
     container.innerHTML = `<div class="vote-targets">${html}</div>`;
-    
+
     // Setup vote interactions
     setupVoteInteractions();
 }
@@ -2780,9 +2802,18 @@ function renderFinalTribal(gameState) {
 
     let action = '';
     if (ft.phase === 'questions' || ft.phase === 'deliberation') {
-        action = iAmLeader
-            ? `<div class="game-actions"><button class="btn btn-enhanced touch-target" data-action="beginFinalVote">${icon('ballot')} Call for the Vote</button></div>`
-            : `<p class="panel-sub" style="text-align:center">${name(ft.leader)} leads the final council…</p>`;
+        if (iAmLeader) {
+            action = `<div class="game-actions"><button class="btn btn-enhanced touch-target" data-action="beginFinalVote">${icon('ballot')} Call for the Vote</button></div>`;
+        } else if (ft.phase === 'deliberation' && iAmJuror) {
+            // The finger only raises once deliberation opens — hidden during
+            // questions, same as every other pre-deliberation juror view.
+            const juryReady = ft.juryReady || [];
+            action = juryReady.includes(myId)
+                ? `<p class="panel-sub" style="text-align:center">Your finger is raised. ${juryReady.length} of ${jury.length} jurors are ready to vote.</p>`
+                : `<div class="game-actions"><button class="btn btn-enhanced touch-target" data-action="signalJuryReady">${icon('ballot')} Ready to Vote</button></div>`;
+        } else {
+            action = `<p class="panel-sub" style="text-align:center">${name(ft.leader)} leads the final council…</p>`;
+        }
     } else if (ft.phase === 'voting') {
         if (iAmJuror && !ft.votes?.[myId]) {
             action = `
@@ -2850,6 +2881,18 @@ function renderFinalTribal(gameState) {
         beginBtn.addEventListener('click', async () => {
             await window.SurvivorGame?.safeApiCall('/final/advance', {
                 gameId: window.SurvivorGame.localGameState.gameId, phase: 'voting'
+            });
+        });
+    }
+
+    // Juror raises a finger — only rendered once deliberation opens, but the
+    // server is the real guard (and now says why if a race slips through).
+    const readyBtn = container.querySelector('[data-action="signalJuryReady"]');
+    if (readyBtn) {
+        readyBtn.addEventListener('click', async () => {
+            hapticFeedback('medium');
+            await window.SurvivorGame?.safeApiCall('/final/ready', {
+                gameId: window.SurvivorGame.localGameState.gameId, juryMemberId: myId
             });
         });
     }
