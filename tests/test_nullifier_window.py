@@ -286,8 +286,6 @@ class NullifiedIdolReachesTheStatePayloadTest(NullifierWindowTest):
         self.assertTrue(wire_player.get("immunityIdolProtection"))
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
 
 
 class NullifierCannotFreezeTheCouncilTest(NullifierWindowTest):
@@ -382,3 +380,7 @@ class NullifierCannotFreezeTheCouncilTest(NullifierWindowTest):
             self.gid, playerId=non_leaders[0])["windowClosed"])
         self.assertTrue(self.gs.decline_nullifier(
             self.gid, playerId=non_leaders[1])["windowClosed"])
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
