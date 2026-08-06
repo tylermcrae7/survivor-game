@@ -78,9 +78,9 @@ struct ImmunityView: View {
                         let holder = record.playerId.flatMap { players?[$0]?.name }
                         let shielded = record.targetId.flatMap { players?[$0]?.name }
                             ?? holder ?? "Someone"
-                        // The protection flag itself never clears once an Idol
-                        // Nullifier answers it — idolNullified is the only
-                        // signal this label is now a lie.
+                        // Nullification clears protection immediately; this
+                        // durable flag explains why the played idol no longer
+                        // shields its target.
                         let nullified = record.targetId.flatMap { players?[$0]?.idolNullified } ?? false
                         HStack(spacing: 8) {
                             Image(systemName: nullified ? "shield.slash" : "shield.fill")

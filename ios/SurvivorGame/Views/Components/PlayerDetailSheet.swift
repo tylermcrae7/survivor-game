@@ -116,15 +116,12 @@ struct PlayerDetailSheet: View {
         if hasNecklace {
             out.append(("Wears the Necklace", "shield.lefthalf.filled", Torch.Color.juryGold))
         }
-        if player.immunityIdolProtection {
-            // The flag itself never clears once a nullifier answers it —
-            // idolNullified is the only signal this badge would otherwise be
-            // advertising a protection that no longer exists.
-            if player.idolNullified {
-                out.append(("Idol Nullified — Votes Count", "shield.slash", Torch.Color.danger))
-            } else {
-                out.append(("Protected by an Idol", "shield.fill", Torch.Color.juryGold))
-            }
+        // The server clears protection when a nullifier lands, so the durable
+        // nullification signal must be checked independently and first.
+        if player.idolNullified {
+            out.append(("Idol Nullified — Votes Count", "shield.slash", Torch.Color.danger))
+        } else if player.immunityIdolProtection {
+            out.append(("Protected by an Idol", "shield.fill", Torch.Color.juryGold))
         }
         if player.isEliminated {
             out.append((isJury ? "On the jury" : "Torch snuffed",

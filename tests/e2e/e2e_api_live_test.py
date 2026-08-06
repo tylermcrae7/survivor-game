@@ -438,6 +438,7 @@ if g.get("phase") in ("final_tribal", "final"):
     check("most_recent_eliminee_leads_final_tribal",
           ft.get("leader") == (g.get("jury") or [None])[-1], ft.get("leader"))
 
+    api("/api/final/advance", {"gameId": gid, "phase": "deliberation"})
     api("/api/final/advance", {"gameId": gid, "phase": "voting"})
     finalists = ft.get("finalists", [])
     jury = ft.get("jury", [])

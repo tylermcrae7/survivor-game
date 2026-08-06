@@ -24,10 +24,10 @@ struct PlayerState: Codable, Identifiable, Equatable {
     var drawBonus: Int?
     var stealBonus: Int?
     var immunityIdolProtection: Bool
-    /// An Idol Nullifier answered this player's idol — the protection flag
-    /// above stays lit (the server never clears it), so this is the only
-    /// signal that the "protected" label it drives is now a lie. Optional,
-    /// default false: an older server never sent it.
+    /// An Idol Nullifier answered this player's idol. The server clears
+    /// `immunityIdolProtection` and sets this durable explanation so clients
+    /// can distinguish a nullified idol from no idol having been played.
+    /// Optional, default false: an older server never sent it.
     var idolNullified: Bool
     var campRaidedBy: String?
     var inheritanceTarget: String?

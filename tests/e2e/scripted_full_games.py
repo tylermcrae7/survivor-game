@@ -360,6 +360,8 @@ def run_scripted_game_to_finish(names, deck_mode="official", expansion=False, la
     expect(f"{label}: the most recently eliminated player is the Final Tribal Council Leader",
            ft.get("leader") == g["jury"][-1], name(g, ft.get("leader", "")))
 
+    _, r = api("/api/final/advance", {"gameId": gid, "phase": "deliberation"})
+    expect(f"{label}: final tribal advances to deliberation", r.get("success"), r.get("message"))
     _, r = api("/api/final/advance", {"gameId": gid, "phase": "voting"})
     expect(f"{label}: final tribal advances to voting", r.get("success"), r.get("message"))
 
@@ -455,6 +457,8 @@ expect("the official three final-tribal questions are asked",
 expect("the most recently eliminated player is the Final Tribal Council Leader",
        ft.get("leader") == g["jury"][-1], name(g, ft.get("leader", "")))
 
+_, r = api("/api/final/advance", {"gameId": gid, "phase": "deliberation"})
+expect("final tribal advances to deliberation", r.get("success"), r.get("message"))
 _, r = api("/api/final/advance", {"gameId": gid, "phase": "voting"})
 expect("final tribal advances to voting", r.get("success"), r.get("message"))
 

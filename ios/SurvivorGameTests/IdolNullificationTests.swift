@@ -2,10 +2,10 @@ import Testing
 import SwiftUI
 @testable import SurvivorGame
 
-/// `idolNullified` used to reach the phone nowhere at all — the flag that
-/// `immunityIdolProtection` drives never clears once a nullifier answers it,
-/// so every "idol played / protected" label stayed lit for the rest of the
-/// council. These pin the decode and the two label-flip sites directly
+/// `idolNullified` used to reach the phone nowhere at all. The server clears
+/// `immunityIdolProtection` when a nullifier lands, so this separate signal is
+/// what lets the client explain why votes count. These pin the decode and the
+/// two label-flip sites directly
 /// (`IdolProtectionCopy` for the ImmunityView banner, `PlayerDetailSheet`'s
 /// badge), independent of the views that render them.
 @MainActor
@@ -51,7 +51,7 @@ struct IdolNullificationTests {
     func nullifiedBadgeReplacesProtectedBadge() {
         let sheet = PlayerDetailSheet(playerId: "p1")
         let player = PlayerState(id: "p1", name: "Mango", color: "#FF6B6B",
-                                  immunityIdolProtection: true, idolNullified: true)
+                                  immunityIdolProtection: false, idolNullified: true)
         let badges = sheet.badges(player, hasNecklace: false, isJury: false)
         #expect(badges.contains { $0.0 == "Idol Nullified — Votes Count" && $0.2 == Torch.Color.danger })
         #expect(!badges.contains { $0.0 == "Protected by an Idol" })

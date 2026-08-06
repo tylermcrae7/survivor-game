@@ -689,15 +689,12 @@ function renderImmunityPlayers(gameState) {
                               ${icon('x')} Nullify
                           </button>`);
         }
-        // A nullified idol stops advertising protection — the label flips so
-        // it doesn't stay lit forever after a nullifier lands (server already
-        // drops these players from protectedPlayers at reveal; the label just
-        // never caught up before).
-        const shieldLabel = shielded
-            ? (nullified
-                ? ` <span class="panel-sub" style="color: var(--warning)">· IDOL NULLIFIED — votes count</span>`
-                : ` <span class="panel-sub">· protected</span>`)
-            : '';
+        // Nullification clears immunityIdolProtection immediately and leaves
+        // idolNullified as the durable explanation. Check that signal first or
+        // the UI silently drops the only label that says why votes now count.
+        const shieldLabel = nullified
+            ? ` <span class="panel-sub" style="color: var(--warning)">· IDOL NULLIFIED — votes count</span>`
+            : (shielded ? ` <span class="panel-sub">· protected</span>` : '');
         return `
             <div class="immunity-player" data-player-id="${safeId}">
                 <span>${safeName}${isMe ? ' (you)' : ''}${shieldLabel}</span>
@@ -2803,7 +2800,9 @@ function renderFinalTribal(gameState) {
     let action = '';
     if (ft.phase === 'questions' || ft.phase === 'deliberation') {
         if (iAmLeader) {
-            action = `<div class="game-actions"><button class="btn btn-enhanced touch-target" data-action="beginFinalVote">${icon('ballot')} Call for the Vote</button></div>`;
+            const nextPhase = ft.phase === 'questions' ? 'deliberation' : 'voting';
+            const label = ft.phase === 'questions' ? 'Begin Deliberation' : 'Call for the Vote';
+            action = `<div class="game-actions"><button class="btn btn-enhanced touch-target" data-action="advanceFinalCouncil" data-next-phase="${nextPhase}">${icon('ballot')} ${label}</button></div>`;
         } else if (ft.phase === 'deliberation' && iAmJuror) {
             // The finger only raises once deliberation opens — hidden during
             // questions, same as every other pre-deliberation juror view.
@@ -2875,12 +2874,13 @@ function renderFinalTribal(gameState) {
         });
     });
 
-    // Leader "call for the vote" (questions -> voting)
-    const beginBtn = container.querySelector('[data-action="beginFinalVote"]');
+    // The leader walks the whole ceremony: questions -> deliberation -> voting.
+    const beginBtn = container.querySelector('[data-action="advanceFinalCouncil"]');
     if (beginBtn) {
         beginBtn.addEventListener('click', async () => {
             await window.SurvivorGame?.safeApiCall('/final/advance', {
-                gameId: window.SurvivorGame.localGameState.gameId, phase: 'voting'
+                gameId: window.SurvivorGame.localGameState.gameId,
+                phase: beginBtn.dataset.nextPhase
             });
         });
     }

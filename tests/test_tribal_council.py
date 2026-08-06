@@ -818,6 +818,11 @@ class TestTribalCouncilFlow(unittest.TestCase):
         result = self.gs.advance_final_phase(self.game_id, "invalid_phase")
         self.assertFalse(result)
         self.assertEqual(game["finalTribal"]["phase"], "questions")
+
+        # Deliberation carries the jury's ready signals and cannot be skipped.
+        result = self.gs.advance_final_phase(self.game_id, "voting")
+        self.assertFalse(result)
+        self.assertEqual(game["finalTribal"]["phase"], "questions")
         
         # Test advancing from wrong game phase
         game["phase"] = "playing"  # Wrong phase
@@ -835,6 +840,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.gs._start_final_tribal_council(game, finalists)
         
         # Advance to voting phase
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         final_tribal = game["finalTribal"]
         
@@ -870,6 +876,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertFalse(result)
         
         # Advance to voting phase
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         
         # Try voting for invalid finalist
@@ -897,6 +904,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         finalists = self.player_ids[0:2]
         game["jury"] = jury
         self.gs._start_final_tribal_council(game, finalists)
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         
         # Cast votes: 2 for finalist[0], 1 for finalist[1]
@@ -924,6 +932,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         finalists = self.player_ids[0:2]
         game["jury"] = jury
         self.gs._start_final_tribal_council(game, finalists)
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         
         # Cast tied votes: 1 for each finalist
@@ -960,6 +969,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         finalists = self.player_ids[0:2]
         game["jury"] = jury
         self.gs._start_final_tribal_council(game, finalists)
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         
         # Create tie
@@ -1138,6 +1148,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertEqual(len(final_tribal["finalists"]), 2)
         
         # Complete voting process
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         self.gs.cast_final_vote(self.game_id, jury[0], finalists[0])
         self.gs.cast_final_vote(self.game_id, jury[1], finalists[1])
@@ -1180,6 +1191,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         finalists = self.player_ids[0:2]
         game["jury"] = jury
         self.gs._start_final_tribal_council(game, finalists)
+        self.gs.advance_final_phase(self.game_id, "deliberation")
         self.gs.advance_final_phase(self.game_id, "voting")
         
         # Vote for clear winner

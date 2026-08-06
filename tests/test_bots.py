@@ -169,6 +169,33 @@ def test_decision_basics():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_bot_leader_opens_final_deliberation_before_voting():
+    """The jury-ready finger lives in deliberation, so bots cannot skip it."""
+    game = {
+        "phase": "final_tribal",
+        "players": {
+            "finalist": {"name": "Tyler", "isBot": False, "isEliminated": False},
+            "leader": {"name": "Coconut", "isBot": True, "isEliminated": True},
+        },
+        "turnOrder": ["finalist", "leader"],
+        "finalTribal": {
+            "phase": "questions",
+            "leader": "leader",
+            "jury": ["leader"],
+            "finalists": ["finalist"],
+        },
+    }
+
+    plan = next_action(
+        game,
+        phase_age=lambda _: 999,
+        turn_memory={},
+        rng=random.Random(7),
+    )
+    assert plan["method"] == "advance_final_phase"
+    assert plan["kwargs"] == {"phase": "deliberation"}
+
+
 def _highest_bidder_state(style="normal", current_bid=0):
     """Small pure-decision fixture; no server or scheduler needed."""
     actions = ["bid"] if current_bid == 0 else ["bid", "pass"]
@@ -415,7 +442,7 @@ def _human_move(gs, gid, human, rng):
         jury = ft.get("jury") or []
         finalists = ft.get("finalists") or []
         if fph == "questions" and ft.get("leader") == human:
-            gs.advance_final_phase(gid, phase="voting")
+            gs.advance_final_phase(gid, phase="deliberation")
             return True
         if fph == "deliberation" and human in jury \
                 and human not in (ft.get("juryReady") or []):

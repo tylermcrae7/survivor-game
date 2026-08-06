@@ -593,7 +593,7 @@ def _final_action(game, age, rng):
         # Statements happen out loud at the table; a bot leader moves the
         # ceremony along once the window has passed.
         if leader_is_bot and age(("final", "questions")) >= w["final_questions"]:
-            return _act("advance_final_phase", phase="voting")
+            return _act("advance_final_phase", phase="deliberation")
         return None
 
     if fph == "deliberation":

@@ -2181,10 +2181,11 @@ class GameState:
         final_tribal = game.get("finalTribal", {})
         current_phase = final_tribal.get("phase", "questions")
         
-        # Valid phase transitions for final tribal
-        # Allow skipping deliberation (go directly to voting from questions)
+        # Final Tribal is a four-beat ceremony. Deliberation is where jurors
+        # raise a finger to say they are ready, so skipping it makes that rule
+        # and every client control for it unreachable.
         valid_transitions = {
-            "questions": ["deliberation", "voting"],
+            "questions": ["deliberation"],
             "deliberation": ["voting"],
             "voting": ["reveal"],
             "reveal": []
