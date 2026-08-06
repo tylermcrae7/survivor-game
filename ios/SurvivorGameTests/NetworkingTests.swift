@@ -257,4 +257,29 @@ struct NetworkingTests {
         client.handleEvent(.reset)
         #expect(client.allianceAlert == nil)
     }
+
+    /// Leaving a lobby has to stick. A broadcast already in flight when the
+    /// leave lands used to be applied anyway, which re-derived navigation and
+    /// walked straight back into the lobby — the Leave button looked broken.
+    @Test @MainActor func aStatePushAfterLeavingIsIgnored() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-leave-test.invalid")!)
+        client.gameId = "test123"
+        client.applyState(MockGameClient.sampleGameState())
+        #expect(client.gameState != nil)
+
+        client.leaveGame()
+        #expect(client.gameState == nil)
+
+        client.applyState(MockGameClient.sampleGameState())
+        #expect(client.gameState == nil, "a push for the game we just left must not revive it")
+        #expect(client.navigationState == .start)
+    }
+
+    /// The same guard by game id: two games in one session must never cross.
+    @Test @MainActor func aStatePushForADifferentGameIsIgnored() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-leave-test.invalid")!)
+        client.gameId = "someOtherGame"
+        client.applyState(MockGameClient.sampleGameState())
+        #expect(client.gameState == nil)
+    }
 }

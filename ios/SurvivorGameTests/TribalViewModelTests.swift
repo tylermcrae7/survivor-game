@@ -11,6 +11,9 @@ struct TribalViewModelTests {
 
     private func makeViewModel(currentVote: TribalVoteState) -> TribalViewModel {
         let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
+        // applyState ignores pushes for a game we are not in (see
+        // GameClient.applyState) — join the sample game first.
+        gameClient.gameId = "test123"
         var state = MockGameClient.sampleGameState()
         state.currentVote = currentVote
         gameClient.applyState(state)
@@ -83,6 +86,9 @@ struct TribalViewModelTests {
     @Test("A vote-banned player's view model knows it from their own flag alone")
     func voteBannedReflectsMyOwnFlag() {
         let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
+        // applyState ignores pushes for a game we are not in (see
+        // GameClient.applyState) — join the sample game first.
+        gameClient.gameId = "test123"
         gameClient.playerId = "p1"
         var state = MockGameClient.sampleGameState()
         state.players["p1"] = PlayerState(id: "p1", name: "Alice", color: "#FF6B6B",
@@ -95,6 +101,9 @@ struct TribalViewModelTests {
     @Test("An ordinary player — voteBanned absent or false — is not banned")
     func notVoteBannedByDefault() {
         let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
+        // applyState ignores pushes for a game we are not in (see
+        // GameClient.applyState) — join the sample game first.
+        gameClient.gameId = "test123"
         gameClient.playerId = "p1"
         gameClient.applyState(MockGameClient.sampleGameState())
         let viewModel = TribalViewModel(gameClient: gameClient)

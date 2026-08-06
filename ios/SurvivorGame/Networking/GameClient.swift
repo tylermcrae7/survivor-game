@@ -630,8 +630,16 @@ final class GameClient {
     /// socket pushes, and poll syncs. Equality-guarded: an identical snapshot
     /// must not re-render the whole view tree, and since navigation derives
     /// purely from the state, an equal state can't change navigation either.
+    /// A state push only counts while we are still in the game it describes.
+    ///
+    /// Leaving nils `gameId` and sends us home, but a broadcast already in
+    /// flight lands after that and used to walk straight back into the lobby
+    /// we just left — the "Leave" button appeared to do nothing at all. It
+    /// showed up as a UI test that failed only in a full-bundle run, where a
+    /// loaded machine makes an in-flight push likely, and passed alone.
     func applyState(_ state: GameState?) {
-        guard let state, state != gameState else { return }
+        guard let state, let gameId, state.id == gameId,
+              state != gameState else { return }
         gameState = state
         updateNavigationState()
     }
