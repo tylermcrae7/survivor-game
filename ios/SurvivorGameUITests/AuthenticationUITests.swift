@@ -50,6 +50,14 @@ final class AuthenticationUITests: XCTestCase {
         XCTAssertTrue(createGame.waitForExistence(timeout: 8), "A valid code should unlock the start screen")
         createGame.tap()
 
+        let extendedDeckOption = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Extended — +6 house cards"))
+            .firstMatch
+        XCTAssertTrue(
+            extendedDeckOption.waitForExistence(timeout: 5),
+            "The native deck picker should describe the six-card Extended deck"
+        )
+
         let submit = app.buttons["create-game-submit"]
         app.collectionViews.firstMatch.swipeUp()
         app.collectionViews.firstMatch.swipeUp()

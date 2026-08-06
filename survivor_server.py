@@ -2456,10 +2456,9 @@ class GameState:
         name = next((n for n in bots_module.BOT_NAMES
                      if n.lower() not in taken_names), None)
         if name is None:
-            # bots.py's roster is 6 names — out of scope to extend here — but
-            # MAX_PLAYERS is 8, so an all-computer lobby can ask for a 7th and
-            # 8th. Extend deterministically with a numeric suffix rather than
-            # refusing a legal bot.
+            # BOT_NAMES normally has more names than a full table needs. Keep
+            # this deterministic suffix path as a defensive backstop so a
+            # future roster edit can never make a legal bot join fail.
             for suffix in range(2, MAX_PLAYERS + 1):
                 name = next((f"{base} {suffix}" for base in bots_module.BOT_NAMES
                             if f"{base} {suffix}".lower() not in taken_names), None)

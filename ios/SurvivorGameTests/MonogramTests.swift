@@ -62,12 +62,15 @@ struct MonogramTests {
         #expect(PlayerState.monogram(for: name).count <= 2)
     }
 
-    /// The six bundled computer castaways (bots.py BOT_NAMES) must stay
+    /// The bundled computer castaways (bots.py BOT_NAMES) must stay
     /// distinguishable from each other at a glance, since a full table is
     /// mostly them.
     @Test("Every bot name yields a distinct monogram")
     func botNamesAreDistinct() {
-        let names = ["Coconut", "Driftwood", "Barnacle", "Mango", "Puddles", "Flint"]
+        let names = [
+            "Coconut", "Driftwood", "Barnacle", "Mango", "Puddles", "Flint",
+            "Tiki", "Lagoon", "Guava",
+        ]
         let monograms = names.map(PlayerState.monogram(for:))
         #expect(Set(monograms).count == names.count)
     }

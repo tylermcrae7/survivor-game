@@ -45,7 +45,7 @@ Per-device, remembered between games:
 | Mode | Contents |
 |------|----------|
 | **Official** | The 67-card box, exactly as printed |
-| **Extended** | +7 house cards: Idol Nullifier ×2, Steal A Vote ×2, Block A Vote ×2, Grant Immunity ×1 |
+| **Extended** | +6 house cards: Idol Nullifier ×2, Steal A Vote ×2, Block A Vote ×2 |
 
 ### Turn structure — Steal, Play, Draw
 1. **Steal** — take a random card from any other player (the target may interrupt with *Sorry For You*)
@@ -115,7 +115,6 @@ Counts are per the card registry (`survivor_cards.json`). *(Extended)* marks hou
 | Idol Nullifier *(Extended)* | 2 | Cancel someone's played idol |
 | Steal A Vote *(Extended)* | 2 | Take another player's vote; they can't vote, you vote twice |
 | Block A Vote *(Extended)* | 2 | Block a player's vote at this Tribal |
-| Grant Immunity *(Extended)* | 1 | Make a player immune this Tribal |
 
 ### Action Cards
 | Card | Count | Effect |

@@ -47,14 +47,16 @@ def test_add_remove_bot():
         assert gs.games[gid]["players"][bot_id]["isBot"] is True
         assert bot_id in gs.games[gid]["turnOrder"]
 
-        # Test: bot names never collide, even past bots.py's 6-name roster
-        # (Task A4 moved the cap to 8, one human + 7 bots)
+        # Test: a full human-plus-bot lobby uses only the curated names. The
+        # numeric-suffix path is a defensive backstop, not ordinary UX.
         names = {result["name"]}
         for _ in range(6):
             r = gs.add_bot(gid)
             assert r["success"], r
             names.add(r["name"])
         assert len(names) == 7
+        assert names.issubset(set(bots.BOT_NAMES)), names
+        assert all(not name[-1:].isdigit() for name in names), names
 
         # Test: ninth player refused (cap 8)
         r = gs.add_bot(gid)

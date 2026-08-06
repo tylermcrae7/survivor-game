@@ -180,6 +180,8 @@ def run_checks():
         # calls POST /game/create.
         jsclick(ana, '[data-action="createGame"]')
         ana.wait_for_selector('[data-action="confirmCreateGame"]')
+        check("new game: Extended deck advertises six house cards",
+              "+6 house cards" in ana.locator('[data-deck="extended"]').inner_text())
         jsclick(ana, '[data-action="confirmCreateGame"]')
         ana.wait_for_selector('#gameCodeInput')
         gid = ana.input_value('#gameCodeInput')
