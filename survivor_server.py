@@ -2352,37 +2352,46 @@ class GameState:
             juryMemberId: ID of the jury member signaling readiness
 
         Returns:
-            Boolean indicating success
+            {"success": bool, "message": str} — every refusal says why, rather
+            than handing the phone a bare False (the live log had exactly
+            that: "Action 'signal_jury_ready' returned False", twice, with no
+            hint whether it was the wrong phase, the wrong player, or a
+            re-signal).
         """
         if gid not in self.games:
-            return False
+            return {"success": False, "message": "Game not found"}
 
         if not juryMemberId:
-            return False
+            return {"success": False, "message": "juryMemberId is required"}
 
         game = self.games[gid]
 
         # Validate game is in final tribal phase
         if game.get("phase") not in ["final", "final_tribal"]:
-            return False
+            return {"success": False, "message": "The Final Tribal hasn't started"}
 
         final_tribal = game.get("finalTribal", {})
-
-        # Fingers go up during deliberation, once the statements are done
-        if final_tribal.get("phase") != "deliberation":
-            return False
 
         # Validate player is a jury member
         jury = final_tribal.get("jury", [])
         if juryMemberId not in jury:
-            return False
+            return {"success": False, "message": "Only jury members raise a finger"}
+
+        # Fingers go up during deliberation, once the statements are done —
+        # this is the refusal Tyler hit live, mid-questions.
+        if final_tribal.get("phase") != "deliberation":
+            return {"success": False,
+                    "message": "The finalists are still making their cases — "
+                               "deliberation opens the vote"}
 
         # Track readiness
         if "juryReady" not in final_tribal:
             final_tribal["juryReady"] = []
 
-        if juryMemberId not in final_tribal["juryReady"]:
-            final_tribal["juryReady"].append(juryMemberId)
+        if juryMemberId in final_tribal["juryReady"]:
+            return {"success": False, "message": "You already raised your finger"}
+
+        final_tribal["juryReady"].append(juryMemberId)
 
         logger.info(f"Jury member {juryMemberId} signaled ready in game {gid}")
 
@@ -2396,7 +2405,8 @@ class GameState:
             final_tribal["votes"] = {}
 
         self._save(gid)
-        return True
+        name = game["players"].get(juryMemberId, {}).get("name", "A jury member")
+        return {"success": True, "message": f"{name} is ready to vote"}
 
     # ═══════════════════════════ Game Management Methods ═══════════════════════════
     def change_leader(self, gid, newLeaderId=None, **kwargs):

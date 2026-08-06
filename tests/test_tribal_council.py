@@ -1000,47 +1000,103 @@ class TestTribalCouncilFlow(unittest.TestCase):
         
         # First jury member signals ready
         result = self.gs.signal_jury_ready(self.game_id, jury[0])
-        self.assertTrue(result)
+        self.assertTrue(result["success"], result.get("message"))
         self.assertIn(jury[0], final_tribal["juryReady"])
         self.assertEqual(final_tribal["phase"], "deliberation")  # Still in deliberation
-        
+
         # Second jury member signals ready - should auto-advance to voting
         result = self.gs.signal_jury_ready(self.game_id, jury[1])
-        self.assertTrue(result)
+        self.assertTrue(result["success"], result.get("message"))
         self.assertIn(jury[1], final_tribal["juryReady"])
-        
+
         # Should auto-advance to voting when all jury ready
         self.assertEqual(final_tribal["phase"], "voting")
-        
+
     def test_jury_ready_validation(self):
         """Test jury ready system validation"""
         game = self.gs.games[self.game_id]
-        
+
         # Set up final tribal
         jury = self.player_ids[2:4]
         finalists = self.player_ids[0:2]
         game["jury"] = jury
         self.gs._start_final_tribal_council(game, finalists)
-        
-        # Try signaling ready during wrong phase (questions)
+
+        # Try signaling ready during wrong phase (questions) — this is the
+        # refusal Tyler hit live: a reasoned refusal, not a bare False.
         result = self.gs.signal_jury_ready(self.game_id, jury[0])
-        self.assertFalse(result)
-        
+        self.assertFalse(result["success"])
+        self.assertIn("deliberation opens the vote", result["message"])
+
         # Advance to deliberation
         self.gs.advance_final_phase(self.game_id, "deliberation")
-        
+
         # Try signaling ready as non-jury member
         result = self.gs.signal_jury_ready(self.game_id, finalists[0])
-        self.assertFalse(result)
-        
+        self.assertFalse(result["success"])
+        self.assertIn("Only jury members raise a finger", result["message"])
+
         # Valid ready signal should work
         result = self.gs.signal_jury_ready(self.game_id, jury[0])
-        self.assertTrue(result)
-        
-        # Duplicate ready signal should still work (idempotent)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertIn("is ready to vote", result["message"])
+
+        # Duplicate ready signal is refused — you can't raise the same finger twice
         result = self.gs.signal_jury_ready(self.game_id, jury[0])
-        self.assertTrue(result)
-        
+        self.assertFalse(result["success"])
+        self.assertIn("already raised your finger", result["message"])
+
+    # ── S1: the jury signal says why (every refusal, and the success line) ──
+
+    def test_jury_ready_refuses_with_a_message_when_game_is_missing(self):
+        result = self.gs.signal_jury_ready("no-such-game", "someone")
+        self.assertFalse(result["success"])
+        self.assertTrue(result.get("message"))
+
+    def test_jury_ready_refuses_with_a_message_when_no_member_given(self):
+        result = self.gs.signal_jury_ready(self.game_id, None)
+        self.assertFalse(result["success"])
+        self.assertTrue(result.get("message"))
+
+    def test_jury_ready_refuses_outside_final_tribal_phase(self):
+        """Game hasn't even reached final tribal yet."""
+        result = self.gs.signal_jury_ready(self.game_id, self.player_ids[0])
+        self.assertFalse(result["success"])
+        self.assertIn("Final Tribal hasn't started", result["message"])
+
+    def test_jury_ready_success_message_names_the_signaler(self):
+        game = self.gs.games[self.game_id]
+        jury = self.player_ids[2:4]
+        finalists = self.player_ids[0:2]
+        game["jury"] = jury
+        self.gs._start_final_tribal_council(game, finalists)
+        self.gs.advance_final_phase(self.game_id, "deliberation")
+
+        result = self.gs.signal_jury_ready(self.game_id, jury[0])
+        self.assertTrue(result["success"], result.get("message"))
+        name = game["players"][jury[0]]["name"]
+        self.assertEqual(result["message"], f"{name} is ready to vote")
+
+    def test_jury_ready_http_route_surfaces_the_reason(self):
+        """The exact live-log failure: a phone that gets nothing but False."""
+        import survivor_server
+        game = self.gs.games[self.game_id]
+        jury = self.player_ids[2:4]
+        finalists = self.player_ids[0:2]
+        game["jury"] = jury
+        self.gs._start_final_tribal_council(game, finalists)
+        # Still in "questions" — the door Tyler hit live.
+        survivor_server.game_state = self.gs
+        client = survivor_server.app.test_client()
+
+        res = client.post('/api/final/ready',
+                          json={"gameId": self.game_id, "juryMemberId": jury[0]})
+
+        self.assertEqual(res.status_code, 400)
+        body = res.get_json()
+        self.assertFalse(body["success"])
+        self.assertIn("deliberation opens the vote", body["message"])
+
     def test_emergency_final_tribal_deck_empty(self):
         """Test emergency final tribal when deck empty with 2+ players"""
         game = self.gs.games[self.game_id]
