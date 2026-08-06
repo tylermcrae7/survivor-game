@@ -42,7 +42,7 @@ Contract: a card effect may return `"secret": True`. A secret result: (a) never 
 - [ ] Tests: playing each secretly leaves the eventLog without a new entry, emits no `card_played`, bans/steals the vote for real, and returns the actor a full message. Also: the existing "Voting Box waits on everyone" logic already skips banned players (`is_vote_blocked`) — pin with a test that a banned player never appears in the reveal's "waiting on" refusal.
 - [ ] Commit: `"Steal A Vote and Block A Vote work in the dark, as end-game secrets should"`
 
-### Task S3: The Jury Hut
+### Task S3: The Jury Hut — DEFERRED (Tyler, 2026-08-05: "Forget about number 2 for now.") Do not implement.
 
 **Files:** `places.py`, `discord_bot.py`, `tests/test_places.py`; env var on the bot's LaunchAgent (dispatcher wires it when Tyler supplies the channel id).
 
@@ -91,9 +91,9 @@ The player dict already carries `idolNullified` and `get_game_state` deep-copies
 
 ### Task I4: The alliance gets its moment
 
-**Files:** `ios/SurvivorGame/Models/NarrationEvent.swift`, a new small overlay under `Views/Components/` (follow `ReactiveTheftOverlay`'s presentation pattern), `ContentView.swift` (mount point), `survivor_server.py` (one emission).
+**Files:** `ios/SurvivorGame/Models/NarrationEvent.swift`, a new small overlay under `Views/Components/` (follow `ReactiveTheftOverlay`'s presentation pattern), `ContentView.swift` (mount point).
 
-- [ ] Server: `_effect_lets_form_an_alliance`'s success path appends a `_pending_alerts` entry `{"event": "alliance", "data": {"initiatorId", "initiator", "allyId", "ally", "victimId", "victim", "message": "X forms an alliance with Y — they raid Z's camp together"}}` (the flush pipeline already delivers it; redaction rule: names only, never cards).
+- [ ] Server (REASSIGNED to Part S as Task S5, for file disjointness): `_effect_lets_form_an_alliance`'s success path appends a `_pending_alerts` entry `{"event": "alliance", "data": {"initiatorId", "initiator", "allyId", "ally", "victimId", "victim", "message": "X forms an alliance with Y — they raid Z's camp together"}}` (the flush pipeline already delivers it; redaction rule: names only, never cards). Test beside the inheritance-alert tests. The iOS agent builds against this contract without reading Python.
 - [ ] iOS: `NarrationEvent` gains the `alliance` case (critical priority — it must not be evicted). The two PARTNERS (my id == initiatorId or allyId) get a **blocking overlay**, not just the toast: alliance title, the partner's name, the victim's name, and "the spoils are in your hand" — dismissed by tap, mirroring the interaction reveal's Continue idiom. Everyone else gets the ordinary toast only.
 - [ ] Tests: NarrationEvent decode trio (mirroring `raidBlocked`'s tests); overlay presentation logic unit-tested if it lands in a view model.
 - [ ] Commit: `"iOS: an alliance is a moment, not a mystery card in your hand"`
