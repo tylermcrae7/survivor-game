@@ -2100,6 +2100,27 @@ class SurvivorRulesEngine:
 			        "log_message": f"{player['name']} and {ally['name']} descend on "
 			                       f"{victim['name']}'s camp — {victim['name']} may respond"}
 		self.sync_vote_counters(game)
+
+		# Task S5 (reassigned from I4): a durable moment for the two partners,
+		# not just a toast and a card that silently appeared in a hand. Same
+		# `_pending_alerts` convention as inheritance and steal (see
+		# `process_elimination_inheritance`, `_record_steal_alert`) — and the
+		# same gate: nothing moved means nothing to announce.
+		if result.get("moved", 0) > 0:
+			initiator_name = player.get("name", "?")
+			ally_name = ally.get("name", "?")
+			victim_name = victim.get("name", "?")
+			game.setdefault("_pending_alerts", []).append({
+				"event": "alliance",
+				"data": {
+					"initiatorId": player_id, "initiator": initiator_name,
+					"allyId": ally_id, "ally": ally_name,
+					"victimId": victim_id, "victim": victim_name,
+					"message": f"{initiator_name} forms an alliance with {ally_name} "
+					           f"— they raid {victim_name}'s camp together",
+				},
+			})
+
 		return {"message": f"Alliance formed! {result.get('message', 'The raid is done')}"}
 			
 	def _effect_reward_challenge_do_or_die(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:

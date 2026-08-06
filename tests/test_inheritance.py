@@ -506,5 +506,88 @@ class InheritanceAnnouncesItselfTest(unittest.TestCase):
         self.assertIn("inherit", result.get("message", "").lower())
 
 
+class AllianceAnnouncesItselfTest(unittest.TestCase):
+    """Task S5 (reassigned from I4): the alliance gets its moment.
+
+    Let's Form An Alliance was a normal-priority steal toast and a card that
+    silently appeared in a hand — nothing durable marked the moment for the
+    two partners. Same `_pending_alerts` convention as inheritance and steal:
+    see `process_elimination_inheritance` and `_record_steal_alert`. Payload
+    contract, verbatim from the plan's I4 section: `{"event": "alliance",
+    "data": {"initiatorId", "initiator", "allyId", "ally", "victimId",
+    "victim", "message"}}` — names only, never cards.
+    """
+
+    def setUp(self):
+        self.original_cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.original_cwd, 'survivor_cards.json'), self.tmp)
+        os.chdir(self.tmp)
+        self.gs = GameState()
+        self.gid = self.gs.create_game()
+        self.ids = [self.gs.add_player(self.gid, n) for n in ("Ana", "Ben", "Cam", "Dee")]
+        self.gs.start_full_game(self.gid)
+        self.game = self.gs.games[self.gid]
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_a_successful_alliance_records_an_alert(self):
+        initiator, ally, victim = self.ids[0], self.ids[1], self.ids[2]
+        self.game["players"][victim]["hand"] = [{"type": "camp_raid"},
+                                                 {"type": "the_spy_shack"}]
+        for pid in (initiator, ally):
+            self.game["players"][pid]["hand"] = []
+
+        result = self.gs.rules_engine._effect_lets_form_an_alliance(
+            self.game, initiator, {}, {"allyId": ally, "victimId": victim})
+
+        self.assertNotIn("Sorry For You", result.get("message", ""))
+        alerts = [a for a in self.game.get("_pending_alerts", [])
+                  if a["event"] == "alliance"]
+        self.assertEqual(len(alerts), 1)
+        data = alerts[0]["data"]
+        self.assertEqual(data["initiatorId"], initiator)
+        self.assertEqual(data["allyId"], ally)
+        self.assertEqual(data["victimId"], victim)
+        self.assertEqual(data["initiator"], self.game["players"][initiator]["name"])
+        self.assertEqual(data["ally"], self.game["players"][ally]["name"])
+        self.assertEqual(data["victim"], self.game["players"][victim]["name"])
+        self.assertIn(f"{data['initiator']} forms an alliance with {data['ally']}",
+                      data["message"])
+        self.assertIn(data["victim"], data["message"])
+        # Redaction rule: names only, never cards.
+        self.assertNotIn("Camp Raid", data["message"])
+        self.assertNotIn("Spy Shack", data["message"])
+
+    def test_an_alliance_that_moves_nothing_stays_quiet(self):
+        """Victim holds only their Vote Card — nothing to raid, nothing to announce."""
+        initiator, ally, victim = self.ids[0], self.ids[1], self.ids[2]
+        self.game["players"][victim]["hand"] = [{"type": "vote"}]
+        for pid in (initiator, ally):
+            self.game["players"][pid]["hand"] = []
+
+        self.gs.rules_engine._effect_lets_form_an_alliance(
+            self.game, initiator, {}, {"allyId": ally, "victimId": victim})
+
+        self.assertFalse([a for a in self.game.get("_pending_alerts", [])
+                          if a["event"] == "alliance"])
+
+    def test_a_raid_blocked_by_sorry_for_you_is_not_announced_as_a_success(self):
+        initiator, ally, victim = self.ids[0], self.ids[1], self.ids[2]
+        self.game["players"][victim]["hand"] = [{"type": "sorry_for_you"},
+                                                 {"type": "camp_raid"}]
+        for pid in (initiator, ally):
+            self.game["players"][pid]["hand"] = []
+
+        result = self.gs.rules_engine._effect_lets_form_an_alliance(
+            self.game, initiator, {}, {"allyId": ally, "victimId": victim})
+
+        self.assertIn("Sorry For You", result.get("message", ""))
+        self.assertFalse([a for a in self.game.get("_pending_alerts", [])
+                          if a["event"] == "alliance"])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
