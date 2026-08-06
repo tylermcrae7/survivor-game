@@ -50,6 +50,8 @@ struct VotingView: View {
                 Text("Your torch is out — the vote passes you by.")
                     .font(Torch.Font.display(Torch.TextSize.base, weight: 500, italic: true))
                     .foregroundStyle(Torch.Color.textSecondary)
+            } else if viewModel.isVoteBanned {
+                voteBannedNotice
             } else if viewModel.hasVoted {
                 votedConfirmation
             } else if maxVotes == 0 {
@@ -120,6 +122,18 @@ struct VotingView: View {
     }
 
     // MARK: - Pieces
+
+    /// The one place this is ever said. No toast fired it (S2's Steal A Vote /
+    /// Block A Vote never touch the eventLog or the narrator), and nothing
+    /// here names who did it — that secret is the whole point of the cards
+    /// that cause this.
+    private var voteBannedNotice: some View {
+        Text("Your vote was taken tonight. Who took it stays in the shadows.")
+            .font(Torch.Font.display(Torch.TextSize.base, weight: 500, italic: true))
+            .foregroundStyle(Torch.Color.textSecondary)
+            .multilineTextAlignment(.center)
+            .padding(.vertical, 24)
+    }
 
     private var votedConfirmation: some View {
         VStack(spacing: 8) {

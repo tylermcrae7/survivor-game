@@ -63,6 +63,11 @@ final class TribalViewModel {
 
     var hasVoted: Bool { gameClient.myPlayer?.hasVoted ?? false }
 
+    /// A Steal A Vote / Block A Vote landed on me. The table stays dark about
+    /// who did it (S2's `secret` effects never touch the eventLog or the
+    /// narrator) — this only tells the one phone it actually happened to.
+    var isVoteBanned: Bool { gameClient.myPlayer?.voteBanned ?? false }
+
     var eliminatedInTribal: [PlayerState] {
         guard let eliminated = voteState?.eliminated else { return [] }
         return eliminated.compactMap { gameState?.players[$0] }

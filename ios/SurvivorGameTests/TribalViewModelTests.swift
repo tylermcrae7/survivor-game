@@ -74,4 +74,30 @@ struct TribalViewModelTests {
         #expect(rows.first?.player.id == "p1")
         #expect(rows.first?.isImmune == false)
     }
+
+    // MARK: - isVoteBanned (I3: the ballot's quiet notice)
+
+    /// Steal A Vote / Block A Vote never touch the eventLog or the narrator
+    /// (S2) — the target's own ballot is the only place this ever surfaces,
+    /// off the player's own `voteBanned` flag.
+    @Test("A vote-banned player's view model knows it from their own flag alone")
+    func voteBannedReflectsMyOwnFlag() {
+        let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
+        gameClient.playerId = "p1"
+        var state = MockGameClient.sampleGameState()
+        state.players["p1"] = PlayerState(id: "p1", name: "Alice", color: "#FF6B6B",
+                                          voteBanned: true)
+        gameClient.applyState(state)
+        let viewModel = TribalViewModel(gameClient: gameClient)
+        #expect(viewModel.isVoteBanned == true)
+    }
+
+    @Test("An ordinary player — voteBanned absent or false — is not banned")
+    func notVoteBannedByDefault() {
+        let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
+        gameClient.playerId = "p1"
+        gameClient.applyState(MockGameClient.sampleGameState())
+        let viewModel = TribalViewModel(gameClient: gameClient)
+        #expect(viewModel.isVoteBanned == false)
+    }
 }
