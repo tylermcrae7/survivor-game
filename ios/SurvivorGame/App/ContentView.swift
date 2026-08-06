@@ -56,6 +56,11 @@ struct ContentView: View {
                     NullifierWindowOverlay()
                 }
 
+                // The alliance overlay is its own thing, not part of the
+                // "exactly one reactive window" chain above — it never waits
+                // on a server answer, so it can sit alongside any of them.
+                AllianceOverlay()
+
                 if gameClient.connectionState == .reconnecting
                     || (gameClient.connectionState == .disconnected && gameClient.gameState != nil) {
                     ConnectionBanner()

@@ -28,6 +28,16 @@ enum NarrationEvent: Equatable, Sendable {
     /// verbatim, exactly like `raidBlocked`.
     case inheritance(heirId: String?, heir: String, deadId: String?, dead: String,
                       count: Int, seatLabel: String?, message: String)
+    /// A Let's Form An Alliance fired: the initiator and the ally each steal
+    /// a card from the victim. It used to happen in total silence for the
+    /// initiator and a normal-priority toast for the ally — a card just
+    /// silently appeared in one hand and the other got a line no louder than
+    /// a vote_cast. `message` is the server's own wording, verbatim (redacted
+    /// to names only — never which cards moved, per the plan's redaction
+    /// rule). The two partners get more than this toast (AllianceOverlay);
+    /// everyone else at the table gets exactly this line.
+    case alliance(initiatorId: String?, initiator: String, allyId: String?, ally: String,
+                  victimId: String?, victim: String, message: String)
     case cardPlayed(player: String, card: String?, target: String?)
     case voteCast(player: String)
     case immunityPlayed(player: String)
@@ -71,6 +81,13 @@ enum NarrationEvent: Equatable, Sendable {
                                 count: data["count"] as? Int ?? 0,
                                 seatLabel: str("seatLabel"),
                                 message: message)
+        case "alliance":
+            guard let initiator = str("initiator"), let ally = str("ally"),
+                  let victim = str("victim"), let message = str("message") else { return nil }
+            self = .alliance(initiatorId: data["initiatorId"] as? String, initiator: initiator,
+                             allyId: data["allyId"] as? String, ally: ally,
+                             victimId: data["victimId"] as? String, victim: victim,
+                             message: message)
         case "card_played":
             guard let player = str("player") else { return nil }
             // The server's placeholder is the literal "a card"; treat it as
@@ -107,8 +124,11 @@ enum NarrationEvent: Equatable, Sendable {
     var priority: Priority {
         switch self {
         // Inheritance belongs to the elimination moment it rides in on and
-        // must not be evicted by chatter ahead of it in the queue.
-        case .elimination, .winner, .gameStart, .tribalStart, .inheritance: .critical
+        // must not be evicted by chatter ahead of it in the queue. An
+        // alliance is the same: the two partners' overlay reads straight off
+        // this event (GameClient.handleEvent), so it must survive the queue
+        // even for everyone else still getting the plain toast.
+        case .elimination, .winner, .gameStart, .tribalStart, .inheritance, .alliance: .critical
         case .steal, .raidBlocked, .cardPlayed, .immunityPlayed, .immunityNullified: .normal
         case .voteCast, .playerJoined: .chatter
         }
@@ -123,6 +143,8 @@ enum NarrationEvent: Equatable, Sendable {
         case .raidBlocked(_, _, let message):
             message
         case .inheritance(_, _, _, _, _, _, let message):
+            message
+        case .alliance(_, _, _, _, _, _, let message):
             message
         case .cardPlayed(let player, let card, let target):
             if let card, let target { "\(player) played \(card) on \(target)" }
@@ -156,10 +178,11 @@ enum NarrationEvent: Equatable, Sendable {
     /// double every one of the game's most dramatic beats.
     var cue: TorchCue? {
         switch self {
-        // A blocked raid is a steal that didn't happen, and an estate
-        // passing to an heir is a steal in every way that matters to the
-        // ear — same cue for all three, no dedicated sound exists yet.
-        case .steal, .raidBlocked, .inheritance: .steal
+        // A blocked raid is a steal that didn't happen, an estate passing to
+        // an heir is a steal in every way that matters to the ear, and an
+        // alliance IS a pair of steals ("they raid Z's camp together") — same
+        // cue for all four, no dedicated sound exists yet.
+        case .steal, .raidBlocked, .inheritance, .alliance: .steal
         case .cardPlayed, .immunityPlayed, .immunityNullified: .cardPlay
         case .voteCast: .notification
         case .gameStart: .tribalGong
@@ -176,5 +199,31 @@ enum NarrationEvent: Equatable, Sendable {
         case .playerJoined: "player_joined"
         default: nil
         }
+    }
+}
+
+/// The alliance overlay's own copy, split out of `AllianceOverlay` so "which
+/// side of the pair is the viewer on" is testable without a live GameClient —
+/// mirrors `VoteBarScale` (VoteRevealView.swift) and `IdolProtectionCopy`
+/// (ImmunityView.swift).
+///
+/// `nil` for anyone who isn't one of the two partners: `GameClient` reads
+/// this to decide whether an `.alliance` event becomes the blocking overlay
+/// (partners) or rides the ordinary `NarrationFeed` toast (everyone else at
+/// the table).
+struct AllianceOverlayContent: Equatable {
+    let partnerName: String
+    let victimName: String
+
+    static func forViewer(_ viewerId: String?, event: NarrationEvent) -> AllianceOverlayContent? {
+        guard case let .alliance(initiatorId, initiator, allyId, ally, _, victim, _) = event,
+              let viewerId else { return nil }
+        if viewerId == initiatorId {
+            return AllianceOverlayContent(partnerName: ally, victimName: victim)
+        }
+        if viewerId == allyId {
+            return AllianceOverlayContent(partnerName: initiator, victimName: victim)
+        }
+        return nil
     }
 }

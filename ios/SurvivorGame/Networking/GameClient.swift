@@ -17,6 +17,16 @@ final class GameClient {
     /// environment injection, and so it can be cleared on reset.
     let narration = NarrationFeed()
 
+    /// Set only for the two ALLIANCE PARTNERS (`AllianceOverlayContent`,
+    /// resolved in `handleEvent`) — everyone else's `.alliance` event rides
+    /// the ordinary `narration` toast instead. `AllianceOverlay` reads this
+    /// and clears it itself on dismiss; nothing here waits on the server.
+    private(set) var allianceAlert: AllianceOverlayContent?
+
+    func dismissAllianceAlert() {
+        allianceAlert = nil
+    }
+
     var gameId: String?
     var playerId: String?
     var playerName: String?
@@ -691,10 +701,12 @@ final class GameClient {
             // Nothing from the finished game should still be narrating itself
             // over the lobby.
             narration.reset()
+            allianceAlert = nil
             gameState?.phase = .lobby
             updateNavigationState()
         case .wiped:
             narration.reset()
+            allianceAlert = nil
             // The server removed this game for everyone. Clear both the live
             // client and the persisted rejoin IDs so launch cannot pull the
             // player straight back into a dead session.
@@ -706,7 +718,14 @@ final class GameClient {
             // the phone dropped every line of it except player_joined, which is
             // why a stolen card just silently disappeared from your hand.
             if let event = NarrationEvent(type: type, data: data) {
-                narration.enqueue(event)
+                // The two alliance PARTNERS get the blocking overlay instead
+                // of the toast — everyone else at the table keeps the
+                // ordinary NarrationFeed line.
+                if let content = AllianceOverlayContent.forViewer(playerId, event: event) {
+                    allianceAlert = content
+                } else {
+                    narration.enqueue(event)
+                }
             }
             if type == "player_joined" {
                 // Refresh state to get updated player list

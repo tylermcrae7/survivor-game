@@ -204,4 +204,57 @@ struct NetworkingTests {
         #expect(client.playerId == nil)
         #expect(client.navigationState == .start)
     }
+
+    // MARK: - Alliance routing (I4)
+
+    private func allianceEventData() -> [String: Any] {
+        [
+            "initiatorId": "p1", "initiator": "TDawg",
+            "allyId": "p2", "ally": "Mango",
+            "victimId": "p3", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ]
+    }
+
+    /// The initiator's own phone gets the blocking overlay, not the toast —
+    /// `Let's Form An Alliance` used to leave this exact phone silent.
+    @Test @MainActor func allianceGivesTheInitiatorTheOverlayNotTheToast() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-alliance-test.invalid")!)
+        client.playerId = "p1"
+        client.handleEvent(.custom(type: "alliance", data: allianceEventData()))
+        #expect(client.allianceAlert == AllianceOverlayContent(partnerName: "Mango", victimName: "Coconut"))
+        #expect(client.narration.queueDepthForTesting == 0)
+    }
+
+    /// The ally's phone gets the overlay too — that side used to get only a
+    /// normal-priority steal toast.
+    @Test @MainActor func allianceGivesTheAllyTheOverlayNotTheToast() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-alliance-test.invalid")!)
+        client.playerId = "p2"
+        client.handleEvent(.custom(type: "alliance", data: allianceEventData()))
+        #expect(client.allianceAlert == AllianceOverlayContent(partnerName: "TDawg", victimName: "Coconut"))
+        #expect(client.narration.queueDepthForTesting == 0)
+    }
+
+    /// Everyone else at the table — the victim included — keeps the ordinary
+    /// toast and never sees the overlay.
+    @Test @MainActor func allianceLeavesEveryoneElseWithTheOrdinaryToast() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-alliance-test.invalid")!)
+        client.playerId = "p3"
+        client.handleEvent(.custom(type: "alliance", data: allianceEventData()))
+        #expect(client.allianceAlert == nil)
+        #expect(client.narration.pendingForTesting.contains {
+            $0.message == "TDawg forms an alliance with Mango — they raid Coconut's camp together"
+        })
+    }
+
+    /// A reset must not leave a stale overlay open on the next game.
+    @Test @MainActor func resetClearsAPendingAllianceAlert() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-alliance-test.invalid")!)
+        client.playerId = "p1"
+        client.handleEvent(.custom(type: "alliance", data: allianceEventData()))
+        #expect(client.allianceAlert != nil)
+        client.handleEvent(.reset)
+        #expect(client.allianceAlert == nil)
+    }
 }

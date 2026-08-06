@@ -28,6 +28,10 @@ struct NarrationEventTests {
             "heir": "Mango", "dead": "Coconut", "count": 2,
             "message": "Mango inherits Coconut's 2 cards — Inheritance (Red) is spent",
         ]) != nil)
+        #expect(NarrationEvent(type: "alliance", data: [
+            "initiator": "TDawg", "ally": "Mango", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ]) != nil)
     }
 
     @Test("An unknown event is ignored, not rendered and not crashed on")
@@ -192,6 +196,88 @@ struct NarrationEventTests {
         let vote = NarrationEvent(type: "vote_cast", data: ["player": "Ana"])!
         #expect(elimination.priority > steal.priority)
         #expect(steal.priority > vote.priority)
+    }
+
+    // MARK: - Alliance (I4)
+
+    /// A card that used to leave one partner's phone silent and the other's
+    /// with a normal-priority steal toast. `message` is redacted to names
+    /// only — never which cards moved (the plan's redaction rule).
+    @Test("An alliance forming uses the server's own words")
+    func allianceUsesTheServersWords() {
+        let event = NarrationEvent(type: "alliance", data: [
+            "initiatorId": "p1", "initiator": "TDawg",
+            "allyId": "p2", "ally": "Mango",
+            "victimId": "p3", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ])
+        #expect(event?.message
+                == "TDawg forms an alliance with Mango — they raid Coconut's camp together")
+    }
+
+    @Test("An alliance with no message is dropped rather than shown blank")
+    func allianceWithNoMessageIsDropped() {
+        #expect(NarrationEvent(type: "alliance", data: [
+            "initiator": "TDawg", "ally": "Mango", "victim": "Coconut",
+        ]) == nil)
+    }
+
+    /// It carries the two partners' overlay (AllianceOverlayContent), so it
+    /// must not be evicted by chatter ahead of it in the queue — same
+    /// reasoning as Inheritance.
+    @Test("An alliance toasts critical, and reuses the steal cue")
+    func allianceCueAndPriority() {
+        let event = NarrationEvent(type: "alliance", data: [
+            "initiator": "TDawg", "ally": "Mango", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ])
+        #expect(event?.cue == .steal)
+        #expect(event?.priority == .critical)
+    }
+
+    // MARK: - AllianceOverlayContent (I4: who gets the overlay)
+
+    @Test("The initiator sees the ally's name as their partner")
+    func initiatorSeesAllyAsPartner() {
+        let event = NarrationEvent(type: "alliance", data: [
+            "initiatorId": "p1", "initiator": "TDawg",
+            "allyId": "p2", "ally": "Mango",
+            "victimId": "p3", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ])!
+        let content = AllianceOverlayContent.forViewer("p1", event: event)
+        #expect(content == AllianceOverlayContent(partnerName: "Mango", victimName: "Coconut"))
+    }
+
+    @Test("The ally sees the initiator's name as their partner")
+    func allySeesInitiatorAsPartner() {
+        let event = NarrationEvent(type: "alliance", data: [
+            "initiatorId": "p1", "initiator": "TDawg",
+            "allyId": "p2", "ally": "Mango",
+            "victimId": "p3", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ])!
+        let content = AllianceOverlayContent.forViewer("p2", event: event)
+        #expect(content == AllianceOverlayContent(partnerName: "TDawg", victimName: "Coconut"))
+    }
+
+    @Test("Everyone else at the table — including the victim — gets no overlay content")
+    func victimAndBystandersGetNoOverlay() {
+        let event = NarrationEvent(type: "alliance", data: [
+            "initiatorId": "p1", "initiator": "TDawg",
+            "allyId": "p2", "ally": "Mango",
+            "victimId": "p3", "victim": "Coconut",
+            "message": "TDawg forms an alliance with Mango — they raid Coconut's camp together",
+        ])!
+        #expect(AllianceOverlayContent.forViewer("p3", event: event) == nil)
+        #expect(AllianceOverlayContent.forViewer("p4", event: event) == nil)
+        #expect(AllianceOverlayContent.forViewer(nil, event: event) == nil)
+    }
+
+    @Test("A non-alliance event never produces overlay content")
+    func nonAllianceEventNeverOverlays() {
+        let event = NarrationEvent(type: "steal", data: ["thief": "Ana", "victim": "Ben"])!
+        #expect(AllianceOverlayContent.forViewer("Ana", event: event) == nil)
     }
 }
 
