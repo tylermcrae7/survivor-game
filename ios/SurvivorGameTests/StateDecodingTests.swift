@@ -66,6 +66,27 @@ struct StateDecodingTests {
         #expect(player.hand.isEmpty)
         #expect(player.isEliminated == false)
         #expect(player.extraVotes == 0)
+        // An older server never sent this field at all.
+        #expect(player.idolNullified == false)
+    }
+
+    /// The player dict carries this once an Idol Nullifier answers their
+    /// idol — `immunityIdolProtection` stays true either way (the server
+    /// never clears it), so this is the only wire signal that a "protected"
+    /// label is now stale.
+    @Test func decodesIdolNullified() throws {
+        let json = """
+        {
+            "id": "abc123",
+            "name": "Tyler",
+            "color": "#FF6B6B",
+            "immunityIdolProtection": true,
+            "idolNullified": true
+        }
+        """
+        let player = try JSONDecoder().decode(PlayerState.self, from: Data(json.utf8))
+        #expect(player.immunityIdolProtection == true)
+        #expect(player.idolNullified == true)
     }
 
     // MARK: - CardInstance

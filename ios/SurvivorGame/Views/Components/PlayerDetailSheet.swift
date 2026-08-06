@@ -104,8 +104,11 @@ struct PlayerDetailSheet: View {
             .ignoresSafeArea())
     }
 
-    private func badges(_ player: PlayerState,
-                        hasNecklace: Bool, isJury: Bool) -> [(String, String, Color)] {
+    /// Internal rather than private so `IdolNullificationTests` can pin the
+    /// label flip directly, the same way `VoteBarScale`/`IdolProtectionCopy`
+    /// are tested — without standing up the whole sheet.
+    func badges(_ player: PlayerState,
+                hasNecklace: Bool, isJury: Bool) -> [(String, String, Color)] {
         var out: [(String, String, Color)] = []
         if player.isCouncilLeader {
             out.append(("Council Leader", "crown.fill", Torch.Color.juryGold))
@@ -114,7 +117,14 @@ struct PlayerDetailSheet: View {
             out.append(("Wears the Necklace", "shield.lefthalf.filled", Torch.Color.juryGold))
         }
         if player.immunityIdolProtection {
-            out.append(("Protected by an Idol", "shield.fill", Torch.Color.juryGold))
+            // The flag itself never clears once a nullifier answers it —
+            // idolNullified is the only signal this badge would otherwise be
+            // advertising a protection that no longer exists.
+            if player.idolNullified {
+                out.append(("Idol Nullified — Votes Count", "shield.slash", Torch.Color.danger))
+            } else {
+                out.append(("Protected by an Idol", "shield.fill", Torch.Color.juryGold))
+            }
         }
         if player.isEliminated {
             out.append((isJury ? "On the jury" : "Torch snuffed",

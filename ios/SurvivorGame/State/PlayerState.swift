@@ -24,6 +24,11 @@ struct PlayerState: Codable, Identifiable, Equatable {
     var drawBonus: Int?
     var stealBonus: Int?
     var immunityIdolProtection: Bool
+    /// An Idol Nullifier answered this player's idol — the protection flag
+    /// above stays lit (the server never clears it), so this is the only
+    /// signal that the "protected" label it drives is now a lie. Optional,
+    /// default false: an older server never sent it.
+    var idolNullified: Bool
     var campRaidedBy: String?
     var inheritanceTarget: String?
     /// Which named place this player is standing in (`camp_fire`, `the_beach`,
@@ -64,7 +69,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         case id, name, color, hand, isEliminated, isActive, isCouncilLeader
         case hasStolen, hasPlayed, hasDrawn, hasVoted, extraVotes, characterCards
         case immunityPlayed, voteBanned, isBot, maxVotes, mandatoryVotes
-        case goodwillVotes, drawBonus, stealBonus, immunityIdolProtection
+        case goodwillVotes, drawBonus, stealBonus, immunityIdolProtection, idolNullified
         case campRaidedBy, inheritanceTarget, place, discordUserId, placePolicy
     }
 
@@ -92,6 +97,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         drawBonus = try container.decodeIfPresent(Int.self, forKey: .drawBonus)
         stealBonus = try container.decodeIfPresent(Int.self, forKey: .stealBonus)
         immunityIdolProtection = try container.decodeIfPresent(Bool.self, forKey: .immunityIdolProtection) ?? false
+        idolNullified = try container.decodeIfPresent(Bool.self, forKey: .idolNullified) ?? false
         campRaidedBy = try container.decodeIfPresent(String.self, forKey: .campRaidedBy)
         inheritanceTarget = try container.decodeIfPresent(String.self, forKey: .inheritanceTarget)
         place = try? container.decodeIfPresent(String.self, forKey: .place)
@@ -110,7 +116,8 @@ struct PlayerState: Codable, Identifiable, Equatable {
         immunityPlayed: Bool = false, voteBanned: Bool? = nil, isBot: Bool = false,
         maxVotes: Int? = nil, mandatoryVotes: Int? = nil, goodwillVotes: Int? = nil,
         drawBonus: Int? = nil, stealBonus: Int? = nil,
-        immunityIdolProtection: Bool = false, campRaidedBy: String? = nil,
+        immunityIdolProtection: Bool = false, idolNullified: Bool = false,
+        campRaidedBy: String? = nil,
         inheritanceTarget: String? = nil, place: String? = nil,
         discordUserId: String? = nil, placePolicy: PlacePolicy? = nil
     ) {
@@ -136,6 +143,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         self.drawBonus = drawBonus
         self.stealBonus = stealBonus
         self.immunityIdolProtection = immunityIdolProtection
+        self.idolNullified = idolNullified
         self.campRaidedBy = campRaidedBy
         self.inheritanceTarget = inheritanceTarget
         self.place = place

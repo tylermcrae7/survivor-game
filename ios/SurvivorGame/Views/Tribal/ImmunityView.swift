@@ -78,17 +78,37 @@ struct ImmunityView: View {
                         let holder = record.playerId.flatMap { players?[$0]?.name }
                         let shielded = record.targetId.flatMap { players?[$0]?.name }
                             ?? holder ?? "Someone"
+                        // The protection flag itself never clears once an Idol
+                        // Nullifier answers it — idolNullified is the only
+                        // signal this label is now a lie.
+                        let nullified = record.targetId.flatMap { players?[$0]?.idolNullified } ?? false
                         HStack(spacing: 8) {
-                            Image(systemName: "shield.fill")
-                                .foregroundStyle(Torch.Color.juryGold)
+                            Image(systemName: nullified ? "shield.slash" : "shield.fill")
+                                .foregroundStyle(nullified ? Torch.Color.danger : Torch.Color.juryGold)
                             // An idol may be played for an ally, so name both
                             // when they differ — that is the whole drama of it.
-                            Text(holder != nil && holder != shielded
-                                 ? "\(holder!) shielded \(shielded)"
-                                 : "\(shielded) is protected")
+                            Text(IdolProtectionCopy.line(holder: holder, shielded: shielded,
+                                                         nullified: nullified))
                                 .font(Torch.Font.body(Torch.TextSize.xs))
                                 .foregroundStyle(Torch.Color.text)
+                            if nullified {
+                                Spacer(minLength: 8)
+                                // Same capsule construction as the reveal's
+                                // "immune" pill (VoteRevealView), inverted into
+                                // the danger palette — this is the opposite
+                                // news.
+                                Text("IDOL NULLIFIED")
+                                    .font(Torch.Font.label(Torch.TextSize.xs))
+                                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                                    .foregroundStyle(Torch.Color.danger)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(Torch.Color.danger.opacity(0.12)))
+                                    .overlay(Capsule().strokeBorder(Torch.Color.danger.opacity(0.4),
+                                                                    lineWidth: 1))
+                            }
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 .padding()
@@ -111,5 +131,20 @@ struct ImmunityView: View {
                 Task { await viewModel.playImmunity(targetId: targetId) }
             }
         }
+    }
+}
+
+/// The "Immunity Played" row's label-flip math, pulled out of the view so
+/// it's testable without standing up a `TribalViewModel` — mirrors
+/// `VoteBarScale` in `VoteRevealView.swift`.
+enum IdolProtectionCopy {
+    static func line(holder: String?, shielded: String, nullified: Bool) -> String {
+        if nullified {
+            return "\(shielded)'s idol is nullified — votes count"
+        }
+        if let holder, holder != shielded {
+            return "\(holder) shielded \(shielded)"
+        }
+        return "\(shielded) is protected"
     }
 }

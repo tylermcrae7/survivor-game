@@ -118,6 +118,7 @@
 		F4339C498EB09F44618E2802 /* CardDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FA1D6F26BC0F94002F4A81 /* CardDetailSheet.swift */; };
 		F46B39415372AF4A412FA05E /* HallOfFameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */; };
 		F9C27661153509EA11A3AADB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32C075937A0671D2605E1D40 /* Theme.swift */; };
+		FC3D9310D5752827DD3D8C0B /* IdolNullificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74CAD3AB8B04DCEA917F20AC /* IdolNullificationTests.swift */; };
 		FD312F51894BB9E628FF785A /* StealTargetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58BFD2DC553683E0F96575E /* StealTargetPicker.swift */; };
 /* End PBXBuildFile section */
 
@@ -183,6 +184,7 @@
 		72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorButton.swift; sourceTree = "<group>"; };
 		7358AA566FA334CD64594A21 /* PhaseProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhaseProgressView.swift; sourceTree = "<group>"; };
 		744174BBF5E0E346A6DC0731 /* PlayerStatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStatusBar.swift; sourceTree = "<group>"; };
+		74CAD3AB8B04DCEA917F20AC /* IdolNullificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdolNullificationTests.swift; sourceTree = "<group>"; };
 		75049F5671D0DF640BE3220F /* FinalTribalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinalTribalState.swift; sourceTree = "<group>"; };
 		7519B7FA5A92C991D2A06F0B /* CardAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardAnimations.swift; sourceTree = "<group>"; };
 		754972255F7D3BA715370263 /* VoteBarScaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoteBarScaleTests.swift; sourceTree = "<group>"; };
@@ -525,6 +527,7 @@
 				03BBAD4DE85648C219BC0E8F /* CardIdentityTests.swift */,
 				A5396A2E209113CD92EB3A88 /* DesignSystemTests.swift */,
 				760A57B8F82EA8824DDB71EC /* FixtureDecodingTests.swift */,
+				74CAD3AB8B04DCEA917F20AC /* IdolNullificationTests.swift */,
 				EB96FC8285F596A14C699518 /* MockGameClient.swift */,
 				482BCD5B343FE8D5356071F9 /* MonogramTests.swift */,
 				B40AFB1785163AE1363F81EC /* NarrationEventTests.swift */,
@@ -756,6 +759,7 @@
 				1B2F52A8781AA797D2EBE8F6 /* CardIdentityTests.swift in Sources */,
 				20698A00EC6EB3802173F29D /* DesignSystemTests.swift in Sources */,
 				90B5801E1E939C0D164CBE91 /* FixtureDecodingTests.swift in Sources */,
+				FC3D9310D5752827DD3D8C0B /* IdolNullificationTests.swift in Sources */,
 				6588210FEAEEB4108AD7AFC7 /* MockGameClient.swift in Sources */,
 				DEFEFEA48DFBA0950729B94E /* MonogramTests.swift in Sources */,
 				F40EE64682CCD8155BBBFB5B /* NarrationEventTests.swift in Sources */,
