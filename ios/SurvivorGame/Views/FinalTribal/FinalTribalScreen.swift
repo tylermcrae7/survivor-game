@@ -181,13 +181,12 @@ private struct QuestionsPhase: View {
                 .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
-            if viewModel.isJuryMember && !viewModel.isReady {
-                Button("Ready to Vote") {
-                    Task { await viewModel.signalReady() }
-                }
-                .buttonStyle(.torchGlow)
-                .disabled(viewModel.isPerformingAction)
-            }
+            // No "Ready to Vote" here — the server refuses a signal raised
+            // before deliberation opens ("The finalists are still making
+            // their cases — deliberation opens the vote"), so the finger only
+            // ever appears once it can actually be raised (DeliberationPhase,
+            // below). Live log: `signal_jury_ready` returned a bare `False`
+            // ×2 from a jury member tapping this during questions.
 
             // Show ready status
             JuryReadyList(
