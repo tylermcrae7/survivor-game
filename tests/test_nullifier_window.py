@@ -244,6 +244,48 @@ class NullifierWindowTest(unittest.TestCase):
         self.assertNotIn("pending_nullifier", self.game)
 
 
+class NullifiedIdolReachesTheStatePayloadTest(NullifierWindowTest):
+    """Task S4: pin that `idolNullified` reaches the wire.
+
+    The player dict already carries `idolNullified`, and `get_game_state`
+    deep-copies `players` whole with no per-player redaction of that key
+    (only underscore-prefixed keys on a handful of hidden-info holders are
+    stripped). This is a verification test only, per the plan: if it ever
+    fails, that is a production bug to report, not quietly fix here.
+    """
+
+    def test_a_nullified_players_state_payload_says_so(self):
+        self._to_immunity(idol_holder=self.ids[0], nullifier_holders=(self.ids[1],))
+        self.gs.play_immunity(self.gid, playerId=self.ids[0], targetId=self.ids[0])
+
+        blocked = self.gs.block_immunity(self.gid, playerId=self.ids[1], targetId=self.ids[0])
+        self.assertTrue(blocked["success"], blocked.get("message"))
+        # Confirmed in memory first (mirrors test_playing_the_nullifier_closes_the_window).
+        self.assertTrue(self.game["players"][self.ids[0]].get("idolNullified"))
+
+        state = self.gs.get_game_state(self.gid)
+        wire_player = state["players"][self.ids[0]]
+        self.assertTrue(
+            wire_player.get("idolNullified"),
+            "idolNullified must reach the wire — a client can never decode a "
+            "flag the server never sends. This would be a bug to report.")
+        # The (now moot) protection flag rides along too, unredacted —
+        # `_effect_idol_nullifier` revokes it the moment it nullifies, so a
+        # client can tell "never protected" and "nullified" apart only by
+        # also reading idolNullified.
+        self.assertFalse(wire_player.get("immunityIdolProtection"))
+
+    def test_an_unnullified_idol_holder_carries_no_stray_flag(self):
+        """The flag must not appear at all for a protection that stands."""
+        self._to_immunity(idol_holder=self.ids[0])
+        self.gs.play_immunity(self.gid, playerId=self.ids[0], targetId=self.ids[0])
+
+        state = self.gs.get_game_state(self.gid)
+        wire_player = state["players"][self.ids[0]]
+        self.assertFalse(wire_player.get("idolNullified"))
+        self.assertTrue(wire_player.get("immunityIdolProtection"))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 
