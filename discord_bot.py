@@ -651,6 +651,28 @@ class SurvivorDiscordClient(discord.Client):
                 return PLAN_POLL_SECONDS
             raise
 
+        # A lobby can outlive the linked player who made it discoverable. Once
+        # that player leaves, the game still exists and its voice plan remains
+        # perfectly valid, so the old 404/finished release paths never run.
+        # Holding on to it forever prevents active-game discovery from seeing
+        # the next table. Release immediately and let the following poll choose
+        # from /api/voice/active again.
+        linked_players = self._linked_players(plan)
+        if not linked_players:
+            LOG.info(
+                "game %s has no linked players; returning to active-game discovery",
+                game_id,
+            )
+            await self._unlock_all_channels(
+                "Survivor: no linked players remain in the game"
+            )
+            await self._set_vote_mute([], False)
+            await self._clear_every_member_bar(
+                "no linked players remain in the game"
+            )
+            self._forget_game()
+            return PLAN_POLL_SECONDS
+
         version_changed = plan["version"] != self._last_plan_version
         if version_changed or self._force_reconcile:
             reconciled = await self._reconcile(plan)
@@ -668,8 +690,7 @@ class SurvivorDiscordClient(discord.Client):
                 # strand friends in a server-muted state.
                 LOG.exception("cannot confirm voting phase; failing open to unmuted")
             if desired_mute != self._last_mute_state or self._force_reconcile:
-                players = self._linked_players(plan)
-                if await self._set_vote_mute(players, desired_mute):
+                if await self._set_vote_mute(linked_players, desired_mute):
                     self._last_mute_state = desired_mute
 
         if plan.get("phase") == "finished" and not self._force_reconcile:

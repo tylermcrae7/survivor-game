@@ -162,6 +162,10 @@ def main():
             'description': 'Discord link codes — one-time, single-use, and useless to a guesser'
         },
         {
+            'file': 'tests/test_discord_bot.py',
+            'description': 'Discord bot poller — abandoned games release so the next linked table is discovered'
+        },
+        {
             'file': 'tests/test_seats.py',
             'description': 'Seats — six fixed colours, derived for old saves, never guessed'
         },
