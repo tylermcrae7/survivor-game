@@ -541,22 +541,34 @@ class GameNarrator {
     }
 
     bindEvents() {
-        // Listen for socket events if available
-        if (window.SurvivorNetwork?.socketManager?.socket) {
-            const socket = window.SurvivorNetwork.socketManager.socket;
-
-            socket.on('game_event', (data) => {
-                this.handleGameEvent(data);
-            });
-
-            socket.on('state_update', (gameState) => {
-                this.handleStateUpdate(gameState);
-            });
-
-            socket.on('game_updated', (gameState) => {
-                this.handleStateUpdate(gameState);
-            });
+        // This used to reach into `.socket` directly and bail via an
+        // `if (...socket)` guard — the socket doesn't exist yet at
+        // DOMContentLoaded (it's created on join, game.js `connect()`), so the
+        // guard always failed and NO handler was ever attached, on the first
+        // game or any reconnect after. socketManager.on() instead files the
+        // handler into its own `eventListeners` registry, which _doConnect()
+        // re-attaches to every socket it creates, first connect included.
+        const socketManager = window.SurvivorNetwork?.socketManager;
+        if (!socketManager) {
+            // Script order should already guarantee network.js has run before
+            // narrator.js (index-optimized.html loads them in that order),
+            // but fail quiet rather than throw — same defensive style used
+            // everywhere else in this file for SurvivorNetwork/SurvivorGame.
+            console.warn('Narrator: SurvivorNetwork not ready — game_event will not be heard');
+            return;
         }
+
+        socketManager.on('game_event', (data) => {
+            this.handleGameEvent(data);
+        });
+
+        socketManager.on('state_update', (gameState) => {
+            this.handleStateUpdate(gameState);
+        });
+
+        socketManager.on('game_updated', (gameState) => {
+            this.handleStateUpdate(gameState);
+        });
     }
 
     // Handle specific game events from server
@@ -602,6 +614,18 @@ class GameNarrator {
                 break;
             case 'winner':
                 this.narrateWinner(player, event.votes);
+                break;
+            case 'robbed':
+                // Private and public events arrive on the same 'game_event'
+                // name — this gate is the only defense if a routing bug ever
+                // leaks a robbed alert into the broadcast room. No ordinary
+                // steal toast alongside it: the victim already gets the
+                // public "X stole a card from Y" line via the separate
+                // 'steal' event, and two notices for one theft is the
+                // double-toast mistake _emit_narrator_events documents.
+                if (window.SurvivorGame?.localGameState?.playerId === event.victimId) {
+                    this.showRobbedBanner(event);
+                }
                 break;
             case 'alliance': {
                 // The two partners get a blocking overlay — a moment, not a
@@ -823,6 +847,36 @@ class GameNarrator {
             document.querySelector('[data-alliance-dismiss]')
                 ?.addEventListener('click', () => hideModal(), { once: true });
         }, 0);
+    }
+
+    // The victim's own moment — bigger and longer-lived than the ordinary
+    // toast, auto-dismissing, tap-to-dismiss, and (unlike the alliance
+    // overlay above) never blocking: a steal happens on nearly every turn,
+    // and a modal per theft would be intolerable. Composition mirrors the
+    // raid dialog's icon-over-headline, minus showModal's backdrop and focus
+    // trap. No sound here — the victim already heard 'steal' play for the
+    // public event this rides alongside; a second cue would double up.
+    showRobbedBanner(event) {
+        window.SurvivorUI?.hapticFeedback?.('warning');
+
+        // Replace, don't stack — a second theft landing before the first
+        // banner clears should read as an update, not a pile of banners.
+        document.getElementById('robbedBanner')?.remove();
+
+        const banner = document.createElement('div');
+        banner.id = 'robbedBanner';
+        banner.className = 'robbed-banner';
+        banner.setAttribute('role', 'status');
+        banner.setAttribute('aria-live', 'assertive');
+        banner.innerHTML = `
+            <span class="robbed-banner-icon">${icon('swap')}</span>
+            <span class="robbed-banner-text">${escapeHtml(event.message || '')}</span>
+        `;
+
+        const dismiss = () => banner.remove();
+        banner.addEventListener('click', dismiss, { once: true });
+        document.body.appendChild(banner);
+        setTimeout(dismiss, 5000);
     }
 
     // Specific narration methods

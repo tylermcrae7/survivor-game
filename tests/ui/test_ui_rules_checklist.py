@@ -136,6 +136,15 @@ def guidance(page):
         ".replace(/\\s+/g,' ').trim() || ''")
 
 
+def narrator_entries(page):
+    """Newest-first list of the narrator's typed-out history lines — the DOM
+    a game_event narration actually lands in once bindEvents() hears it."""
+    return page.evaluate(
+        "() => [...document.querySelectorAll("
+        "'#narratorHistory .narrator-history-entry .history-message')]"
+        ".map(e => e.textContent)")
+
+
 def main():
     # ── Scratch server in an isolated working directory ──
     workdir = tempfile.mkdtemp()
@@ -341,12 +350,43 @@ def run_checks():
 
         # Ben's quick turn, then the bot plays itself
         wait_for(lambda: 'Steal' in guidance(ben), 15)
-        jsclick(ben, '.lives-row.steal-target')
+        # A0 regression: before the fix, narrator.js bound 'game_event' to
+        # socketManager.socket at DOMContentLoaded — before the socket
+        # existed — so no handler was EVER attached and this narration was
+        # silently dead on every phone. This is a REAL steal over the REAL
+        # socket; snapshot first so pre-existing history can't fake a pass.
+        # Targeted at Ana specifically (not left to whichever row renders
+        # first): the server's private "robbed" alert only fires for a
+        # human victim, and doubling this steal as the A1/A4 end-to-end
+        # check below needs a known victim.
+        narrator_before = narrator_entries(ana)
+        jsclick(ben, '.lives-row.steal-target', 'Ana')
         time.sleep(1.0)
         # (a raid dialog can appear on Ana if Ben stole from her — she declines)
         if ana.locator('.raid-dialog').count():
             jsclick(ana, '[data-raid="allow"]')
             time.sleep(0.6)
+
+        # A1 (web half) + A4, end to end: the server now actually emits a
+        # private "robbed" alert to the victim's own room (on_join/A2 are
+        # live in this tree). Ana's phone should show the banner; Ben's —
+        # the thief, room-mate in the SAME broadcast room — never should.
+        # Checked BEFORE the narrator-queue assertion below on purpose: the
+        # banner renders immediately (no typing effect) and auto-dismisses
+        # after ~5s, while the narrator's own queue can still be working
+        # through earlier events' typing animation — polling for the banner
+        # after that catches up would just watch it dismiss unseen.
+        check("robbed (E2E): the victim's own phone gets the private banner",
+              wait_for(lambda: ana.locator('.robbed-banner').count() == 1, 8) is not None,
+              ana.locator('.robbed-banner').count())
+        check("robbed (E2E): the thief's phone never gets a banner",
+              ben.locator('.robbed-banner').count() == 0)
+        ana.evaluate("() => document.getElementById('robbedBanner')?.remove()")
+
+        check("narrator: a real steal's game_event reaches the DOM (A0 regression)",
+              wait_for(lambda: len(narrator_entries(ana)) > len(narrator_before)
+                       and 'Ben' in narrator_entries(ana)[0], 20) is not None,
+              narrator_entries(ana)[:2])
         wait_for(lambda: 'Play' in guidance(ben) or 'Draw' in guidance(ben), 10)
         jsclick(ben, '[data-action="drawCard"]')
         time.sleep(0.8)
@@ -557,6 +597,91 @@ def run_checks():
         hof = ana.locator('#leaderboardList').inner_text()
         check("hall of fame: opens from the camp menu (empty on a fresh island)",
               'No Sole Survivor yet' in hof or 'carved' in hof, hof[:60])
+
+        # ══════════════ U6 · The robbed banner (A4) ══════════════
+        # The private-room plumbing this event would ordinarily ride (A1's
+        # and A2's server halves) is outside this suite's ownership, so this
+        # exercises exactly the web contract: handleGameEvent -> the banner,
+        # gated on the viewer being the addressed victim — by dispatching the
+        # server's documented payload straight at the narrator, the same way
+        # a private 'game_event' would arrive over the socket.
+        robbed_event = {
+            "type": "robbed", "timestamp": 0,
+            "thiefId": ben_id, "thief": "Ben",
+            "victimId": ana_id, "victim": "Ana",
+            "count": 1, "cards": [{"name": "Hidden Immunity Idol", "type": "immunity_idol"}],
+            "message": "Ben took your Hidden Immunity Idol",
+        }
+        ana.evaluate("(e) => window.SurvivorNarrator.handleGameEvent(e)", robbed_event)
+        check("robbed: the victim's banner shows the server's message verbatim",
+              wait_for(lambda: ana.locator('.robbed-banner').count() == 1
+                       and 'Hidden Immunity Idol' in ana.locator('.robbed-banner').inner_text(),
+                       5) is not None)
+
+        jsclick(ana, '.robbed-banner')
+        check("robbed: tapping the banner dismisses it",
+              wait_for(lambda: ana.locator('.robbed-banner').count() == 0, 3) is not None)
+
+        # Gate: an event addressed to someone else must never render here,
+        # even though the server should only ever reach the victim's own
+        # private room — defense against a routing bug.
+        other_event = dict(robbed_event, thiefId=ana_id, thief="Ana",
+                            victimId=ben_id, victim="Ben",
+                            message="Ana took your Hidden Immunity Idol")
+        ana.evaluate("(e) => window.SurvivorNarrator.handleGameEvent(e)", other_event)
+        time.sleep(0.5)
+        check("robbed: a banner addressed to someone else never renders for this viewer",
+              ana.locator('.robbed-banner').count() == 0)
+
+        # ══════════════ U7 · A shared link survives the gate's reload (B1) ══════════════
+        # The gate can swap in accessScreen before a tapped link's code ever
+        # reaches the join form, and submitAccessCode()'s location.reload()
+        # wipes the DOM AND the (already-cleaned) address bar — sessionStorage
+        # is the only thing that survives that round trip. Actually enabling
+        # SURVIVOR_ACCESS_CODE here would 401 every other check's raw api()
+        # call, so this exercises the stash/restore mechanics directly: a
+        # real reload, on the real code path, standing in for the gate's own.
+        #
+        # Uses the ?join= form, not /join/CODE: navigating straight to a
+        # nested path 404s on THIS server today — Flask's own static handler
+        # (static_url_path="") registers at the same "/<path:...>" shape as
+        # the app's SPA-fallback route and Werkzeug ranks it first regardless
+        # of registration order (the plan's Task B2 already names this
+        # quirk for the AASA route), so a bare GET /join/CODE never reaches
+        # index-optimized.html at all — a real bug in survivor_server.py,
+        # outside this suite's ownership, flagged separately. ?join= hits the
+        # exact "/" route and is unaffected, and it exercises the identical
+        # stash/restore code path applyJoinLink() runs for either form.
+        join_game = api("/api/game/create", {"deckMode": "official", "expansion": False})
+        join_gid = join_game["gameId"]
+        join_ctx = browser.new_context(viewport={"width": 390, "height": 844})
+        join_page = join_ctx.new_page()
+        join_page.goto(f"{BASE}/?join={join_gid}")
+        join_page.wait_for_selector('#gameCodeInput')
+
+        check("join link: ?join=CODE prefills the join form",
+              join_page.input_value('#gameCodeInput') == join_gid)
+        check("join link: the address bar is cleaned after the prefill",
+              join_page.evaluate("() => window.location.pathname") == '/')
+        stashed = join_page.evaluate("() => sessionStorage.getItem('survivorPendingJoin')")
+        check("join link: the code is stashed in sessionStorage before the cleanup",
+              stashed == join_gid, stashed)
+
+        join_page.reload()
+        join_page.wait_for_selector('#gameCodeInput')
+        check("join link: the code survives a reload via the sessionStorage stash",
+              join_page.input_value('#gameCodeInput') == join_gid)
+
+        jsfill(join_page, '#playerNameInput', 'Zed')
+        jsclick(join_page, '#colorSelection .color-btn')
+        jsclick(join_page, '.screen.active button[data-action="joinGame"]')
+        wait_for(lambda: active_screen(join_page) == 'lobbyScreen', 8)
+        check("join link: the stashed code actually joins the game",
+              active_screen(join_page) == 'lobbyScreen')
+        check("join link: the stash clears once the code is actually used to join",
+              join_page.evaluate(
+                  "() => sessionStorage.getItem('survivorPendingJoin')") is None)
+        join_ctx.close()
 
         browser.close()
 

@@ -693,6 +693,10 @@ async function joinGame() {
             window.SurvivorGame.fullGameState = result.gameState || {};
         }
 
+        // The code did its job — it doesn't need to keep surviving reloads
+        // for a game this device has now actually joined.
+        try { sessionStorage.removeItem(PENDING_JOIN_KEY); } catch (e) { /* ignore */ }
+
         if (window.SurvivorNetwork && window.SurvivorNetwork.socketManager) {
             window.SurvivorNetwork.socketManager.connect(gameId);
         }
@@ -960,6 +964,13 @@ window.SurvivorGame = {
     formatCardName
 };
 
+// The gate's access screen can swap in before this code ever reaches the join
+// form, and submitAccessCode()'s location.reload() wipes the DOM AND the
+// address bar this function already cleaned — so the URL alone can't carry a
+// shared link across an unlock. sessionStorage survives that same-tab
+// reload; this key is what actually does the carrying.
+const PENDING_JOIN_KEY = 'survivorPendingJoin';
+
 // A shared ?join=CODE link walks a friend straight to the join form with the
 // code already filled in — they only pick a name and color.
 function applyJoinLink() {
@@ -970,6 +981,16 @@ function applyJoinLink() {
         const pathMatch = window.location.pathname.match(/^\/join\/([\w-]+)/);
         if (!code && pathMatch) code = pathMatch[1];
     } catch (e) { /* very old browser — the join form still works by hand */ }
+
+    if (code) {
+        // Stash BEFORE the address-bar cleanup below, so the code survives a
+        // gate unlock's reload even though the URL that carried it here is
+        // about to be wiped. Cleared only once the code is actually used to
+        // join (see joinGame()) — not merely displayed here.
+        try { sessionStorage.setItem(PENDING_JOIN_KEY, code); } catch (e) { /* private mode, etc. */ }
+    } else {
+        try { code = sessionStorage.getItem(PENDING_JOIN_KEY); } catch (e) { /* ignore */ }
+    }
     if (!code) return;
 
     const joinForm = document.getElementById('joinForm');
@@ -978,7 +999,9 @@ function applyJoinLink() {
     if (gameCodeInput) gameCodeInput.value = code;
     const nameInput = document.getElementById('playerNameInput');
     if (nameInput) nameInput.focus();
-    // Clean the address bar so a reload doesn't re-trigger the prefill
+    // Clean the address bar so a reload doesn't re-trigger the prefill from
+    // the URL — the sessionStorage stash above is what carries the code
+    // across a reload from here on.
     try { window.history.replaceState({}, '', window.location.origin + '/'); } catch (e) {}
 }
 

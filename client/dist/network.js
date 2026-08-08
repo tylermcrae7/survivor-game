@@ -291,7 +291,12 @@ class SocketManager {
     joinRoom(gameId) {
         if (!gameId) return;
         this.roomGameId = gameId;
-        this.emit('join', { gameId });
+        // playerId rides along so the server can also drop this socket into
+        // its own private room (gid::pid) for player-only events like a
+        // robbery banner. An old server that doesn't know the key ignores
+        // it — this device just gets no private events.
+        const playerId = window.SurvivorGame?.localGameState?.playerId;
+        this.emit('join', playerId ? { gameId, playerId } : { gameId });
     }
     
     async _doConnect(gameId) {
@@ -349,14 +354,17 @@ class SocketManager {
                                      window.SurvivorGame?.localGameState?.gameId;
                 if (activeGameId) {
                     this.roomGameId = activeGameId;
-                    this.socket.emit('join', { gameId: activeGameId });
+                    // Same playerId-along-with-join as joinRoom() above — this
+                    // path fires on every (re)connect, forceNew included, so
+                    // the private room has to be re-requested here too.
+                    const activePlayerId = window.SurvivorGame?.localGameState?.playerId;
+                    this.socket.emit('join', activePlayerId
+                        ? { gameId: activeGameId, playerId: activePlayerId }
+                        : { gameId: activeGameId });
 
                     // Request fresh state on reconnect
-                    if (wasReconnecting) {
-                        const playerId = window.SurvivorGame?.localGameState?.playerId;
-                        if (playerId) {
-                            GameAPI.rejoinGame(activeGameId, playerId).catch(() => {});
-                        }
+                    if (wasReconnecting && activePlayerId) {
+                        GameAPI.rejoinGame(activeGameId, activePlayerId).catch(() => {});
                     }
                 }
 

@@ -4169,8 +4169,9 @@ async function copyGameCode() {
     }
 
     // The copied text is a link that walks a friend straight onto the island —
-    // opening it prefills the join form with this code.
-    const joinLink = `${window.location.origin}/?join=${encodeURIComponent(gameId)}`;
+    // opening it prefills the join form with this code. Path form (not
+    // ?join=) so it also matches a Universal Link's AASA component match.
+    const joinLink = `${window.location.origin}/join/${encodeURIComponent(gameId)}`;
     try {
         await navigator.clipboard.writeText(joinLink);
         showToast('Join link copied!', 'success');
@@ -4204,10 +4205,14 @@ async function shareGame() {
         return;
     }
 
-    const shareUrl = `${window.location.origin}/?join=${encodeURIComponent(gameId)}`;
+    // Path form (not ?join=) so this link also matches a Universal Link's
+    // AASA component match. The message leads with the invitation, not the
+    // raw code — the code is the fallback for whoever can't tap the link.
+    const shareUrl = `${window.location.origin}/join/${encodeURIComponent(gameId)}`;
+    const shareText = `Join my Survivor game — tap to come ashore. (Fire code: ${gameId})`;
     const shareData = {
         title: 'Join my Survivor game!',
-        text: `Join my Survivor game with code: ${gameId}`,
+        text: shareText,
         url: shareUrl
     };
 
@@ -4227,7 +4232,7 @@ async function shareGame() {
 
     // Fallback: copy link to clipboard
     try {
-        await navigator.clipboard.writeText(`Join my Survivor game! Code: ${gameId}\n${shareUrl}`);
+        await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
         showToast('Share link copied to clipboard!', 'success');
         hapticFeedback('success');
     } catch (error) {
