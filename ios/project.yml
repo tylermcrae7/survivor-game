@@ -60,6 +60,16 @@ targets:
         UIAppFonts:
           - Fraunces-Variable.ttf
           - Fraunces-Italic-Variable.ttf
+    # Universal Links: lets a tapped https://survivor.mctech.biz/join/CODE
+    # link open straight into the app instead of Safari. Not an Info.plist
+    # property — it has to live in a signed entitlements file. `properties`
+    # tells xcodegen to write SurvivorGame.entitlements itself, so this
+    # block is the file's source of truth; don't hand-edit the generated file.
+    entitlements:
+      path: SurvivorGame/SurvivorGame.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:survivor.mctech.biz
     dependencies:
       - package: SocketIO
         product: SocketIO

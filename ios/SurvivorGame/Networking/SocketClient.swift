@@ -138,8 +138,16 @@ final class SocketClient {
         reconnectAttempts = 0
     }
 
-    func joinGame(_ gameId: String) {
-        socket?.emit("join", ["gameId": gameId])
+    // playerId is optional so an old caller (or a spectator with no player
+    // of their own) still joins the game room; the server only grants a
+    // private `gid::pid` room when it's present. This is a UX channel, not a
+    // security boundary — see the server's on_join comment.
+    func joinGame(_ gameId: String, playerId: String? = nil) {
+        var payload: [String: Any] = ["gameId": gameId]
+        if let playerId {
+            payload["playerId"] = playerId
+        }
+        socket?.emit("join", payload)
     }
 
     func sendHeartbeat() {

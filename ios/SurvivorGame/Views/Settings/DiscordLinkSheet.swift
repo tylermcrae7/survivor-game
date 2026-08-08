@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Linking a Discord account by reading a short code aloud.
 ///
@@ -91,6 +92,9 @@ final class DiscordLinkViewModel {
 struct DiscordLinkSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: DiscordLinkViewModel
+    /// Brief "Copied" confirmation after a tap on the code.
+    @State private var justCopied = false
+    @State private var copiedResetTask: Task<Void, Never>?
     /// Handed back to Settings, which owns the stored value.
     let onLinked: (String) -> Void
 
@@ -132,15 +136,18 @@ struct DiscordLinkSheet: View {
 
         case .waiting(let code):
             VStack(spacing: 20) {
-                Text("in discord, run")
+                // The command stated once, in the small type, where it
+                // belongs — the hero line below is the bare code alone, so
+                // selecting or copying it never drags "/link " along too.
+                Text("in discord, run /link and paste:")
                     .font(Torch.Font.label(Torch.TextSize.xs))
                     .tracking(Torch.Track.label * Torch.TextSize.xs)
                     .foregroundStyle(Torch.Color.textSecondary)
 
                 // The whole point of the code is being readable across a room,
                 // so it gets the largest type on the screen and never wraps
-                // mid-word.
-                Text("/link \(code)")
+                // mid-word. Tapping it copies the bare code to the pasteboard.
+                Text(justCopied ? "Copied" : code)
                     .font(Torch.Font.display(Torch.TextSize.displayMD, weight: 700))
                     .foregroundStyle(Torch.Color.parchment)
                     .lineLimit(1)
@@ -158,11 +165,17 @@ struct DiscordLinkSheet: View {
                             .strokeBorder(Torch.Color.torch.opacity(0.55), lineWidth: 1)
                     )
                     .torchGlow(0.3)
-                    .accessibilityLabel("Run slash link \(spelledOut(code)) in Discord")
-                    // The spoken label spells the code out character by
-                    // character, which is right for a person typing it into
-                    // another app and useless to a test trying to read it. The
-                    // identifier carries the code itself.
+                    .contentShape(Rectangle())
+                    .onTapGesture { copyCode(code) }
+                    .accessibilityAddTraits(.isButton)
+                    // The spoken label used to spell out "slash link" ahead of
+                    // the code, which was right when the hero text carried
+                    // the command too. It doesn't anymore — this reads the
+                    // bare code, character by character, same as before.
+                    .accessibilityLabel(justCopied ? "Copied" : spelledOut(code))
+                    .accessibilityHint("Double tap to copy")
+                    // The identifier carries the code itself, unchanged — a
+                    // UI test reads it.
                     .accessibilityIdentifier("discord-link-code-\(code)")
 
                 HStack(spacing: 8) {
@@ -210,6 +223,21 @@ struct DiscordLinkSheet: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Torch.Color.torch)
             }
+        }
+    }
+
+    /// Puts the bare code on the pasteboard — never the `/link ` prefix,
+    /// which would double the command if pasted straight into Discord's
+    /// message box — and shows a brief "Copied" confirmation before reverting.
+    private func copyCode(_ code: String) {
+        UIPasteboard.general.string = code
+        HapticEngine.selection()
+        copiedResetTask?.cancel()
+        withAnimation(.torchEaseOut(duration: 0.15)) { justCopied = true }
+        copiedResetTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.torchEaseOut(duration: 0.15)) { justCopied = false }
         }
     }
 

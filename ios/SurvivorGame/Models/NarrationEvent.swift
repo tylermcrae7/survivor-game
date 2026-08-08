@@ -38,6 +38,13 @@ enum NarrationEvent: Equatable, Sendable {
     /// everyone else at the table gets exactly this line.
     case alliance(initiatorId: String?, initiator: String, allyId: String?, ally: String,
                   victimId: String?, victim: String, message: String)
+    /// The private twin of `.steal`: sent only to the victim's own `gid::pid`
+    /// room (A1), so unlike every other case here it names the actual cards.
+    /// That's safe precisely because nobody else's client ever decodes it —
+    /// `GameClient` gates on `victimId` again anyway, in case a routing bug
+    /// ever put it on the public channel. `message` is the server's own
+    /// wording, verbatim, exactly like `raidBlocked` and `inheritance`.
+    case robbed(thiefId: String?, thief: String, victimId: String?, cards: [String], message: String)
     case cardPlayed(player: String, card: String?, target: String?)
     case voteCast(player: String)
     case immunityPlayed(player: String)
@@ -88,6 +95,15 @@ enum NarrationEvent: Equatable, Sendable {
                              allyId: data["allyId"] as? String, ally: ally,
                              victimId: data["victimId"] as? String, victim: victim,
                              message: message)
+        case "robbed":
+            guard let thief = str("thief"), let message = str("message") else { return nil }
+            // Allowlist by construction, same as every other case: only the
+            // "name" out of each {name, type} dict is read, never "type" —
+            // there's nothing here that needs it yet, and reading it would
+            // be one field this initialiser no longer visibly ignores.
+            let cards = (data["cards"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+            self = .robbed(thiefId: data["thiefId"] as? String, thief: thief,
+                           victimId: data["victimId"] as? String, cards: cards, message: message)
         case "card_played":
             guard let player = str("player") else { return nil }
             // The server's placeholder is the literal "a card"; treat it as
@@ -128,7 +144,11 @@ enum NarrationEvent: Equatable, Sendable {
         // alliance is the same: the two partners' overlay reads straight off
         // this event (GameClient.handleEvent), so it must survive the queue
         // even for everyone else still getting the plain toast.
-        case .elimination, .winner, .gameStart, .tribalStart, .inheritance, .alliance: .critical
+        // A steal happens on nearly every turn and rides its own banner
+        // (RobberyBanner), never this queue — but critical is still the
+        // right answer for the rare case a routing bug puts one here anyway:
+        // it should not be silently evicted as chatter.
+        case .elimination, .winner, .gameStart, .tribalStart, .inheritance, .alliance, .robbed: .critical
         case .steal, .raidBlocked, .cardPlayed, .immunityPlayed, .immunityNullified: .normal
         case .voteCast, .playerJoined: .chatter
         }
@@ -145,6 +165,8 @@ enum NarrationEvent: Equatable, Sendable {
         case .inheritance(_, _, _, _, _, _, let message):
             message
         case .alliance(_, _, _, _, _, _, let message):
+            message
+        case .robbed(_, _, _, _, let message):
             message
         case .cardPlayed(let player, let card, let target):
             if let card, let target { "\(player) played \(card) on \(target)" }
@@ -182,7 +204,7 @@ enum NarrationEvent: Equatable, Sendable {
         // an heir is a steal in every way that matters to the ear, and an
         // alliance IS a pair of steals ("they raid Z's camp together") — same
         // cue for all four, no dedicated sound exists yet.
-        case .steal, .raidBlocked, .inheritance, .alliance: .steal
+        case .steal, .raidBlocked, .inheritance, .alliance, .robbed: .steal
         case .cardPlayed, .immunityPlayed, .immunityNullified: .cardPlay
         case .voteCast: .notification
         case .gameStart: .tribalGong
@@ -225,5 +247,28 @@ struct AllianceOverlayContent: Equatable {
             return AllianceOverlayContent(partnerName: initiator, victimName: victim)
         }
         return nil
+    }
+}
+
+/// The robbery banner's own copy, split out of `RobberyBanner` for the same
+/// reason as `AllianceOverlayContent` above: "is this event addressed to the
+/// viewer" is testable without a live GameClient.
+///
+/// `nil` for anyone but the named victim. Unlike `.alliance`, a `.robbed`
+/// event is never broadcast room-wide in the first place (A1's private
+/// `gid::pid` room), so this gate is a second line of defense rather than
+/// the only one — but it's the one that matters if a routing bug ever puts
+/// it on the public channel anyway, and `GameClient` must never surface
+/// somebody else's stolen cards on this phone.
+struct RobberyBannerContent: Equatable {
+    let thiefId: String?
+    let thiefName: String
+    let cards: [String]
+    let message: String
+
+    static func forViewer(_ viewerId: String?, event: NarrationEvent) -> RobberyBannerContent? {
+        guard case let .robbed(thiefId, thief, victimId, cards, message) = event,
+              let viewerId, viewerId == victimId else { return nil }
+        return RobberyBannerContent(thiefId: thiefId, thiefName: thief, cards: cards, message: message)
     }
 }

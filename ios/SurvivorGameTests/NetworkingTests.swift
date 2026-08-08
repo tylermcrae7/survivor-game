@@ -282,4 +282,59 @@ struct NetworkingTests {
         client.applyState(MockGameClient.sampleGameState())
         #expect(client.gameState == nil)
     }
+
+    // MARK: - Robbery routing (A3)
+
+    private func robbedEventData() -> [String: Any] {
+        [
+            "thiefId": "p1", "thief": "TDawg", "victimId": "p2",
+            "cards": [["name": "Hidden Immunity Idol", "type": "advantage"]],
+            "message": "TDawg took your Hidden Immunity Idol",
+        ]
+    }
+
+    /// The named victim gets the banner and — unlike an ordinary steal —
+    /// never a queued toast for the same event: two notices for one theft is
+    /// the double-toast mistake `_emit_narrator_events` documents.
+    @Test @MainActor func robbedGivesTheVictimTheBannerNotTheToast() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "p2"
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData()))
+        #expect(client.robberyAlert == RobberyBannerContent(
+            thiefId: "p1", thiefName: "TDawg", cards: ["Hidden Immunity Idol"],
+            message: "TDawg took your Hidden Immunity Idol"))
+        #expect(client.narration.queueDepthForTesting == 0)
+    }
+
+    /// Private and public events share the `game_event` channel — this is the
+    /// only defense if a routing bug ever leaks a robbed event naming someone
+    /// else. It must be ignored entirely: no banner, and no toast either.
+    @Test @MainActor func robbedNamingAnotherVictimLeavesTheAlertNil() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "p3"
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData()))
+        #expect(client.robberyAlert == nil)
+        #expect(client.narration.queueDepthForTesting == 0)
+    }
+
+    /// A reset must not leave a stale banner open on the next game.
+    @Test @MainActor func resetClearsAPendingRobberyAlert() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "p2"
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData()))
+        #expect(client.robberyAlert != nil)
+        client.handleEvent(.reset)
+        #expect(client.robberyAlert == nil)
+    }
+
+    /// Leaving the game (and `.wiped`, which routes through the same
+    /// function) must not carry a robbery banner into whatever comes next.
+    @Test @MainActor func leaveGameClearsAPendingRobberyAlert() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "p2"
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData()))
+        #expect(client.robberyAlert != nil)
+        client.leaveGame()
+        #expect(client.robberyAlert == nil)
+    }
 }

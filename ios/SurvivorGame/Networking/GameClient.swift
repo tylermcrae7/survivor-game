@@ -27,6 +27,18 @@ final class GameClient {
         allianceAlert = nil
     }
 
+    /// Set only for the ROBBED PLAYER (`RobberyBannerContent`, resolved in
+    /// `handleEvent`) — gated on `victimId == playerId` so a routing bug
+    /// leaking a `robbed` event onto the public channel can never surface
+    /// someone else's stolen cards here. `RobberyBanner` reads this and
+    /// clears it itself on dismiss or auto-timeout; nothing here waits on
+    /// the server.
+    private(set) var robberyAlert: RobberyBannerContent?
+
+    func dismissRobberyAlert() {
+        robberyAlert = nil
+    }
+
     var gameId: String?
     var playerId: String?
     var playerName: String?
@@ -167,9 +179,10 @@ final class GameClient {
         self.playerName = name
         applyState(response.gameState)
 
-        // Connect socket and join room
+        // Connect socket and join room, plus our own private gid::pid room —
+        // the channel A3's robbery banner rides on.
         connect()
-        socketClient.joinGame(gameId)
+        socketClient.joinGame(gameId, playerId: playerId)
     }
 
     func rejoinGame(
@@ -190,7 +203,7 @@ final class GameClient {
         applyState(response.gameState)
 
         connect()
-        socketClient.joinGame(gameId)
+        socketClient.joinGame(gameId, playerId: playerId)
     }
 
     func startGame() async throws {
@@ -622,6 +635,11 @@ final class GameClient {
         playerName = nil
         navigationState = .start
         lastError = nil
+        // A stale robbery banner surviving into the next game (or the lobby
+        // you just left) is the same overlay bug the alliance work already
+        // had to fix once — `.wiped` routes through here too, so this covers
+        // both call sites in one place.
+        robberyAlert = nil
     }
 
     // MARK: - Sync
@@ -696,7 +714,7 @@ final class GameClient {
                 self.connectionState = state
                 // Auto-rejoin game room on reconnect
                 if state == .connected, let gameId = self.gameId {
-                    self.socketClient.joinGame(gameId)
+                    self.socketClient.joinGame(gameId, playerId: self.playerId)
                     await self.syncState()
                 }
             }
@@ -710,6 +728,7 @@ final class GameClient {
             // over the lobby.
             narration.reset()
             allianceAlert = nil
+            robberyAlert = nil
             gameState?.phase = .lobby
             updateNavigationState()
         case .wiped:
@@ -726,10 +745,20 @@ final class GameClient {
             // the phone dropped every line of it except player_joined, which is
             // why a stolen card just silently disappeared from your hand.
             if let event = NarrationEvent(type: type, data: data) {
-                // The two alliance PARTNERS get the blocking overlay instead
-                // of the toast — everyone else at the table keeps the
-                // ordinary NarrationFeed line.
-                if let content = AllianceOverlayContent.forViewer(playerId, event: event) {
+                // A robbed event is never a toast — the victim already gets
+                // the ordinary public `.steal` line, and two notices for one
+                // theft is the double-toast mistake `_emit_narrator_events`
+                // documents. If it doesn't name us as the victim, it is
+                // ignored entirely rather than shown or queued — the gate is
+                // defense against a routing bug, not a real expectation.
+                if case .robbed = event {
+                    if let content = RobberyBannerContent.forViewer(playerId, event: event) {
+                        robberyAlert = content
+                    }
+                } else if let content = AllianceOverlayContent.forViewer(playerId, event: event) {
+                    // The two alliance PARTNERS get the blocking overlay
+                    // instead of the toast — everyone else at the table
+                    // keeps the ordinary NarrationFeed line.
                     allianceAlert = content
                 } else {
                     narration.enqueue(event)

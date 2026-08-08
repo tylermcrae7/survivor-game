@@ -124,11 +124,14 @@ private struct LobbyContent: View {
                     .accessibilityValue(gameClient.connectionState.statusText)
 
                 ShareLink(
-                    item: gameClient.baseURL.appending(queryItems: [
-                        URLQueryItem(name: "join", value: viewModel.gameId)
-                    ]),
+                    // Built from gameClient.baseURL, not a hardcoded domain —
+                    // a LAN host must keep producing a link that works on
+                    // this LAN. It just won't be a Universal Link there,
+                    // which is fine: it still opens the game in Safari.
+                    item: gameClient.baseURL.appending(path: "/join/\(viewModel.gameId)"),
                     subject: Text("Join my Survivor game"),
-                    message: Text("Fire code: \(viewModel.gameId)")
+                    message: Text(
+                        "Join my Survivor game — tap to come ashore. (Fire code: \(viewModel.gameId))")
                 ) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.title3)

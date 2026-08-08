@@ -605,11 +605,15 @@ final class VisualAuditUITests: XCTestCase {
         shot("16-reveal-immune-votes")
     }
 
-    /// Read the code off the screen. The visible text is "/link PALM-472" and
-    /// the spoken label spells it out, so the identifier is what carries it.
+    /// Read the code off the screen. The visible text is the bare code
+    /// ("PALM-472" — the `/link` command moved to the instruction line, C1)
+    /// and the spoken label spells it out, so the identifier is what carries
+    /// it. Queried across ANY element type: tap-to-copy gave the code the
+    /// `.isButton` accessibility trait, which moves it out of `staticTexts`
+    /// in the XCUI hierarchy — the same code, one query type over.
     private func waitForCode(in app: XCUIApplication) throws -> String {
         let prefix = "discord-link-code-"
-        let element = app.staticTexts.matching(
+        let element = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", prefix)).firstMatch
         guard element.waitForExistence(timeout: 15) else {
             shot("14-discord-link-FAILED")

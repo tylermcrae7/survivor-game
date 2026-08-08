@@ -279,6 +279,106 @@ struct NarrationEventTests {
         let event = NarrationEvent(type: "steal", data: ["thief": "Ana", "victim": "Ben"])!
         #expect(AllianceOverlayContent.forViewer("Ana", event: event) == nil)
     }
+
+    // MARK: - Robbed (A3)
+
+    /// The server contract: `cards` is a list of `{name, type}` dicts; only
+    /// "name" is ever read, matching the allowlist-by-construction rule this
+    /// whole type is built on.
+    private func robbedEventData(cards: [[String: Any]] = [
+        ["name": "Hidden Immunity Idol", "type": "advantage"],
+    ]) -> [String: Any] {
+        [
+            "thiefId": "p1", "thief": "TDawg",
+            "victimId": "p2", "cards": cards,
+            "message": "TDawg took your Hidden Immunity Idol",
+        ]
+    }
+
+    @Test("A robbed event decodes into the case, cards included")
+    func robbedDecodesWithCardNames() {
+        let event = NarrationEvent(type: "robbed", data: robbedEventData())
+        #expect(event == .robbed(thiefId: "p1", thief: "TDawg", victimId: "p2",
+                                 cards: ["Hidden Immunity Idol"],
+                                 message: "TDawg took your Hidden Immunity Idol"))
+    }
+
+    @Test("A robbed event with no thief is dropped rather than shown blank")
+    func robbedWithNoThiefIsDropped() {
+        var data = robbedEventData()
+        data["thief"] = nil
+        #expect(NarrationEvent(type: "robbed", data: data) == nil)
+    }
+
+    @Test("A robbed event with no message is dropped rather than shown blank")
+    func robbedWithNoMessageIsDropped() {
+        var data = robbedEventData()
+        data["message"] = nil
+        #expect(NarrationEvent(type: "robbed", data: data) == nil)
+    }
+
+    /// The allowlist holds even for a type the initialiser does recognise —
+    /// a payload key it doesn't ask for (here, a "type" inside each card
+    /// dict) still can't reach the decoded value.
+    @Test("Robbed only ever reads the card name, never the type")
+    func robbedIgnoresCardType() {
+        let event = NarrationEvent(type: "robbed", data: robbedEventData(cards: [
+            ["name": "Vote", "type": "action"],
+        ]))
+        #expect(event == .robbed(thiefId: "p1", thief: "TDawg", victimId: "p2",
+                                 cards: ["Vote"], message: "TDawg took your Hidden Immunity Idol"))
+    }
+
+    @Test("A two-card robbery names both cards in the server's own message")
+    func robbedWithTwoCardsNamesBoth() {
+        let data: [String: Any] = [
+            "thiefId": "p1", "thief": "TDawg", "victimId": "p2",
+            "cards": [
+                ["name": "Hidden Immunity Idol", "type": "advantage"],
+                ["name": "Vote", "type": "action"],
+            ],
+            "message": "TDawg took 2 of your cards — Hidden Immunity Idol and Vote",
+        ]
+        let event = NarrationEvent(type: "robbed", data: data)
+        #expect(event?.message == "TDawg took 2 of your cards — Hidden Immunity Idol and Vote")
+        if case let .robbed(_, _, _, cards, _) = event {
+            #expect(cards == ["Hidden Immunity Idol", "Vote"])
+        } else {
+            Issue.record("Expected a robbed event")
+        }
+    }
+
+    @Test("Robbed toasts critical, and reuses the steal cue")
+    func robbedCueAndPriority() {
+        let event = NarrationEvent(type: "robbed", data: robbedEventData())
+        #expect(event?.cue == .steal)
+        #expect(event?.priority == .critical)
+    }
+
+    // MARK: - RobberyBannerContent (A3: who gets the banner)
+
+    @Test("The named victim gets the banner content")
+    func victimGetsRobberyContent() {
+        let event = NarrationEvent(type: "robbed", data: robbedEventData())!
+        let content = RobberyBannerContent.forViewer("p2", event: event)
+        #expect(content == RobberyBannerContent(thiefId: "p1", thiefName: "TDawg",
+                                                 cards: ["Hidden Immunity Idol"],
+                                                 message: "TDawg took your Hidden Immunity Idol"))
+    }
+
+    @Test("Everyone else — including the thief — gets no banner content")
+    func nonVictimGetsNoRobberyContent() {
+        let event = NarrationEvent(type: "robbed", data: robbedEventData())!
+        #expect(RobberyBannerContent.forViewer("p1", event: event) == nil)
+        #expect(RobberyBannerContent.forViewer("p3", event: event) == nil)
+        #expect(RobberyBannerContent.forViewer(nil, event: event) == nil)
+    }
+
+    @Test("A non-robbed event never produces banner content")
+    func nonRobbedEventNeverBanners() {
+        let event = NarrationEvent(type: "steal", data: ["thief": "Ana", "victim": "Ben"])!
+        #expect(RobberyBannerContent.forViewer("Ben", event: event) == nil)
+    }
 }
 
 @MainActor

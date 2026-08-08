@@ -61,6 +61,11 @@ struct ContentView: View {
                 // on a server answer, so it can sit alongside any of them.
                 AllianceOverlay()
 
+                // Same reasoning as AllianceOverlay, but non-blocking: a
+                // steal happens on nearly every turn, so this floats over
+                // whatever screen is up rather than taking it over.
+                RobberyBanner()
+
                 if gameClient.connectionState == .reconnecting
                     || (gameClient.connectionState == .disconnected && gameClient.gameState != nil) {
                     ConnectionBanner()
@@ -88,14 +93,48 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
-            // survivorgame://join?code=XXXX — the app-side twin of the web's
-            // ?join=CODE links.
-            guard url.scheme == "survivorgame" else { return }
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            if let code = components?.queryItems?.first(where: { $0.name == "code" })?.value {
+            // survivorgame://join?code=XXXX, or — once B2's Universal Link
+            // opens the app instead of Safari — a tapped https:// link.
+            if let code = Self.joinCode(from: url) {
                 gameClient.pendingJoinCode = code
             }
         }
+        // .onOpenURL alone is sufficient in a SwiftUI-lifecycle app for a
+        // registered URL scheme; this is belt-and-braces for the Universal
+        // Link path specifically, since NSUserActivity is how iOS actually
+        // hands a continued https:// activity to the app.
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            guard let url = activity.webpageURL, let code = Self.joinCode(from: url) else { return }
+            gameClient.pendingJoinCode = code
+        }
+    }
+
+    /// The three shapes a join link arrives in, funnelled through one parser
+    /// so `.onOpenURL` and `.onContinueUserActivity` can't drift apart:
+    /// `survivorgame://join?code=X` (the app's own scheme), and — once a
+    /// Universal Link routes an `https://` tap into the app instead of
+    /// Safari — the web's own `/join/X` path and `?join=X` query forms.
+    ///
+    /// `nonisolated` deliberately: `ContentView` infers `@MainActor` from
+    /// `View.body`, and without this a Swift Testing call from off the main
+    /// actor traps at runtime (`_swift_task_checkIsolatedSwift`) even though
+    /// nothing here touches UI state — pure URL parsing has no business
+    /// being actor-isolated at all.
+    nonisolated static func joinCode(from url: URL) -> String? {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        if url.scheme == "survivorgame" {
+            return components?.queryItems?.first(where: { $0.name == "code" })?.value
+        }
+        guard url.scheme == "http" || url.scheme == "https" else { return nil }
+        if let joined = components?.queryItems?.first(where: { $0.name == "join" })?.value,
+           !joined.isEmpty {
+            return joined
+        }
+        let segments = url.pathComponents.filter { $0 != "/" }
+        if let joinIndex = segments.firstIndex(of: "join"), segments.indices.contains(joinIndex + 1) {
+            return segments[joinIndex + 1]
+        }
+        return nil
     }
 
     @ViewBuilder

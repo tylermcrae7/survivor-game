@@ -15,6 +15,7 @@
 		17B3E69CDDBB66087B4A5957 /* SurvivorGameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */; };
 		1B2F52A8781AA797D2EBE8F6 /* CardIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BBAD4DE85648C219BC0E8F /* CardIdentityTests.swift */; };
 		1BBEDBAB7B8AE6904A8C284E /* PlacesBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC481BEA784D2AFDA39347C /* PlacesBar.swift */; };
+		1E8DEF4CC0B2EBEB3AC8C0A0 /* RobberyBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40748A310F33C6E1D053D02D /* RobberyBanner.swift */; };
 		20698A00EC6EB3802173F29D /* DesignSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5396A2E209113CD92EB3A88 /* DesignSystemTests.swift */; };
 		20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */; };
 		236A1DC06A3BD3051FC787B2 /* DiscordLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C66E49F082FBC958DC7CE70 /* DiscordLinkSheet.swift */; };
@@ -60,6 +61,7 @@
 		7E6866EED3C5AD6C0C1B1D0C /* playing_midturn.json in Resources */ = {isa = PBXBuildFile; fileRef = 835B2847716E322179470F0C /* playing_midturn.json */; };
 		7F51E26189039550DBA6B666 /* ViewModelState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17367F3603D03F66FA9D0E5E /* ViewModelState.swift */; };
 		7F92E4D565697CFBD7131AE2 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68644E98FB21432FA5656F26 /* HapticEngine.swift */; };
+		80ADA0F1AF6BB337EAAEEA65 /* UniversalLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6738755F6B88B3BC886B0C5F /* UniversalLinkTests.swift */; };
 		8165E32A1A1ECE759FE7CF6D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1AE837EA8BBB0B435CEFD146 /* README.md */; };
 		831A78BE075BAFEBAE637A73 /* PlayerDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 366803CEF79831FE786AE392 /* PlayerDetailSheet.swift */; };
 		83EAAFA8BE7FE7FA7797BED6 /* StartScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE14A68AE3FEDAD4CC62A30 /* StartScreen.swift */; };
@@ -107,6 +109,7 @@
 		DBC0D1C582276BEA9294C27D /* PlayerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7806AB1E8CC9FAECDAFBDD /* PlayerState.swift */; };
 		DCE24B88D6FCD8EEFBEEB478 /* VoteBarScaleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754972255F7D3BA715370263 /* VoteBarScaleTests.swift */; };
 		DDD85C98F787B379FB3AC283 /* JuryVotingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39578F0E0D230CFE23F755 /* JuryVotingView.swift */; };
+		DE558378CD7688293000F9C8 /* RobberyBannerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4040E9EC175B6083F1A4D31 /* RobberyBannerUITests.swift */; };
 		DEFEFEA48DFBA0950729B94E /* MonogramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482BCD5B343FE8D5356071F9 /* MonogramTests.swift */; };
 		DF3A2759B5C79FE061E34B34 /* survivor_cards.json in Resources */ = {isa = PBXBuildFile; fileRef = 7A28D71C09386EDFF87566C8 /* survivor_cards.json */; };
 		E09735FE39F74855129DBFE5 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC5D2C9DAB382995407D3F5 /* CardView.swift */; };
@@ -161,6 +164,7 @@
 		2A32C54564835FB45B79F975 /* SurvivorGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurvivorGameApp.swift; sourceTree = "<group>"; };
 		32C075937A0671D2605E1D40 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		366803CEF79831FE786AE392 /* PlayerDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerDetailSheet.swift; sourceTree = "<group>"; };
+		40748A310F33C6E1D053D02D /* RobberyBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobberyBanner.swift; sourceTree = "<group>"; };
 		40B04ACC0FDBCB92A290B6C4 /* TribalViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TribalViewModelTests.swift; sourceTree = "<group>"; };
 		44CC6A2F1EDA6D37EEE5E171 /* TorchTransitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchTransitions.swift; sourceTree = "<group>"; };
 		482BCD5B343FE8D5356071F9 /* MonogramTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonogramTests.swift; sourceTree = "<group>"; };
@@ -176,6 +180,7 @@
 		5D3F46EFB9F7ED22BAB45256 /* interaction_active.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = interaction_active.json; sourceTree = "<group>"; };
 		601230CBA61A2B08ED9FF4ED /* HallOfFameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFameView.swift; sourceTree = "<group>"; };
 		622716FC89794F75AFD7283A /* challenge_active.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = challenge_active.json; sourceTree = "<group>"; };
+		6738755F6B88B3BC886B0C5F /* UniversalLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniversalLinkTests.swift; sourceTree = "<group>"; };
 		67AA8AC24FFECFE0859D29D9 /* tribal_announcement.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tribal_announcement.json; sourceTree = "<group>"; };
 		68644E98FB21432FA5656F26 /* HapticEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticEngine.swift; sourceTree = "<group>"; };
 		68A766C981BE5C3792457D7D /* TorchComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorchComponents.swift; sourceTree = "<group>"; };
@@ -246,6 +251,7 @@
 		DAAEB936E963F73666532373 /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
 		DBC87F57450786729E8E86B2 /* PlayingViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayingViewModelTests.swift; sourceTree = "<group>"; };
 		E0D6A9B48AC1F6B010C3DC27 /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
+		E4040E9EC175B6083F1A4D31 /* RobberyBannerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobberyBannerUITests.swift; sourceTree = "<group>"; };
 		E4BA6D1E2669918A257E1881 /* finished.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = finished.json; sourceTree = "<group>"; };
 		EB57868E072CE166B33E87FC /* WinnerRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WinnerRevealView.swift; sourceTree = "<group>"; };
 		EB96FC8285F596A14C699518 /* MockGameClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGameClient.swift; sourceTree = "<group>"; };
@@ -258,6 +264,7 @@
 		F96BEA35C4151773110A4463 /* EliminationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EliminationView.swift; sourceTree = "<group>"; };
 		FB7806AB1E8CC9FAECDAFBDD /* PlayerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerState.swift; sourceTree = "<group>"; };
 		FC7B695E90A4526E36793462 /* ToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastView.swift; sourceTree = "<group>"; };
+		FE01D7679D6D64E0C5C7287D /* SurvivorGame.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SurvivorGame.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -399,6 +406,7 @@
 				F1797EAE3C43C28507E28012 /* ChallengeUITests.swift */,
 				8896770D35DF7BAE9B3C2E78 /* QASweepUITests.swift */,
 				1AE837EA8BBB0B435CEFD146 /* README.md */,
+				E4040E9EC175B6083F1A4D31 /* RobberyBannerUITests.swift */,
 				AEBD7362A5CAE2807DEF33D2 /* VisualAuditUITests.swift */,
 			);
 			path = SurvivorGameUITests;
@@ -465,6 +473,7 @@
 				7358AA566FA334CD64594A21 /* PhaseProgressView.swift */,
 				366803CEF79831FE786AE392 /* PlayerDetailSheet.swift */,
 				EC0C871ED311CFEBC458BD4C /* ReactiveTheftOverlay.swift */,
+				40748A310F33C6E1D053D02D /* RobberyBanner.swift */,
 				9519C8E31DEF13701B9EA272 /* StorySoFarDrawer.swift */,
 				72B430A3C5CEFF2107CDAE60 /* SurvivorButton.swift */,
 				AEBB269476A47CBDDB7B82B2 /* SurvivorTheme.swift */,
@@ -497,6 +506,7 @@
 		CBB3B72B008E17B093CFE002 /* SurvivorGame */ = {
 			isa = PBXGroup;
 			children = (
+				FE01D7679D6D64E0C5C7287D /* SurvivorGame.entitlements */,
 				683DC624062BB2D07896B0C2 /* App */,
 				ECA397ABFE1CC534E7000CF2 /* DesignSystem */,
 				C36D6E2918A51A06F96D69C9 /* Models */,
@@ -539,6 +549,7 @@
 				B522208A1F85A5BFA2C8BDA3 /* ServerConfigTests.swift */,
 				1E13F34ADD2CBD43D5EA1EB4 /* StateDecodingTests.swift */,
 				40B04ACC0FDBCB92A290B6C4 /* TribalViewModelTests.swift */,
+				6738755F6B88B3BC886B0C5F /* UniversalLinkTests.swift */,
 				8AA67915FD0D87B3A52D3D71 /* ViewModelTests.swift */,
 				754972255F7D3BA715370263 /* VoteBarScaleTests.swift */,
 				2AB850D039D484EDAE79F431 /* Fixtures */,
@@ -771,6 +782,7 @@
 				20FD14DBF24F808CD34A8737 /* ServerConfigTests.swift in Sources */,
 				15EEFDA7C68ED77AA46D5986 /* StateDecodingTests.swift in Sources */,
 				78F742DBD5660E0BC1C74BE4 /* TribalViewModelTests.swift in Sources */,
+				80ADA0F1AF6BB337EAAEEA65 /* UniversalLinkTests.swift in Sources */,
 				C85B70696006F49D5A87DB82 /* ViewModelTests.swift in Sources */,
 				DCE24B88D6FCD8EEFBEEB478 /* VoteBarScaleTests.swift in Sources */,
 			);
@@ -832,6 +844,7 @@
 				363E486B92D0F8ED41213292 /* PlayingScreen.swift in Sources */,
 				D9EEC9D120C0D13389A3751E /* PlayingViewModel.swift in Sources */,
 				AC36887BE6C5E1F847FCAE13 /* ReactiveTheftOverlay.swift in Sources */,
+				1E8DEF4CC0B2EBEB3AC8C0A0 /* RobberyBanner.swift in Sources */,
 				BEB59F9940D82979C9153A2C /* ServerConfig.swift in Sources */,
 				F30C219F782CDB1413CB8D9D /* SocketClient.swift in Sources */,
 				83EAAFA8BE7FE7FA7797BED6 /* StartScreen.swift in Sources */,
@@ -865,6 +878,7 @@
 				39D455C463754822D13D3097 /* AuthenticationUITests.swift in Sources */,
 				3D7A9908750FD004221479A1 /* ChallengeUITests.swift in Sources */,
 				70469E5FCAC802E6B6C1F68D /* QASweepUITests.swift in Sources */,
+				DE558378CD7688293000F9C8 /* RobberyBannerUITests.swift in Sources */,
 				E21783CF7A7692B9182021E6 /* VisualAuditUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -889,6 +903,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SurvivorGame/SurvivorGame.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 14;
@@ -1087,6 +1102,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SurvivorGame/SurvivorGame.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 14;

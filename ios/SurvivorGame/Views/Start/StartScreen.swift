@@ -50,10 +50,13 @@ struct StartScreen: View {
             }
         }
         .onChange(of: gameClient.pendingJoinCode) { _, code in
-            if let code {
-                viewModel?.joinCode = code
-                gameClient.pendingJoinCode = nil
-            }
+            // Only clear the pending code once something actually consumed
+            // it — in the narrow window before .onAppear has built the view
+            // model, `viewModel?.joinCode = code` above would silently no-op
+            // while this still nilled the code out from under it.
+            guard let code, let viewModel else { return }
+            viewModel.joinCode = code
+            gameClient.pendingJoinCode = nil
         }
         .onChange(of: gameClient.accessState) { _, state in
             if state == .unlocked {
