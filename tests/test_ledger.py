@@ -16,6 +16,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -257,6 +258,17 @@ class RecordCouncilVotesDirectTest(unittest.TestCase):
         ledger.record_council_votes(game, {})
         self.assertEqual(ledger.next_council_index(game), 1)
         self.assertEqual(ledger.last_council_index(game), 0)
+
+
+class TiebreakScoreTest(unittest.TestCase):
+    def test_score_is_strictly_less_than_one_for_maximum_digest_prefix(self):
+        digest = b"\xff" * 32
+        with patch.object(ledger.hashlib, "sha256") as sha256:
+            sha256.return_value.digest.return_value = digest
+            score = ledger.tiebreak_score("game", 1, "bot", "candidate")
+
+        self.assertGreaterEqual(score, 0.0)
+        self.assertLess(score, 1.0)
 
 
 # ──────────────────────────── challenge wins ────────────────────────────

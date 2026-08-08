@@ -107,6 +107,12 @@ final class RobberyBannerUITests: XCTestCase {
         for pid in botIds {
             try api.post("/api/test/set_hand", ["gameId": gid, "playerId": pid, "hand": ["vote"]])
         }
+        // The human must draw to end their turn. Pin that draw to another
+        // untakeable Vote Card: a random Sorry For You here correctly opens a
+        // 60-second reactive window when the bot steals, which means the
+        // robbery has not completed and no banner should exist yet. This test
+        // is specifically proving the completed-theft private-room delivery.
+        try api.post("/api/test/stack_deck", ["gameId": gid, "top": ["vote"]])
 
         // Half 1 — start_full opens on the human's turn (join order is turn
         // order). Drive it over HTTP: the server doesn't care which client a
@@ -151,6 +157,7 @@ final class RobberyBannerUITests: XCTestCase {
                       "tapping the banner should dismiss it")
     }
 
+    @MainActor
     private func waitForDisappearance(of element: XCUIElement, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

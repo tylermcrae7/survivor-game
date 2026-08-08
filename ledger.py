@@ -276,4 +276,6 @@ def tiebreak_score(gid, council_index, actor_id, candidate_id):
     key = f"{gid}|{council_index}|{actor_id}|{candidate_id}".encode("utf-8")
     digest = hashlib.sha256(key).digest()
     n = int.from_bytes(digest[:4], "big")
-    return n / 0xFFFFFFFF
+    # Divide by 2**32 (not the largest 32-bit value) so even an all-ones
+    # prefix stays strictly below 1.0, matching the documented [0, 1) range.
+    return n / 0x100000000

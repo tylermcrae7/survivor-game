@@ -7,6 +7,12 @@ final class SocketClient {
     private var manager: SocketManager?
     private var socket: SocketIOClient?
     private var heartbeatTimer: Timer?
+    /// The room identity survives Socket.IO reconnects. A caller normally
+    /// asks to join immediately after `connect(to:)`, while the transport is
+    /// still handshaking; emitting at that point is not reliably queued by
+    /// the client library. Retaining the payload lets the real `.connect`
+    /// callback perform the join only once the namespace can receive it.
+    private var pendingJoinPayload: [String: Any]?
     private var reconnectAttempts = 0
     // -1 = never give up: retries back off to 30s and continue for the life
     // of the session, so a server that comes back is found without relaunch.
@@ -130,6 +136,7 @@ final class SocketClient {
     func disconnect() {
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
+        pendingJoinPayload = nil
         socket?.disconnect()
         socket = nil
         manager?.disconnect()
@@ -147,7 +154,8 @@ final class SocketClient {
         if let playerId {
             payload["playerId"] = playerId
         }
-        socket?.emit("join", payload)
+        pendingJoinPayload = payload
+        emitPendingJoinIfConnected()
     }
 
     func sendHeartbeat() {
@@ -164,6 +172,7 @@ final class SocketClient {
                 self?.connectionState = .connected
                 self?.reconnectAttempts = 0
                 self?.startHeartbeat()
+                self?.emitPendingJoinIfConnected()
             }
         }
 
@@ -258,6 +267,11 @@ final class SocketClient {
                 self?.sendHeartbeat()
             }
         }
+    }
+
+    private func emitPendingJoinIfConnected() {
+        guard socket?.status == .connected, let pendingJoinPayload else { return }
+        socket?.emit("join", pendingJoinPayload)
     }
 }
 
