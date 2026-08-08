@@ -782,6 +782,207 @@ def test_lost_timer_self_heals():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ───────────────────────── D2: tribal votes stop clumping ─────────────────────
+
+def _vote_game(hands, necklace=None, eliminated=(), bot_ids=None, style="normal",
+               gid="voteg", council=0):
+    """Minimal fixture for _vote_target: hands is {pid: cardCount}. Every pid
+    not named in `eliminated` is alive; every pid not named in `bot_ids`
+    (default: everyone) is still scored the same way — D2's whole point is
+    that no path may exclude a human."""
+    bot_ids = set(hands.keys()) if bot_ids is None else set(bot_ids)
+    return {
+        "id": gid,
+        "turnOrder": list(hands.keys()),
+        "necklaceHolder": necklace,
+        "settings": {"botStyle": style},
+        "_ledger": {"councilIndex": council, "players": {}},
+        "players": {
+            pid: {"hand": [{"type": "vote"}] * n,
+                  "isEliminated": pid in eliminated,
+                  "isBot": pid in bot_ids}
+            for pid, n in hands.items()
+        },
+    }
+
+
+def test_vote_target_favours_the_biggest_hand_including_a_human():
+    print("=== Testing D2: votes chase the biggest hand, humans included ===")
+    hands = {"bot1": 2, "bot2": 3, "human": 9}
+    game = _vote_game(hands, bot_ids={"bot1", "bot2"})
+    for council in range(10):
+        game["_ledger"] = {"councilIndex": council, "players": {}}
+        target1 = bots._vote_target(game, "bot1")
+        target2 = bots._vote_target(game, "bot2")
+        assert target1 == "human", (council, target1)
+        assert target2 == "human", (council, target2)
+    print("✅ the human holding the most cards gets voted for, every council!\n")
+
+
+def test_vote_target_breaks_the_bloc_on_near_equal_scores():
+    print("=== Testing D2: bots don't clump on one target when scores tie ===")
+    hands = {f"bot{i}": 3 for i in range(8)}   # identical hands, empty ledger
+    game = _vote_game(hands)
+    picks = {bots._vote_target(game, pid) for pid in hands}
+    picks.discard(None)
+    print(f"  distinct targets chosen: {picks}")
+    assert len(picks) > 1, f"every bot converged on the same target: {picks}"
+    print("✅ near-identical bots split their votes instead of clumping!\n")
+
+
+def test_vote_target_never_targets_self_necklace_or_eliminated():
+    print("=== Testing D2: unvotable players are structurally excluded ===")
+    hands = {"bot1": 1, "necklace_holder": 20, "eliminated_guy": 20, "bot2": 2}
+    game = _vote_game(hands, necklace="necklace_holder",
+                      eliminated=("eliminated_guy",))
+    target = bots._vote_target(game, "bot1")
+    assert target not in ("bot1", "necklace_holder", "eliminated_guy"), target
+    assert target == "bot2", target   # the only other legal candidate
+    print("✅ the necklace holder and the eliminated are never picked!\n")
+
+
+def test_vote_target_is_deterministic():
+    print("=== Testing D2: identical inputs give identical output ===")
+    hands = {"bot1": 2, "bot2": 4, "bot3": 4}
+    game = _vote_game(hands)
+    first = bots._vote_target(game, "bot1")
+    second = bots._vote_target(game, "bot1")
+    assert first == second, (first, second)
+    print("✅ repeated calls with the same state agree!\n")
+
+
+# ───────────────────────────── D3: a jury with a memory ───────────────────────
+
+def _jury_game(finalists, jurors, ledger_players=None, hands=None, style="normal",
+               gid="juryg", council=5):
+    """Minimal fixture for _jury_vote."""
+    hands = hands or {}
+    players = {}
+    for pid in finalists:
+        players[pid] = {"hand": [{"type": "vote"}] * hands.get(pid, 1), "isBot": True,
+                        "isEliminated": False}
+    for pid in jurors:
+        players[pid] = {"hand": [{"type": "vote"}], "isBot": True, "isEliminated": True}
+    return {
+        "id": gid,
+        "turnOrder": finalists + jurors,
+        "necklaceHolder": None,
+        "settings": {"botStyle": style},
+        "players": players,
+        "_ledger": {"councilIndex": council, "players": dict(ledger_players or {})},
+    }
+
+
+def test_jury_vote_punishes_the_finalist_who_blindsided_the_juror():
+    print("=== Testing D3: betrayal at MY elimination council loses the vote ===")
+    ledger_players = {
+        "juror": {"eliminatedAtCouncil": 2,
+                  "votesAgainst": [{"council": 2, "voters": {"finA": 1}}]},
+    }
+    game = _jury_game(["finA", "finB"], ["juror"], ledger_players=ledger_players)
+    pick = bots._jury_vote(game, "juror", ["finA", "finB"])
+    assert pick == "finB", pick
+    print("✅ the finalist who blindsided the juror loses their vote!\n")
+
+
+def test_jury_vote_rewards_a_loyal_finalist():
+    print("=== Testing D3: voting together is a positive with the jury ===")
+    ledger_players = {
+        "juror": {"votesCast": [{"council": 0, "votes": {"someone": 1}},
+                                {"council": 1, "votes": {"someone-else": 1}}]},
+        "finA": {"votesCast": [{"council": 0, "votes": {"someone": 1}},
+                               {"council": 1, "votes": {"someone-else": 1}}]},
+        "finB": {"votesCast": [{"council": 0, "votes": {"nobody1": 1}},
+                               {"council": 1, "votes": {"nobody2": 1}}]},
+    }
+    game = _jury_game(["finA", "finB"], ["juror"], ledger_players=ledger_players)
+    pick = bots._jury_vote(game, "juror", ["finA", "finB"])
+    assert pick == "finA", pick
+    print("✅ a finalist who voted alongside the juror wins their vote!\n")
+
+
+def test_jury_can_split():
+    """Three jury bots, the SAME botStyle dial, and one game — but each
+    juror's own history with the finalists differs, so they don't have to
+    agree. This is the direct fix for finding 10 (a bot jury was always
+    unanimous)."""
+    print("=== Testing D3: a bot jury can disagree ===")
+    ledger_players = {
+        # A strong résumé that (absent any personal grudge) sways a juror
+        # toward finA — and a finB who did nothing at all.
+        "finA": {"challengeWins": 3, "idolsPlayed": 2},
+        "finB": {},
+        # juror_x was personally blindsided by finA at their own elimination
+        # council — betrayal outweighs finA's résumé for juror_x alone.
+        "juror_x": {"eliminatedAtCouncil": 1,
+                    "votesAgainst": [{"council": 1, "voters": {"finA": 1}}]},
+        # juror_y and juror_z have no history with either finalist, so
+        # finA's résumé (and finB's "did nothing" penalty) carries them.
+        "juror_y": {},
+        "juror_z": {},
+    }
+    game = _jury_game(["finA", "finB"], ["juror_x", "juror_y", "juror_z"],
+                      ledger_players=ledger_players,
+                      hands={"finA": 1, "finB": 1})
+
+    votes = {j: bots._jury_vote(game, j, ["finA", "finB"])
+             for j in ("juror_x", "juror_y", "juror_z")}
+    print(f"  jury votes: {votes}")
+    assert votes["juror_x"] == "finB", votes
+    assert votes["juror_y"] == "finA", votes
+    assert votes["juror_z"] == "finA", votes
+    assert len(set(votes.values())) > 1, "the jury must not be forced unanimous"
+    print("✅ the jury splits when the jurors' own histories differ!\n")
+
+
+def test_jury_vote_robbery_direction_and_style_asymmetry():
+    """The robbery signal reads MY ledger keyed by the finalist — cards
+    they took from me. The reverse direction (cards I took from them)
+    must count for nothing, and the sign flips with botStyle: a chill
+    juror resents the robbery, a cutthroat juror respects it. Regression:
+    the first cut read cand_entry['stolenFrom'][juror] — exactly
+    backwards — and no test caught it."""
+    print("=== Testing D3: robbery direction + chill/cutthroat asymmetry ===")
+    ledger_players = {
+        # finA robbed the juror three times; finB never touched them.
+        "juror": {"stolenFrom": {"finA": 3}},
+    }
+    chill = _jury_game(["finA", "finB"], ["juror"],
+                       ledger_players=ledger_players, style="chill")
+    assert bots._jury_vote(chill, "juror", ["finA", "finB"]) == "finB", \
+        "a chill juror must resent the finalist who robbed them"
+    cutthroat = _jury_game(["finA", "finB"], ["juror"],
+                           ledger_players=ledger_players, style="cutthroat")
+    assert bots._jury_vote(cutthroat, "juror", ["finA", "finB"]) == "finA", \
+        "a cutthroat juror must respect the finalist who robbed them"
+
+    # The reverse direction is not robbery: the JUROR robbed finA. That
+    # fact lives on finA's entry and must not sway this juror's ballot in
+    # either style — equal hands + jitter-only otherwise, so just assert
+    # both styles agree with the no-history baseline.
+    reverse = {"finA": {"stolenFrom": {"juror": 3}}}
+    for style in ("chill", "cutthroat"):
+        baseline = bots._jury_vote(
+            _jury_game(["finA", "finB"], ["juror"], ledger_players={}, style=style),
+            "juror", ["finA", "finB"])
+        swayed = bots._jury_vote(
+            _jury_game(["finA", "finB"], ["juror"], ledger_players=reverse, style=style),
+            "juror", ["finA", "finB"])
+        assert swayed == baseline, \
+            f"cards the juror took from a finalist must not read as robbery ({style})"
+    print("✅ robbery points the right way, and the styles disagree on purpose!\n")
+
+
+def test_jury_vote_empty_ledger_falls_back_to_hand_size():
+    print("=== Testing D3: an empty ledger falls back to the hand-count read ===")
+    game = _jury_game(["finA", "finB"], ["juror"], ledger_players={},
+                      hands={"finA": 5, "finB": 1})
+    del game["_ledger"]   # no ledger has ever been created for this game
+    pick = bots._jury_vote(game, "juror", ["finA", "finB"])
+    assert pick == "finA", pick   # the bigger hand — the pre-D3 behaviour
+    print("✅ a ledger-less game falls back without raising!\n")
+
+
 if __name__ == "__main__":
     print("🧪 Testing Computer Players")
     print("=" * 50)
@@ -798,6 +999,15 @@ if __name__ == "__main__":
         test_full_game_official()
         test_full_game_extended_expansion()
         test_lost_timer_self_heals()
+        test_vote_target_favours_the_biggest_hand_including_a_human()
+        test_vote_target_breaks_the_bloc_on_near_equal_scores()
+        test_vote_target_never_targets_self_necklace_or_eliminated()
+        test_vote_target_is_deterministic()
+        test_jury_vote_punishes_the_finalist_who_blindsided_the_juror()
+        test_jury_vote_rewards_a_loyal_finalist()
+        test_jury_vote_robbery_direction_and_style_asymmetry()
+        test_jury_can_split()
+        test_jury_vote_empty_ledger_falls_back_to_hand_size()
         print("🎉 All computer player tests passed!")
     except AssertionError as e:
         print(f"❌ Test failed: {e}")

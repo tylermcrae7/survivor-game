@@ -24,6 +24,8 @@ import os
 import random
 import time
 
+import ledger
+
 logger = logging.getLogger(__name__)
 
 # Names the island gives its constructs. The UI marks bots with a badge, so
@@ -136,6 +138,120 @@ def _steal_target(game, bot_id):
     if not others:
         return None
     return sorted(others, key=lambda p: (-_hand_count(game, p), p))[0]
+
+
+# ── Task D2: tribal votes stop clumping ──────────────────────────────────
+#
+# Every bot used to score a tribal ballot the exact same way _biggest_threat
+# does (most cards in hand) — which meant every bot computed the identical
+# target, every council (finding 9). `_vote_target` replaces that scoring
+# ONLY at the tribal vote site: `_biggest_threat` stays exactly as it was
+# for card targeting, and `_steal_target` stays for the mandatory turn steal
+# — per the rule constraint, that unconditional steal is untouchable here.
+
+# Grudge and threat trade places by botStyle; everything else holds steady.
+# A cutthroat bot chases the strongest game in the room (threat); a chill
+# bot is more likely to settle a personal score (grudge).
+STYLE_VOTE_WEIGHTS = {
+    "chill":     {"hand": 1.0, "grudge": 1.6, "threat": 0.6, "loyalty": 0.5},
+    "normal":    {"hand": 1.0, "grudge": 1.0, "threat": 1.0, "loyalty": 0.5},
+    "cutthroat": {"hand": 1.0, "grudge": 0.6, "threat": 1.6, "loyalty": 0.5},
+}
+
+# The jitter exists purely to break near-exact ties without ever
+# overriding a real difference the weights above produced — see
+# ledger.tiebreak_score. Kept well under the smallest meaningful gap
+# between two genuinely different scores.
+_JITTER_SCALE = 0.02
+
+
+def _diminishing(n):
+    """A small non-negative count -> a value in [0, 1) with diminishing
+    returns: one steal or one vote registers, a pile of them doesn't blow
+    a single signal out of proportion to the others."""
+    n = max(0, n)
+    return n / (n + 2.0)
+
+
+def _councils_voted_together(entry_a, entry_b):
+    """How many councils two players (by their own ledger entries) cast a
+    ballot for the same target — the loyalty signal both D2 and D3 use.
+    Reads only each player's own votesCast history, so it degrades cleanly
+    on a half-healed ledger instead of raising."""
+    by_council_b = {}
+    for v in entry_b.get("votesCast") or []:
+        by_council_b[v.get("council")] = set((v.get("votes") or {}).keys())
+    shared = 0
+    for v in entry_a.get("votesCast") or []:
+        targets_b = by_council_b.get(v.get("council"))
+        if targets_b and set((v.get("votes") or {}).keys()) & targets_b:
+            shared += 1
+    return shared
+
+
+def _vote_target(game, bot_id):
+    """Who a bot casts its tribal ballot for.
+
+    Scores every living, votable opponent — humans included, no path may
+    exclude them — on hand size, grudge, threat and loyalty, weighted by
+    the game's botStyle dial, with a deterministic per-candidate jitter
+    that is decisive only among near-equal scores. The necklace holder is
+    excluded entirely, same as `_biggest_threat` — unvotable, not merely
+    disfavoured.
+
+    An empty or missing ledger heals to all-zero signals (ensure_ledger),
+    so this degrades gracefully to hand-size-only scoring — the previous
+    behaviour — rather than raising.
+    """
+    candidates = [p for p in _alive(game)
+                  if p != bot_id and p != game.get("necklaceHolder")]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    weights = STYLE_VOTE_WEIGHTS.get(_setting(game, "botStyle"), STYLE_VOTE_WEIGHTS["normal"])
+    gid = game.get("id", "")
+    council_idx = ledger.next_council_index(game)
+    bot_entry = ledger.get_player_ledger(game, bot_id)
+
+    # Votes cast against ME, by whom — read once from my own ledger view,
+    # not from every candidate's, since "votes C cast against B" is a fact
+    # about B's ballot box, not C's.
+    votes_against_me = {}
+    for record in bot_entry["votesAgainst"]:
+        for voter, n in (record.get("voters") or {}).items():
+            votes_against_me[voter] = votes_against_me.get(voter, 0) + n
+
+    max_hand = max((_hand_count(game, p) for p in candidates), default=0) or 1
+
+    best, best_score = None, None
+    for cand in candidates:
+        hand_score = _hand_count(game, cand) / max_hand
+
+        # grudge for bot B against candidate C = cards C stole from B +
+        # votes C cast against B.
+        grudge_raw = bot_entry["stolenFrom"].get(cand, 0) + votes_against_me.get(cand, 0)
+        grudge = _diminishing(grudge_raw)
+
+        cand_entry = ledger.get_player_ledger(game, cand)
+        threat_raw = cand_entry["challengeWins"] + cand_entry["idolsPlayed"]
+        threat = _diminishing(threat_raw)
+
+        loyalty = _diminishing(_councils_voted_together(bot_entry, cand_entry))
+
+        jitter = ledger.tiebreak_score(gid, council_idx, bot_id, cand) * _JITTER_SCALE
+
+        score = (weights["hand"] * hand_score
+                 + weights["grudge"] * grudge
+                 + weights["threat"] * threat
+                 - weights["loyalty"] * loyalty
+                 + jitter)
+
+        if best_score is None or score > best_score:
+            best, best_score = cand, score
+
+    return best
 
 
 def _find_card(game, pid, card_type):
@@ -511,7 +627,7 @@ def _tribal_action(game, age, rng):
             mandatory = max(0, game["players"][pid].get("mandatoryVotes", 1))
             if mandatory == 0:
                 return _act("cast_vote", voterId=pid, votesData=[])
-            target = _biggest_threat(game, pid)
+            target = _vote_target(game, pid)
             if target is None:
                 return _act("cast_vote", voterId=pid, votesData=[])
             return _act("cast_vote", voterId=pid,
@@ -580,6 +696,123 @@ def _tribal_action(game, age, rng):
     return None
 
 
+# ── Task D3: a jury with a memory ────────────────────────────────────────
+#
+# `_final_action`'s voting branch used to pick `sorted(finalists,
+# key=-hand_count)[0]` — the same finalist for every jury bot, so a bot
+# jury was always unanimous (finding 10). `_jury_vote` replaces that pick
+# with a read of the actual game each finalist played against this one
+# juror.
+
+# Only ROBBERY changes sign and size by botStyle (the asymmetry the plan
+# calls for); betrayal, loyalty, résumé and the carried penalty are the
+# same jury argument regardless of a juror's personal style — everybody
+# resents a blindside and respects a real résumé.
+_JURY_BETRAYAL_WEIGHT = 3.0        # voted for me at MY eliminatedAtCouncil
+_JURY_EARLIER_BETRAYAL_WEIGHT = 0.6  # voted for me at any OTHER council
+_JURY_LOYALTY_WEIGHT = 1.0
+_JURY_RESUME_WEIGHT = 1.0
+_JURY_CARRIED_WEIGHT = 1.5
+_JURY_HAND_WEIGHT = 0.5   # small nudge — the old hand-count read, kept as
+                          # the tie-break/fallback signal when the ledger
+                          # has nothing else to say (see module docstring
+                          # in ledger.py: an empty ledger heals to all-zero)
+STYLE_JURY_ROBBERY_WEIGHT = {"chill": -1.2, "normal": -0.3, "cutthroat": 1.2}
+
+
+def _jury_vote(game, juror_id, finalists):
+    """Which finalist a jury bot votes for.
+
+    betrayal   — did this finalist vote for me at MY eliminatedAtCouncil?
+                 Heavy negative. At any earlier council? Milder — still a
+                 betrayal, just not the one that ended my game.
+    loyalty    — councils where we voted for the same target. Positive —
+                 the inverse of D2's mild negative: a jury rewards exactly
+                 what a fellow player would have resented while playing.
+    robbery    — cards this finalist took from me. Negative for a chill
+                 juror, POSITIVE for a cutthroat one (respect for a strong
+                 game) — the asymmetry is deliberate, not an inconsistency.
+    résumé     — challenge wins, idols played, councils attended (a proxy
+                 for councils survived — a finalist who was never
+                 eliminated has no cleaner count in the ledger). Positive
+                 for everyone.
+    carried    — a finalist with zero cards ever taken, zero cards played,
+                 and zero Challenge wins did nothing. "You did nothing" is
+                 a real jury argument, and a real penalty here.
+
+    Ties break on the same deterministic hash D2 uses, never a sorted
+    player id. An empty ledger heals to all-zero signals for every one of
+    the above, which leaves only the small hand-size nudge — the previous
+    behaviour — to decide it, so this falls back without a special case
+    and without ever raising.
+    """
+    if not finalists:
+        return None
+    if len(finalists) == 1:
+        return finalists[0]
+
+    robbery_weight = STYLE_JURY_ROBBERY_WEIGHT.get(
+        _setting(game, "botStyle"), STYLE_JURY_ROBBERY_WEIGHT["normal"])
+    gid = game.get("id", "")
+    council_idx = ledger.last_council_index(game)
+    juror_entry = ledger.get_player_ledger(game, juror_id)
+    my_elimination_council = juror_entry["eliminatedAtCouncil"]
+
+    # Councils where THIS finalist voted for me, read once from my own
+    # ledger view — "did candidate C vote for me" is a fact about MY
+    # ballot box, not theirs.
+    councils_voted_for_me = {}   # candidateId -> set(council indices)
+    for record in juror_entry["votesAgainst"]:
+        council = record.get("council")
+        for voter in (record.get("voters") or {}):
+            councils_voted_for_me.setdefault(voter, set()).add(council)
+
+    max_hand = max((_hand_count(game, p) for p in finalists), default=0) or 1
+
+    best, best_score = None, None
+    for cand in finalists:
+        cand_entry = ledger.get_player_ledger(game, cand)
+        their_councils = councils_voted_for_me.get(cand, set())
+
+        betrayal = 0.0
+        if my_elimination_council is not None and my_elimination_council in their_councils:
+            betrayal += _JURY_BETRAYAL_WEIGHT
+        earlier = len(their_councils - ({my_elimination_council}
+                                        if my_elimination_council is not None else set()))
+        betrayal += _JURY_EARLIER_BETRAYAL_WEIGHT * earlier
+
+        loyalty = _JURY_LOYALTY_WEIGHT * _diminishing(
+            _councils_voted_together(juror_entry, cand_entry))
+
+        # Cards THIS FINALIST took from ME — read from MY ledger entry.
+        # `stolenFrom` means "cards taken FROM me BY them" (ledger.py), so
+        # the juror's own entry keyed by the candidate is the right
+        # direction; the candidate's entry keyed by the juror would be the
+        # exact reverse (cards the juror took from the finalist).
+        robbed_from_me = juror_entry["stolenFrom"].get(cand, 0)
+        robbery = robbery_weight * _diminishing(robbed_from_me)
+
+        resume_raw = (cand_entry["challengeWins"] + cand_entry["idolsPlayed"]
+                     + len(cand_entry["votesCast"]))
+        resume = _JURY_RESUME_WEIGHT * _diminishing(resume_raw)
+
+        did_nothing = (sum(cand_entry["stolenBy"].values()) == 0
+                       and cand_entry["cardsPlayed"] == 0
+                       and cand_entry["challengeWins"] == 0)
+        carried = _JURY_CARRIED_WEIGHT if did_nothing else 0.0
+
+        hand_nudge = _JURY_HAND_WEIGHT * (_hand_count(game, cand) / max_hand)
+
+        jitter = ledger.tiebreak_score(gid, council_idx, juror_id, cand) * _JITTER_SCALE
+
+        score = -betrayal + loyalty + robbery + resume - carried + hand_nudge + jitter
+
+        if best_score is None or score > best_score:
+            best, best_score = cand, score
+
+    return best
+
+
 def _final_action(game, age, rng):
     w = windows_for(game)
     ft = game.get("finalTribal") or {}
@@ -612,9 +845,7 @@ def _final_action(game, age, rng):
         votes = ft.get("votes") or {}
         for pid in jury:
             if pid not in votes and is_bot(game, pid) and finalists:
-                # The jury respects the biggest game: most cards wins the vote
-                pick = sorted(finalists,
-                              key=lambda p: (-_hand_count(game, p), p))[0]
+                pick = _jury_vote(game, pid, finalists)
                 return _act("cast_final_vote", juryMemberId=pid, finalistId=pick)
         return None  # engine auto-advances to reveal when all votes are in
 
