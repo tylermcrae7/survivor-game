@@ -20,9 +20,10 @@ import push_notify
 from interactions import interaction_engine
 import bots as bots_module
 from bots import BotRunner
+import ledger
 
 try:
-    from flask import Flask, request, jsonify, send_from_directory
+    from flask import Flask, request, jsonify, send_from_directory, Response
     from flask_socketio import SocketIO, emit, join_room
 except ImportError as e:
     print(f"Critical dependency missing: {e}")
@@ -974,7 +975,12 @@ class GameState:
         # Apply immunity protection using rules engine
         params = {"targetId": target_id}
         effect_result = self.rules_engine._effect_immunity_idol(game, playerId, immunity_card, params)
-        
+
+        # Task D1: idols are played through this dedicated route, not the
+        # generic play_card path — this is the one place idolsPlayed can
+        # actually increment in practice.
+        ledger.record_card_played(game, playerId, target_ids=target_id, is_idol=True)
+
         # Mark player as having played immunity
         player["immunityPlayed"] = True
         
@@ -1362,6 +1368,15 @@ class GameState:
         blocked_voters = self._blocked_voters(game)
         current_vote["blockedVoters"] = blocked_voters
 
+        # Task D1: file the full ballot box in the ledger — who voted for
+        # whom, before Block A Vote / idol / necklace exclusion touches the
+        # tally below. This is the one moment `current_vote["votes"]` holds
+        # the raw {voter: {target: count}} map before it is aggregated
+        # away (finding 11); it also bumps the ledger's own council-index
+        # counter exactly once per real reveal, which the elimination
+        # record below (in complete_tribal) relies on.
+        ledger.record_council_votes(game, current_vote.get("votes") or {})
+
         # Tally all votes
         vote_counts = {}
         for voter_id, vote_targets in current_vote["votes"].items():
@@ -1644,6 +1659,14 @@ class GameState:
             player["isEliminated"] = True
             player["isActive"] = False
             eliminated_players.append(player_id)
+
+            # Task D1: explicit, not derived from votesAgainst — a Leader's
+            # tie-break pick (or the "no votes" tier of the elimination
+            # ladder) can send someone home with zero votes this council.
+            # reveal_votes already bumped the ledger's council counter for
+            # THIS tribal before complete_tribal ever runs, so the most
+            # recently completed council is the right one to stamp here.
+            ledger.record_elimination(game, player_id, ledger.last_council_index(game))
 
             # Add to jury (eliminated players become jury members for final tribal)
             if "jury" not in game:
@@ -2774,7 +2797,18 @@ class GameState:
             # If effect failed, put card back in hand
             hand.insert(card_idx, played_card)
             return {"success": False, "message": effect_result.get("message", "Card effect failed")}
-        
+
+        # Task D1: a real card play, unconditionally — whichever card it
+        # was. `target_ids` covers every shape a card's params take in this
+        # codebase (see bots._choose_card_play): a lone targetId (Camp
+        # Raid, The Spy Shack, Knowledge Is Power, Do Or Die), an alliance's
+        # victimId, or Power Pair's targetIds list. A self-target records
+        # nothing against anyone (record_card_played skips it).
+        target_ids = [v for v in (kwargs.get("targetId"), kwargs.get("victimId")) if v]
+        target_ids.extend(kwargs.get("targetIds") or [])
+        ledger.record_card_played(game, player_id, target_ids=target_ids or None,
+                                   is_idol=(card.get("type") == "immunity_idol"))
+
         # Official rule: "Play 1 card from your hand if you'd like to." The one
         # turn-play is spent now; tribal/reactive plays don't touch the flag.
         if current_phase == "turn_play":
@@ -2915,6 +2949,10 @@ class GameState:
         winner = game["players"].get(winner_id)
         if not winner:
             return "Challenge winner is no longer in the game"
+
+        # Task D1: the ledger's résumé line — how many Challenges this
+        # player has actually won, for D3's jury scoring.
+        ledger.record_challenge_win(game, winner_id)
 
         name = winner.get("name", winner_id)
 
@@ -3620,6 +3658,27 @@ def emit_game_event(gid, event_type, data=None):
     except Exception as e:
         logger.warning(f"Failed to emit game event: {e}")
 
+def emit_private_event(gid, pid, event_type, data=None):
+    """Emit a game event to one player's private room only (Task A1).
+
+    Mirrors emit_game_event exactly — same 'game_event' name, same
+    type/timestamp envelope — so a client's existing decoder needs no new
+    shape, just a listener that also fires on this room. Targets the room
+    `on_join` puts a player in when it recognises their playerId; a bot or
+    a player nobody joined for is a harmless no-op — there is no sid in
+    that room to deliver to.
+    """
+    try:
+        event_data = {
+            'type': event_type,
+            'timestamp': time.time()
+        }
+        if data:
+            event_data.update(data)
+        socketio.emit('game_event', event_data, to=f"{gid}::{pid}")
+    except Exception as e:
+        logger.warning(f"Failed to emit private event: {e}")
+
 def _flush_steal_alerts(gid):
     """Announce any takes the engine recorded since the last flush.
 
@@ -3628,6 +3687,10 @@ def _flush_steal_alerts(gid):
     when there is nothing to say, and when `game_state` (module-level,
     created at server startup) doesn't exist yet — bare-unittest contexts
     that exercise the rules engine directly never construct it.
+
+    Task A2: an alert carrying `private_to` (the victim's own card-naming
+    "robbed" event) goes to that player's private room instead of the whole
+    table — pop it first so it never rides along in the payload.
     """
     try:
         game = game_state.games.get(gid)
@@ -3635,7 +3698,11 @@ def _flush_steal_alerts(gid):
             return
         for alert in game.pop("_pending_alerts", []) or []:
             try:
-                emit_game_event(gid, alert["event"], alert["data"])
+                private_to = alert.pop("private_to", None)
+                if private_to:
+                    emit_private_event(gid, private_to, alert["event"], alert["data"])
+                else:
+                    emit_game_event(gid, alert["event"], alert["data"])
             except Exception as e:
                 logger.error(f"Steal alert emit failed for {gid}: {e}")
     except NameError:
@@ -3921,6 +3988,21 @@ def index():
         logger.info("Serving original version (optimized version not found)")
         return send_from_directory(app.static_folder, "index.html")
 
+@app.route("/join/<code>")
+def join_link(code):
+    """A shared /join/CODE link lands on the app shell like any other page.
+
+    This can't ride spa_fallback below: with `static_url_path=""`, Flask's
+    own built-in static route is registered at the same `/<path:...>` shape
+    and Werkzeug ranks it first regardless of registration order — so a
+    path with no matching file on disk gets the static view's raw 404, and
+    spa_fallback never runs (found while testing Task B3's path-form share
+    links; the AASA route above dodges the same trap the same way). The
+    client reads the code from the URL itself (applyJoinLink); `code` is
+    accepted here only so the rule matches.
+    """
+    return index()
+
 @app.route("/<path:path>")
 def spa_fallback(path):
     if os.path.exists(os.path.join(app.static_folder, path)):
@@ -3930,6 +4012,54 @@ def spa_fallback(path):
     if os.path.exists(optimized_path):
         return send_from_directory(app.static_folder, "index-optimized.html")
     return send_from_directory(app.static_folder, "index.html")
+
+# ───────────────────────── Universal Links (Task B2) ─────────────────────────
+# One source of truth so the physical file and the route can never drift.
+AASA_CONTENT = {
+    "applinks": {
+        "details": [{
+            "appIDs": ["M5H3893R7A.mctech.SurvivorGame"],
+            "components": [{"/": "/join/*"}, {"/": "/", "?": {"join": "*"}}],
+        }]
+    }
+}
+_AASA_JSON = json.dumps(AASA_CONTENT)
+
+
+def _write_aasa_file():
+    """Heal the on-disk copy under client/dist to match AASA_CONTENT.
+
+    Same convention as the rest of this codebase's load-time healing (see
+    CLAUDE.md) rather than a one-shot script: a stale copy left over from an
+    old deploy must never silently diverge from what the route below
+    actually answers.
+    """
+    try:
+        well_known_dir = os.path.join(STATIC_DIR, ".well-known")
+        os.makedirs(well_known_dir, exist_ok=True)
+        with open(os.path.join(well_known_dir, "apple-app-site-association"), 'w') as f:
+            f.write(_AASA_JSON)
+    except Exception as e:
+        logger.warning(f"Failed to write AASA file: {e}")
+
+
+_write_aasa_file()
+
+
+@app.route('/.well-known/apple-app-site-association')
+@app.route('/apple-app-site-association')
+def apple_app_site_association():
+    """Serve Universal Links config via an EXPLICIT route, not static-file
+    serving. Apple's CDN fetches this over plain HTTPS with no cookie and
+    needs a guaranteed Content-Type: application/json and no redirect —
+    the generic static/SPA-fallback handlers above don't promise either.
+
+    Deliberately registered outside `enforce_access_gate` (which only ever
+    guards `/api/*`, checked below): a code-locked island must still let a
+    tapped link open the app, or link-opening breaks silently for anyone
+    behind the gate. See tests/test_universal_links.py, which pins that.
+    """
+    return Response(_AASA_JSON, mimetype='application/json')
 
 # ───────────────────────────── Access Gate ─────────────────────────────
 @app.before_request
@@ -4811,6 +4941,25 @@ def on_join(data):
             return
         
         join_room(gid)
+
+        # Task A1: an optional private room for narration meant for one
+        # phone, not the whole table. A missing or unknown playerId is not
+        # an error — an older client simply never gets private events and
+        # keeps working exactly as it does today.
+        #
+        # This room is a UX channel, NOT a security boundary. playerIds are
+        # already public in the broadcast state — every hand in the game
+        # ships to every phone via state_update — and the socket carries no
+        # identity, so any tablemate who learned another player's id could
+        # join their room too. Nothing new leaks by adding this; it just
+        # gives one phone somewhere to be told what its own broadcast data
+        # already implied. Don't build a real secret on top of it later.
+        # (`gid`/`pid` are uuid4[:8] hex — see create_game/add_player — so
+        # `::` can't be forged into the separator by either half.)
+        player_id = data.get('playerId')
+        if player_id and player_id in game_state.games[gid].get('players', {}):
+            join_room(f"{gid}::{player_id}")
+
         game_data = game_state.get_game_state(gid) or {}
         emit('state_update', game_data)
         logger.debug(f"Client {request.sid} joined game {gid}")

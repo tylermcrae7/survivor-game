@@ -7,16 +7,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rules_engine import execute_take_spec, request_take, new_card, SurvivorRulesEngine
 
 
-def _game(hands):
-    """hands: {pid: [card_type, ...]} -> minimal game dict."""
+def _game(hands, bots=()):
+    """hands: {pid: [card_type, ...]} -> minimal game dict. `bots` marks
+    which pids are isBot — Task A2's private "robbed" alert skips them."""
     return {
         "players": {
             pid: {"name": pid.capitalize(), "hand": [new_card(t) for t in types],
-                  "isEliminated": False}
+                  "isEliminated": False, "isBot": pid in bots}
             for pid, types in hands.items()
         },
         "deck": [], "discard": [],
     }
+
+
+def _public(alerts):
+    return [a for a in alerts if a["event"] == "steal"]
+
+
+def _private(alerts):
+    return [a for a in alerts if a["event"] == "robbed"]
 
 
 class TakeSpecRecordsAlertsTest(unittest.TestCase):
@@ -25,21 +34,44 @@ class TakeSpecRecordsAlertsTest(unittest.TestCase):
         execute_take_spec(game, {"victimId": "b", "kind": "random_each",
                                  "takes": [{"thiefId": "a", "count": 2}]})
         alerts = game.get("_pending_alerts") or []
-        self.assertEqual(len(alerts), 1)
-        alert = alerts[0]
-        self.assertEqual(alert["event"], "steal")
+        public, private = _public(alerts), _private(alerts)
+        # Task A2: a successful steal against a real player now leaves TWO
+        # records — the table-wide one and the victim's own.
+        self.assertEqual(len(public), 1)
+        self.assertEqual(len(private), 1)
+
+        alert = public[0]
         self.assertEqual(alert["data"]["thiefId"], "a")
         self.assertEqual(alert["data"]["victimId"], "b")
         self.assertEqual(alert["data"]["count"], 2)
         self.assertIn("stole 2 cards", alert["data"]["message"])
 
+        priv = private[0]
+        self.assertEqual(priv["private_to"], "b")
+        self.assertEqual(priv["data"]["thiefId"], "a")
+        self.assertEqual(priv["data"]["victimId"], "b")
+        self.assertEqual(priv["data"]["count"], 2)
+        self.assertEqual(len(priv["data"]["cards"]), 2)
+
     def test_alert_message_never_names_the_card(self):
+        """Redaction, strengthened not relaxed: the PUBLIC alert still never
+        names a card. Its private twin does — that's the whole point of A2."""
         game = _game({"a": [], "b": ["immunity_idol"]})
         execute_take_spec(game, {"victimId": "b", "kind": "index",
                                  "thiefId": "a", "index": 0, "force": True})
-        message = game["_pending_alerts"][0]["data"]["message"]
-        self.assertNotIn("Idol", message)
-        self.assertNotIn("idol", message)
+        alerts = game["_pending_alerts"]
+        public_message = _public(alerts)[0]["data"]["message"]
+        self.assertNotIn("Idol", public_message)
+        self.assertNotIn("idol", public_message)
+
+        priv = _private(alerts)[0]
+        self.assertEqual(priv["private_to"], "b")
+        self.assertEqual(priv["data"]["thiefId"], "a")
+        self.assertEqual(priv["data"]["victimId"], "b")
+        self.assertEqual(priv["data"]["cards"],
+                         [{"name": "Hidden Immunity Idol", "type": "immunity_idol"}])
+        self.assertIn("Hidden Immunity Idol", priv["data"]["message"])
+        self.assertIn("took your", priv["data"]["message"])
 
     def test_a_take_that_moves_nothing_records_nothing(self):
         game = _game({"a": [], "b": []})
@@ -53,9 +85,37 @@ class TakeSpecRecordsAlertsTest(unittest.TestCase):
                                  "takes": [{"thiefId": "a", "count": 1},
                                            {"thiefId": "b", "count": 1}]})
         alerts = game["_pending_alerts"]
-        self.assertEqual({a["data"]["thiefId"] for a in alerts}, {"a", "b"})
-        self.assertTrue(all(a["data"]["count"] == 1 for a in alerts))
-        self.assertIn("stole a card", alerts[0]["data"]["message"])
+        public, private = _public(alerts), _private(alerts)
+
+        self.assertEqual({a["data"]["thiefId"] for a in public}, {"a", "b"})
+        self.assertTrue(all(a["data"]["count"] == 1 for a in public))
+        self.assertIn("stole a card", public[0]["data"]["message"])
+
+        # c is robbed by both — one private alert per thief, both addressed
+        # to c, each naming exactly the one card that thief took.
+        self.assertEqual(len(private), 2)
+        self.assertTrue(all(a["private_to"] == "c" for a in private))
+        self.assertTrue(all(len(a["data"]["cards"]) == 1 for a in private))
+
+    def test_a_bot_victim_gets_no_private_alert(self):
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid"]}, bots=("b",))
+        execute_take_spec(game, {"victimId": "b", "kind": "random_each",
+                                 "takes": [{"thiefId": "a", "count": 2}]})
+        alerts = game["_pending_alerts"]
+        self.assertEqual(len(_public(alerts)), 1, "the table still hears it")
+        self.assertEqual(_private(alerts), [],
+                         "nobody is holding a bot's phone")
+
+    def test_two_cards_read_an_oxford_free_and_join(self):
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid"]})
+        execute_take_spec(game, {"victimId": "b", "kind": "random_each",
+                                 "takes": [{"thiefId": "a", "count": 2}]})
+        priv = _private(game["_pending_alerts"])[0]
+        names = [c["name"] for c in priv["data"]["cards"]]
+        self.assertEqual(len(names), 2)
+        self.assertEqual(priv["data"]["message"],
+                         f"A took 2 of your cards — {names[0]} and {names[1]}")
+        self.assertNotIn(", and", priv["data"]["message"])
 
 
 class TurnStealRecordsAlertsTest(unittest.TestCase):
@@ -63,10 +123,46 @@ class TurnStealRecordsAlertsTest(unittest.TestCase):
         engine = SurvivorRulesEngine()
         game = _game({"a": [], "b": ["extra_vote", "camp_raid"]})
         engine.execute_theft(game, "a", "b")
-        alert = game["_pending_alerts"][0]
-        self.assertEqual(alert["event"], "steal")
+        alert = _public(game["_pending_alerts"])[0]
         self.assertTrue(alert["data"]["message"].startswith("A stole"),
                         alert["data"]["message"])
+
+    def test_execute_theft_private_alert_names_the_card(self):
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["immunity_idol"]})
+        engine.execute_theft(game, "a", "b")
+        priv = _private(game["_pending_alerts"])[0]
+        self.assertEqual(priv["private_to"], "b")
+        self.assertEqual(priv["data"]["cards"],
+                         [{"name": "Hidden Immunity Idol", "type": "immunity_idol"}])
+        self.assertIn("Hidden Immunity Idol", priv["data"]["message"])
+
+    def test_camp_raid_extra_card_joins_the_same_private_alert(self):
+        """The public HTTP response keeps its synthetic '(+type from Camp
+        Raid)' string unchanged (see execute_theft); the private alert
+        names the same card for real, like any other."""
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid", "the_spy_shack"]})
+        game["players"]["b"]["campRaidedBy"] = "a"
+        result = engine.execute_theft(game, "a", "b")
+
+        self.assertTrue(any("Camp Raid" in c for c in result["stolen_cards"]),
+                        "the public HTTP shape is untouched")
+
+        priv = _private(game["_pending_alerts"])[0]
+        self.assertEqual(priv["data"]["count"], 2)
+        self.assertEqual(len(priv["data"]["cards"]), 2)
+        for card in priv["data"]["cards"]:
+            # A real {name, type} pair, not the synthetic "(+type from Camp
+            # Raid)" suffix the public HTTP shape uses — "Camp Raid" itself
+            # is also a legitimate card name here, so check for the suffix.
+            self.assertNotIn("from Camp Raid)", card["name"])
+
+    def test_a_bot_victim_gets_no_private_alert(self):
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid"]}, bots=("b",))
+        engine.execute_theft(game, "a", "b")
+        self.assertEqual(_private(game["_pending_alerts"]), [])
 
 
 class DeadCodeGoneTest(unittest.TestCase):

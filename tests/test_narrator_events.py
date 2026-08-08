@@ -31,13 +31,20 @@ import survivor_server
 
 @contextmanager
 def captured_events():
-    """Collect every emit_game_event payload for the duration of the block."""
+    """Collect every game_event payload for the duration of the block.
+
+    Each captured dict gains a test-only `_room` key holding the emit's
+    `to=` target, because "who was told" now matters as much as "what was
+    said": a room of `gid` is a table-wide broadcast, `gid::pid` is one
+    player's private channel (emit_private_event, Task A1). Redaction
+    assertions must judge the two differently.
+    """
     seen = []
     real = survivor_server.socketio.emit
 
     def spy(event, data=None, *args, **kwargs):
         if event == 'game_event':
-            seen.append(data)
+            seen.append({**(data or {}), '_room': kwargs.get('to')})
         return real(event, data, *args, **kwargs)
 
     survivor_server.socketio.emit = spy
@@ -49,6 +56,11 @@ def captured_events():
 
 def of_type(events, kind):
     return [e for e in events if e.get('type') == kind]
+
+
+def broadcast_only(events):
+    """The events every phone at the table received — private rooms excluded."""
+    return [e for e in events if '::' not in str(e.get('_room'))]
 
 
 class NarratorEventTests(unittest.TestCase):
@@ -234,12 +246,22 @@ class NarratorEventTests(unittest.TestCase):
                       {"gameId": self.gid, "playerId": actor, "cardIdx": 0,
                        "params": {"targetId": victim, "takeIndex": 0}})
 
-        blob = repr(events)
+        # The room-wide half of the redaction holds exactly as before: no
+        # broadcast event may name what the Spy Shack took.
+        blob = repr(broadcast_only(events))
         self.assertNotIn("Immunity Idol", blob,
                          "a peeked card must never be broadcast to the room")
         plays = of_type(events, 'card_played')
         if plays:
             self.assertEqual(plays[0]['card'], "The Spy Shack")
+
+        # And the private half (Task A2): the VICTIM is told exactly what
+        # left their hand, on their own room and nobody else's. It's their
+        # card — naming it to them reveals nothing they couldn't see.
+        robbed = of_type(events, 'robbed')
+        self.assertTrue(robbed, "the victim must be told what was taken")
+        self.assertEqual(robbed[0]['_room'], f"{self.gid}::{victim}")
+        self.assertIn("Immunity Idol", robbed[0]['message'])
 
 
 if __name__ == '__main__':

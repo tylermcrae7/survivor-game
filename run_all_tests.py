@@ -204,6 +204,18 @@ def main():
         {
             'file': 'tests/test_tie_break_eight_players.py',
             'description': 'Tie-breakers at eight — the official cascade pinned rule-by-rule at a full table'
+        },
+        {
+            'file': 'tests/test_private_channel.py',
+            'description': 'Private rooms — one phone can be spoken to alone, and only that phone'
+        },
+        {
+            'file': 'tests/test_universal_links.py',
+            'description': 'Universal Links — the AASA file Apple fetches, served past the gate with the right type'
+        },
+        {
+            'file': 'tests/test_ledger.py',
+            'description': "The island's private ledger — bots remember the game, clients never see it"
         }
     ]
     
