@@ -339,9 +339,13 @@ class SecretTribalAdvantagesTest(unittest.TestCase):
         self.assertTrue(body["success"], body.get("message"))
         # (c) the actor's own HTTP response still carries the full message
         self.assertIn(self.game["players"][victim]["name"], body["message"])
-        # (d) state mutates normally — the target really loses their vote
-        self.assertTrue(self.game["players"][victim]["voteBanned"])
-        self.assertEqual(self.game["players"][actor].get("extraVotes"), 1)
+        # (d) state mutates normally — ONE ballot physically moves (the
+        # voteBanned full-silence belongs to Block A Vote alone now), the
+        # thief votes twice, and the victim's own screen can say why.
+        self.assertFalse(self.game["players"][victim].get("voteBanned"))
+        self.assertEqual(self.game["players"][victim]["mandatoryVotes"], 0)
+        self.assertEqual(self.game["players"][victim].get("votesStolenFrom"), 1)
+        self.assertEqual(self.game["players"][actor]["mandatoryVotes"], 2)
         # (a) never lands in the eventLog
         self.assertEqual(len(self.game.get("eventLog") or []), before_log)
         # (b) never emits card_played — nor anything else naming the actor
@@ -386,7 +390,8 @@ class SecretTribalAdvantagesTest(unittest.TestCase):
 
         body = res.get_json()
         self.assertTrue(body["success"], body.get("message"))
-        self.assertTrue(self.game["players"][victim]["voteBanned"])
+        self.assertEqual(self.game["players"][victim]["mandatoryVotes"], 0)
+        self.assertEqual(self.game["players"][actor]["mandatoryVotes"], 2)
         self.assertEqual(len(self.game.get("eventLog") or []), before_log)
         self.assertEqual(of_type(events, 'card_played'), [])
 
@@ -406,18 +411,27 @@ class SecretTribalAdvantagesTest(unittest.TestCase):
         self.assertGreater(len(self.game.get("eventLog") or []), before_log)
         self.assertTrue(self.game["currentVote"].get("advantageCardsPlayed"))
 
-    # ── the Voting Box already skips a banned voter — pinned here ───────
+    # ── the Voting Box skips a BLOCKED voter; a stolen-from voter still
+    #    has to answer it (casting whatever remains, or passing it by) ────
 
-    def test_a_banned_voter_never_appears_in_the_waiting_on_refusal(self):
-        actor, victim = self.ids[1], self.ids[2]
+    def test_the_box_skips_the_blocked_but_waits_on_the_stolen_from(self):
+        actor, blocked, robbed = self.ids[1], self.ids[2], self.ids[0]
+        self.give(actor, "block_vote")
+        self.post('/api/tribal/advantage',
+                  {"gameId": self.gid, "playerId": actor,
+                   "advantageType": "block_vote", "targetId": blocked})
+        self.assertTrue(self.game["players"][blocked]["voteBanned"])
+        missing = self.gs._ballot_box_missing(self.game)
+        self.assertNotIn(self.game["players"][blocked]["name"], missing)
+
         self.give(actor, "steal_vote")
         self.post('/api/tribal/advantage',
                   {"gameId": self.gid, "playerId": actor,
-                   "advantageType": "steal_vote", "targetId": victim})
-        self.assertTrue(self.game["players"][victim]["voteBanned"])
-
+                   "advantageType": "steal_vote", "targetId": robbed})
+        self.assertFalse(self.game["players"][robbed].get("voteBanned"))
         missing = self.gs._ballot_box_missing(self.game)
-        self.assertNotIn(self.game["players"][victim]["name"], missing)
+        self.assertIn(self.game["players"][robbed]["name"], missing,
+                      "a stolen-from voter still answers the box")
 
 
 if __name__ == "__main__":

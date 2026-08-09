@@ -17,9 +17,13 @@ struct GameHistoryView: View {
                 Section("Leaderboard") {
                     ForEach(leaderboard.prefix(10), id: \.name) { entry in
                         HStack {
-                            Text(entry.rank <= 3 ? medalEmoji(entry.rank) : "\(entry.rank).")
+                            // One style for every rank, wide enough that
+                            // "2nd" can't wrap into "2n / d" (found live in
+                            // Tyler's screenshot — bold body needs ~36pt).
+                            Text(ordinal(entry.rank))
                                 .font(.body.bold())
-                                .frame(width: 30)
+                                .lineLimit(1)
+                                .frame(width: 42, alignment: .leading)
 
                             Text(entry.name)
                                 .font(.body)
@@ -78,12 +82,12 @@ struct GameHistoryView: View {
         }
     }
 
-    private func medalEmoji(_ rank: Int) -> String {
+    private func ordinal(_ rank: Int) -> String {
         switch rank {
         case 1: return "1st"
         case 2: return "2nd"
         case 3: return "3rd"
-        default: return "\(rank)."
+        default: return "\(rank)th"
         }
     }
 }

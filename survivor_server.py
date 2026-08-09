@@ -1722,11 +1722,27 @@ class GameState:
         # ── Return 1 Vote Card to every player still in the game ──
         # "After voting has ended, return 1 Vote Card to every player who still has
         #  at least one Survivor Character Card left in the game."
+        #
+        # RESET to exactly one, not append one. The old unconditional append
+        # assumed every ballot had been spent — but a Block A Vote victim's
+        # never were, so they kept them AND got a fresh one. Found live
+        # (Tyler, game def05d15): banned at council 1 holding two Vote Cards
+        # (his own plus one taken with Control The Vote), he opened the next
+        # turn holding THREE, and cast three phantom votes at council 2.
+        # Sweeping first also settles every other loose ballot in one move —
+        # a taken Vote Card implicitly returns home as its owner's fresh
+        # card, and a GIVEN Goodwill Gamble that went uncast dies with the
+        # council it was locked to ("MUST be used at this Tribal Council").
+        # A drawn, un-given goodwill is an Action Card and survives; so do
+        # unspent Extra Votes ("or save it for later").
         vote_cards_returned = []
         for player_id, player in game["players"].items():
             if player.get("isEliminated", False):
                 continue
-            player.setdefault("hand", []).append(new_card("vote"))
+            hand = player.setdefault("hand", [])
+            hand[:] = [c for c in hand
+                       if not self.rules_engine._is_ballot(c)]
+            hand.append(new_card("vote"))
             vote_cards_returned.append(player_id)
 
         # Reset per-tribal flags using rules engine
@@ -3465,6 +3481,7 @@ class GameState:
             player.pop("immunityNullified", None)
             player.pop("temporaryImmunity", None)
             player.pop("voteStolen", None)
+            player.pop("votesStolenFrom", None)
             player.pop("voteBanned", None)
         
         # Clear tribal council state

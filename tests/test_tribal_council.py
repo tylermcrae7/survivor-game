@@ -292,6 +292,103 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertFalse(regift["success"], "a given goodwill is a ballot, not a gift")
         self.assertEqual(game["players"][third]["mandatoryVotes"], 1)
 
+    def test_steal_a_vote_takes_one_ballot_not_the_whole_box(self):
+        """Tyler's council 1, game def05d15: he held two Vote Cards via
+        Control The Vote, someone played Steal A Vote, and voteBanned
+        silenced BOTH. The card says "steal another player's vote" —
+        singular. One ballot moves to the thief; the victim casts what
+        remains."""
+        game = self.gs.games[self.game_id]
+        victim, thief, other = self.player_ids[:3]
+        game["players"][victim]["hand"] = [{"type": "vote"}, {"type": "vote"}]
+        game["players"][thief]["hand"] = [{"type": "vote"}, {"type": "steal_vote"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        result = self.gs.play_tribal_advantage(
+            self.game_id, thief, "steal_vote", victim)
+        self.assertTrue(result["success"], result.get("message"))
+
+        self.assertFalse(game["players"][victim].get("voteBanned"))
+        self.assertEqual(game["players"][victim]["mandatoryVotes"], 1)
+        self.assertEqual(game["players"][victim]["votesStolenFrom"], 1)
+        self.assertEqual(game["players"][thief]["mandatoryVotes"], 2)
+
+        # The victim still votes — the whole point of the fix.
+        self.gs.start_voting(self.game_id, "elimination")
+        cast = self.gs.cast_vote(self.game_id, victim,
+                                 [{"targetId": other, "votes": 1}])
+        self.assertTrue(cast["success"], cast.get("message"))
+        # And the thief must cast both, like Control The Vote.
+        short = self.gs.cast_vote(self.game_id, thief,
+                                  [{"targetId": other, "votes": 1}])
+        self.assertFalse(short["success"], "the stolen vote is mandatory too")
+
+    def test_steal_a_vote_with_nothing_to_steal_is_refused(self):
+        game = self.gs.games[self.game_id]
+        victim, thief = self.player_ids[0], self.player_ids[1]
+        game["players"][victim]["hand"] = [{"type": "camp_raid"}]
+        game["players"][thief]["hand"] = [{"type": "steal_vote"}]
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        result = self.gs.play_tribal_advantage(
+            self.game_id, thief, "steal_vote", victim)
+        self.assertFalse(result["success"])
+        self.assertIn("steal_vote",
+                      [c["type"] for c in game["players"][thief]["hand"]],
+                      "a refused steal keeps the card")
+
+    def test_post_council_reset_holds_every_hand_to_exactly_one_vote(self):
+        """The other half of Tyler's def05d15 report: vote-banned at council
+        1 holding two Vote Cards, he opened the next turn holding THREE (the
+        reset appended without collecting) and cast three phantom votes at
+        council 2. The reset now sweeps every ballot and deals exactly one:
+        unspent votes don't stack, a taken Vote Card implicitly goes home,
+        an uncast GIVEN goodwill dies with its council — while Extra Votes
+        and a drawn goodwill (an Action Card) survive untouched."""
+        game = self.gs.games[self.game_id]
+        banned = self.player_ids[0]
+        game["players"][banned]["hand"] = [
+            {"type": "vote"}, {"type": "vote"},              # own + taken
+            {"type": "goodwill_gamble", "given": True},      # uncast ballot
+            {"type": "goodwill_gamble"},                     # drawn — a card
+            {"type": "extra_vote"},                          # saved — keeps
+        ]
+        game["players"][banned]["voteBanned"] = True
+        self.gs.rules_engine.sync_vote_counters(game)
+        self._vote_out(self.player_ids[2],
+                       votes_from=[p for p in self.player_ids if p != banned])
+
+        hand = [c["type"] for c in game["players"][banned]["hand"]]
+        self.assertEqual(hand.count("vote"), 1,
+                         "exactly one Vote Card after every council, always")
+        self.assertEqual(hand.count("extra_vote"), 1)
+        self.assertEqual(hand.count("goodwill_gamble"), 1)
+        self.assertFalse(any(c.get("given")
+                             for c in game["players"][banned]["hand"]
+                             if c["type"] == "goodwill_gamble"),
+                         "the drawn goodwill survives; the given one died")
+
+    def test_a_given_goodwill_cannot_be_regifted_through_play_card_either(self):
+        """The door the first guard missed: goodwill is also playable through
+        the ordinary play_card route during a council, and a live game
+        ping-ponged one three gives deep (Tyler↔Maddie, def05d15)."""
+        game = self.gs.games[self.game_id]
+        recipient, third = self.player_ids[1], self.player_ids[2]
+        game["players"][recipient]["hand"] = [
+            {"type": "goodwill_gamble", "given": True}]
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        result = self.gs.play_card(self.game_id, recipient, 0,
+                                   params={"targetId": third})
+        self.assertFalse(result["success"])
+        self.assertIn("ballot", result.get("message", ""))
+        self.assertEqual(len(game["players"][recipient]["hand"]), 1,
+                         "the refused regift never leaves the hand")
+
     def test_vote_cards_cannot_be_played_from_hand(self):
         """Vote and Extra Vote cards are spent by voting, never played as cards."""
         game = self.gs.games[self.game_id]

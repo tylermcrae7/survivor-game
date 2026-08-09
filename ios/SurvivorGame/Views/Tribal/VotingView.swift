@@ -171,6 +171,19 @@ struct VotingView: View {
 
     private var ballot: some View {
         VStack(spacing: 10) {
+            // Steal A Vote took one (or more) of my ballots — I cast what
+            // remains, and this line is the only explanation I get. The
+            // thief stays in the shadows, same as a block; unlike a block,
+            // the ballot below still renders.
+            if let stolen = me?.votesStolenFrom, stolen > 0 {
+                Text(stolen == 1
+                     ? "A vote was stolen from you tonight — cast what remains"
+                     : "\(stolen) votes were stolen from you tonight — cast what remains")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.ember)
+                    .multilineTextAlignment(.center)
+            }
             // Control The Vote raises the MANDATORY count — this line is the
             // only place the phone ever says so. Without it, casting two
             // votes with one tap looked exactly like casting one, and the

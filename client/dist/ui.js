@@ -1450,8 +1450,8 @@ function renderVoteTargets(gameState) {
     const playerId = window.SurvivorGame?.localGameState.playerId;
 
     // A banned ballot never renders — the owner sees only what happened to
-    // them, never who did it (Steal A Vote / Block A Vote stay dark at the
-    // table; nothing here is shown to anyone else).
+    // them, never who did it (Block A Vote stays dark at the table; nothing
+    // here is shown to anyone else).
     if (gameState.players?.[playerId]?.voteBanned) {
         container.innerHTML = `
             <p class="panel-sub" style="text-align:center">
@@ -1461,10 +1461,20 @@ function renderVoteTargets(gameState) {
         return;
     }
 
+    // Steal A Vote takes ONE ballot, not the whole box — the owner casts
+    // whatever remains, and this line is the only explanation they get
+    // (the thief stays in the shadows, same as a block).
+    const stolenCount = gameState.players?.[playerId]?.votesStolenFrom || 0;
+    const stolenNotice = stolenCount > 0 ? `
+        <p class="panel-sub" style="text-align:center">
+            ${stolenCount === 1 ? 'A vote was' : `${stolenCount} votes were`} stolen
+            from you tonight — cast what remains. The thief stays in the shadows.
+        </p>` : '';
+
     const eligibleTargets = window.SurvivorGame?.getEligibleVoteTargets(gameState, playerId) || [];
 
     const html = eligibleTargets.map(player => createVoteTargetElement(player)).join('');
-    container.innerHTML = `<div class="vote-targets">${html}</div>`;
+    container.innerHTML = `${stolenNotice}<div class="vote-targets">${html}</div>`;
 
     // Setup vote interactions
     setupVoteInteractions();

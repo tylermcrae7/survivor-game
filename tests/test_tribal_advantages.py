@@ -110,8 +110,12 @@ class TribalAdvantagePlayTest(unittest.TestCase):
             self.gid, playerId=actor, advantageType="steal_vote", targetId=victim)
 
         self.assertTrue(result["success"], result.get("message"))
-        self.assertTrue(self.game["players"][victim].get("voteBanned"))
-        self.assertEqual(self.game["players"][actor].get("extraVotes"), 1)
+        # One physical ballot moves — no full-silence ban (that's Block A
+        # Vote), no bare counter for sync_vote_counters to erase.
+        self.assertFalse(self.game["players"][victim].get("voteBanned"))
+        self.assertEqual(self.game["players"][victim]["mandatoryVotes"], 0)
+        self.assertEqual(self.game["players"][actor]["mandatoryVotes"], 2)
+        self.assertEqual(self.game["players"][victim].get("votesStolenFrom"), 1)
         self.assertNotIn("steal_vote", hand_types(self.game, actor))
 
     def test_an_eliminated_target_is_refused_and_the_card_survives(self):

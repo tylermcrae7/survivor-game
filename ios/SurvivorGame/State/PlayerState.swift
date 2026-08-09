@@ -17,6 +17,12 @@ struct PlayerState: Codable, Identifiable, Equatable {
     var characterCards: Int
     var immunityPlayed: Bool
     var voteBanned: Bool?
+    /// Steal A Vote took this many of my ballots this council — I cast what
+    /// remains, and this count is the only explanation my ballot screen
+    /// gets (the thief stays in the shadows). Cleared by the post-tribal
+    /// reset. Distinct from `voteBanned`, which is Block A Vote's full
+    /// silence.
+    var votesStolenFrom: Int?
     var isBot: Bool
     var maxVotes: Int?
     var mandatoryVotes: Int?
@@ -68,7 +74,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, name, color, hand, isEliminated, isActive, isCouncilLeader
         case hasStolen, hasPlayed, hasDrawn, hasVoted, extraVotes, characterCards
-        case immunityPlayed, voteBanned, isBot, maxVotes, mandatoryVotes
+        case immunityPlayed, voteBanned, votesStolenFrom, isBot, maxVotes, mandatoryVotes
         case goodwillVotes, drawBonus, stealBonus, immunityIdolProtection, idolNullified
         case campRaidedBy, inheritanceTarget, place, discordUserId, placePolicy
     }
@@ -90,6 +96,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         characterCards = try container.decodeIfPresent(Int.self, forKey: .characterCards) ?? 2
         immunityPlayed = try container.decodeIfPresent(Bool.self, forKey: .immunityPlayed) ?? false
         voteBanned = try container.decodeIfPresent(Bool.self, forKey: .voteBanned)
+        votesStolenFrom = try container.decodeIfPresent(Int.self, forKey: .votesStolenFrom)
         isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
         maxVotes = try container.decodeIfPresent(Int.self, forKey: .maxVotes)
         mandatoryVotes = try container.decodeIfPresent(Int.self, forKey: .mandatoryVotes)
@@ -113,7 +120,8 @@ struct PlayerState: Codable, Identifiable, Equatable {
         isActive: Bool = true, isCouncilLeader: Bool = false,
         hasStolen: Bool = false, hasPlayed: Bool = false, hasDrawn: Bool = false,
         hasVoted: Bool = false, extraVotes: Int = 0, characterCards: Int = 2,
-        immunityPlayed: Bool = false, voteBanned: Bool? = nil, isBot: Bool = false,
+        immunityPlayed: Bool = false, voteBanned: Bool? = nil,
+        votesStolenFrom: Int? = nil, isBot: Bool = false,
         maxVotes: Int? = nil, mandatoryVotes: Int? = nil, goodwillVotes: Int? = nil,
         drawBonus: Int? = nil, stealBonus: Int? = nil,
         immunityIdolProtection: Bool = false, idolNullified: Bool = false,
@@ -136,6 +144,7 @@ struct PlayerState: Codable, Identifiable, Equatable {
         self.characterCards = characterCards
         self.immunityPlayed = immunityPlayed
         self.voteBanned = voteBanned
+        self.votesStolenFrom = votesStolenFrom
         self.isBot = isBot
         self.maxVotes = maxVotes
         self.mandatoryVotes = mandatoryVotes

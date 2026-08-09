@@ -1345,6 +1345,16 @@ class SurvivorRulesEngine:
 			if blocked:
 				return {"success": False, "message": blocked}
 
+		if advantage_type == "steal_vote":
+			# Same before-the-card-leaves-the-hand rule as this route's
+			# Control The Vote check: no ballot to steal, no play.
+			target = game["players"].get(target_id or "")
+			if target is not None and not any(
+					self._is_ballot(c) for c in target.get("hand") or []):
+				return {"success": False,
+				        "message": f"{target.get('name', 'That player')} has no "
+				                   "vote left to steal"}
+
 		# Check the target BEFORE the card leaves the hand. The effects below
 		# report a missing target by returning a bare `{"message": ...}` with no
 		# `success` key, and the tail of this method reports success regardless
@@ -1416,11 +1426,31 @@ class SurvivorRulesEngine:
 			target_id = params.get("targetId")
 			if not target_id or target_id not in game["players"]:
 				return False, f"{card.get('name', card_type)} requires a valid target player"
-				
+
 			target = game["players"][target_id]
 			if target.get("isEliminated", False):
 				return False, "Cannot target eliminated players"
-				
+
+		# One give, ever. A GIVEN goodwill is its recipient's ballot — "they
+		# can use it to VOTE for any player they want" — never a re-giftable
+		# card. This validator, not validate_play's action-card region, is
+		# the path a tribal advantage takes through play_card, which is
+		# exactly the door a live game ping-ponged one goodwill through
+		# three gives deep in a single council (Tyler↔Maddie, def05d15).
+		# resolve_card carries the instance's `given` stamp through.
+		if card_type == "goodwill_gamble" and card.get("given"):
+			return False, ("This Goodwill Gamble was given to you — "
+			               "it's your ballot now, not a gift")
+
+		# "Steal another player's vote" needs a vote to steal — refused
+		# while the card is still in the hand.
+		if card_type == "steal_vote":
+			target = game["players"].get(params.get("targetId") or "")
+			if target is not None and not any(
+					self._is_ballot(c) for c in target.get("hand") or []):
+				return False, (f"{target.get('name', 'That player')} has no "
+				               "vote left to steal")
+
 		return True, "Tribal advantage card play is valid"
 		
 	def _validate_action_card_play(self, game: Dict[str, Any], player_id: str, card: Dict[str, Any], phase: str, params: Dict[str, Any]) -> Tuple[bool, str]:
@@ -1901,6 +1931,7 @@ class SurvivorRulesEngine:
 			
 			# Reset vote manipulation flags
 			player.pop("voteStolen", None)
+			player.pop("votesStolenFrom", None)
 			player.pop("voteBanned", None)
 			player.pop("temporaryImmunity", None)
 
@@ -2308,10 +2339,22 @@ class SurvivorRulesEngine:
 	def _effect_steal_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
 		"""Execute steal vote tribal advantage effect.
 
+		"Steal another player's vote" — singular. This MOVES one physical
+		ballot from the target's hand to the thief's, exactly Control The
+		Vote's mechanics played in secret: the thief votes twice (both cards
+		mandatory), and a target with more ballots keeps the rest. It used to
+		set voteBanned — silencing the target's ENTIRE ballot even when
+		Control The Vote had them holding two or three (found live: Tyler,
+		game def05d15, council 1) — and granted the thief a bare extraVotes
+		counter that sync_vote_counters, which derives that field from the
+		hand, erased on its next pass. A physical card can't be erased by a
+		recount. voteBanned now belongs to Block A Vote alone, whose card
+		really does say "prevent another player from voting".
+
 		Task S2: an end-game secret. The actor's own response still says who
-		and what; the room never hears it — see "secret" below, which
-		`handle()`'s eventLog append and the `card_played` narrator event both
-		respect.
+		and what; the room never hears it. The target's own phone learns THAT
+		a vote was stolen — votesStolenFrom rides the state — but never by
+		whom.
 		"""
 		target_id = params.get("targetId")
 		if not target_id or target_id not in game["players"]:
@@ -2320,12 +2363,24 @@ class SurvivorRulesEngine:
 		stealer = game["players"][player_id]
 		target = game["players"][target_id]
 
-		# Remove one vote from target (they can't vote)
-		target["voteBanned"] = True
-		# Give extra vote to stealer
-		stealer["extraVotes"] = stealer.get("extraVotes", 0) + 1
+		hand = target.get("hand") or []
+		ballot_idx = next((i for i, c in enumerate(hand) if self._is_ballot(c)), None)
+		if ballot_idx is None:
+			# validate_play refuses this before the card is consumed; this is
+			# the belt to that suspender.
+			return {"success": False,
+			        "message": f"{target['name']} has no vote left to steal"}
 
-		return {"message": f"{stealer['name']} stole a vote from {target['name']}",
+		stolen = hand.pop(ballot_idx)
+		stealer.setdefault("hand", []).append(stolen)
+		# Cleared by the post-tribal reset with the other per-council flags.
+		# The owner's ballot screen reads this to explain the missing vote
+		# without naming the thief.
+		target["votesStolenFrom"] = target.get("votesStolenFrom", 0) + 1
+		self.sync_vote_counters(game)
+
+		return {"message": f"{stealer['name']} stole a vote from {target['name']} — "
+		                   "you cast two ballots tonight",
 		        "secret": True}
 
 	def _effect_block_vote(self, game: Dict, player_id: str, card: Dict, params: Dict) -> Dict:
