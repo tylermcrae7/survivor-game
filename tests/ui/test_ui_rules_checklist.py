@@ -633,6 +633,26 @@ def run_checks():
               'every one of them goes in the box' in chooser_text, chooser_text[:120])
         ana.evaluate("() => window.SurvivorUI.hideModal?.()")
 
+        # The combined hand — a taken Vote Card AND an Extra Vote — must name
+        # BOTH counts. Naming only the extras left the leading number
+        # contradicting the castable total (Tyler, game 3851c768, council 0).
+        ana.evaluate("""() => {
+            const state = window.SurvivorGame.fullGameState;
+            const me = state.players[window.SurvivorGame.localGameState.playerId];
+            me.mandatoryVotes = 2; me.extraVotes = 1; me.maxVotes = 3;
+            me.hasVoted = false;
+            window.SurvivorUI.renderVoteTargets(state);
+        }""")
+        ana.locator('.vote-target').first.dispatch_event('pointerup')
+        wait_for(lambda: ana.locator('.extra-vote-option').count() >= 1, 5)
+        combined_text = ana.locator('#modalContainer, .modal, body').first.inner_text()
+        check("control the vote + extra: the chooser names both counts",
+              'Every one of your 2 Vote Cards' in combined_text
+              and 'Extra Vote' in combined_text, combined_text[:140])
+        check("control the vote + extra: the options run to the true ceiling",
+              ana.locator('.extra-vote-option').count() == 2)  # 2 and 3 votes
+        ana.evaluate("() => window.SurvivorUI.hideModal?.()")
+
         # ══════════════ U6 · The robbed banner (A4) ══════════════
         # The private-room plumbing this event would ordinarily ride (A1's
         # and A2's server halves) is outside this suite's ownership, so this

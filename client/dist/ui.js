@@ -1714,8 +1714,13 @@ function showExtraVoteChooser(targetId) {
                 Write different names on different parchments</span>
         </button>` : '';
 
+    // With a taken Vote Card AND Extra Votes in one hand, naming only the
+    // extras hid the mandatory two and the leading number contradicted the
+    // castable total (found live: Tyler, game 3851c768, council 0).
     const headline = extra > 0
-        ? `You hold ${extra} Extra Vote${extra === 1 ? '' : 's'}. Spend them now, or keep them hidden for a later Tribal Council.`
+        ? (mandatory >= 2
+            ? `Every one of your ${mandatory} Vote Cards goes in the box; your ${extra} Extra Vote${extra === 1 ? '' : 's'} can ride along or wait for a later Tribal Council.`
+            : `You hold ${extra} Extra Vote${extra === 1 ? '' : 's'}. Spend them now, or keep them hidden for a later Tribal Council.`)
         : `You hold ${mandatory} Vote Cards tonight — every one of them goes in the box.`;
     showModal(`
         <p class="panel-sub" style="margin-bottom:0.75rem;">

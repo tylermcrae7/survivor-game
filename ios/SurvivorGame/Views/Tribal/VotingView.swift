@@ -184,23 +184,20 @@ struct VotingView: View {
                     .foregroundStyle(Torch.Color.ember)
                     .multilineTextAlignment(.center)
             }
-            // Control The Vote raises the MANDATORY count — this line is the
-            // only place the phone ever says so. Without it, casting two
-            // votes with one tap looked exactly like casting one, and the
-            // player who took a Vote Card couldn't tell it had worked at all
-            // (found live: Tyler, council b11498a9).
-            if mandatoryVotes > 1 {
-                Text("You cast \(mandatoryVotes) votes tonight — every Vote Card you hold goes in the box")
+            // One headline for the whole ballot. Two stacked lines used to
+            // decompose it — "you cast 2 votes tonight" above "you hold 1
+            // Extra Vote" — and the first read as the total while the player
+            // went on to cast 3 (found live: Tyler, game 3851c768, council 0,
+            // holding a taken Vote Card AND an Extra Vote). Mandatory count,
+            // optional count and ceiling are one sentence now, so no single
+            // number can masquerade as the total.
+            if let headline = BallotHeadline.text(mandatory: mandatoryVotes,
+                                                  extras: extraVotes) {
+                Text(headline)
                     .font(Torch.Font.label(Torch.TextSize.xs))
                     .tracking(Torch.Track.label * Torch.TextSize.xs)
                     .foregroundStyle(Torch.Color.flame)
                     .multilineTextAlignment(.center)
-            }
-            if extraVotes > 0 {
-                Text("You hold \(extraVotes) Extra Vote\(extraVotes == 1 ? "" : "s")")
-                    .font(Torch.Font.label(Torch.TextSize.xs))
-                    .tracking(Torch.Track.label * Torch.TextSize.xs)
-                    .foregroundStyle(Torch.Color.flame)
             }
             Text("Tap a name to write it on your parchment")
                 .font(Torch.Font.body(Torch.TextSize.sm))
@@ -303,6 +300,28 @@ struct VotingView: View {
 
 // MARK: - Extra vote chooser
 
+/// The ballot's one-sentence headline, split out so "what does the player
+/// read while holding N mandatory and M optional votes" is testable without
+/// a live view — mirrors `VoteBarScale` and `RobberyBannerContent`.
+///
+/// The invariant this type exists to hold: any number the headline leads
+/// with must never contradict the total the player can actually cast.
+enum BallotHeadline {
+    static func text(mandatory: Int, extras: Int) -> String? {
+        let s = extras == 1 ? "" : "s"
+        switch (mandatory > 1, extras > 0) {
+        case (true, true):
+            return "You cast \(mandatory) votes tonight — your \(extras) Extra Vote\(s) can make it \(mandatory + extras)"
+        case (true, false):
+            return "You cast \(mandatory) votes tonight — every Vote Card you hold goes in the box"
+        case (false, true):
+            return "You hold \(extras) Extra Vote\(s)"
+        case (false, false):
+            return nil
+        }
+    }
+}
+
 private struct ExtraVoteChooser: View {
     let target: PlayerState
     let mandatory: Int
@@ -320,8 +339,13 @@ private struct ExtraVoteChooser: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    // Same invariant as BallotHeadline: with a taken Vote
+                    // Card AND Extra Votes in one hand, naming only the
+                    // extras hid the mandatory two (Tyler, game 3851c768).
                     Text(extras > 0
-                         ? "You hold \(extras) Extra Vote\(extras == 1 ? "" : "s"). Spend them now, or keep them hidden for a later Tribal Council."
+                         ? (mandatory > 1
+                            ? "Every one of your \(mandatory) Vote Cards goes in the box; your \(extras) Extra Vote\(extras == 1 ? "" : "s") can ride along or wait for a later Tribal Council."
+                            : "You hold \(extras) Extra Vote\(extras == 1 ? "" : "s"). Spend them now, or keep them hidden for a later Tribal Council.")
                          : "You hold \(mandatory) Vote Cards tonight — every one of them goes in the box.")
                         .font(Torch.Font.body(Torch.TextSize.sm))
                         .foregroundStyle(Torch.Color.textSecondary)
