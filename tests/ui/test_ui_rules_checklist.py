@@ -381,7 +381,11 @@ def run_checks():
               ana.locator('.robbed-banner').count())
         check("robbed (E2E): the thief's phone never gets a banner",
               ben.locator('.robbed-banner').count() == 0)
-        ana.evaluate("() => document.getElementById('robbedBanner')?.remove()")
+        # Tear down through the narrator, not a bare .remove(): the queue
+        # (added after the alliance-raid finding) must drain WITH the stage,
+        # or a robbery queued behind this banner plays at some later,
+        # unrelated point in the checklist.
+        ana.evaluate("() => window.SurvivorNarrator.clearRobberies()")
 
         check("narrator: a real steal's game_event reaches the DOM (A0 regression)",
               wait_for(lambda: len(narrator_entries(ana)) > len(narrator_before)
@@ -605,6 +609,13 @@ def run_checks():
         # gated on the viewer being the addressed victim — by dispatching the
         # server's documented payload straight at the narrator, the same way
         # a private 'game_event' would arrive over the socket.
+        # A clean stage first: the LIVE game above robbed Ana for real along
+        # the way, and the queue faithfully holds anything that never got its
+        # five seconds — exactly the behaviour under test, but fatal to a
+        # deterministic synthetic sequence if the leftovers play mid-check.
+        # (No new real events can land during U6: the game is parked on a
+        # human's turn, and bots only act on their own.)
+        ana.evaluate("() => window.SurvivorNarrator.clearRobberies()")
         robbed_event = {
             "type": "robbed", "timestamp": 0,
             "thiefId": ben_id, "thief": "Ben",
@@ -620,6 +631,34 @@ def run_checks():
 
         jsclick(ana, '.robbed-banner')
         check("robbed: tapping the banner dismisses it",
+              wait_for(lambda: ana.locator('.robbed-banner').count() == 0, 3) is not None)
+
+        # Queue, not replace: an alliance raid delivers TWO robbed events
+        # milliseconds apart — one per thief, each naming that thief's card.
+        # The original overwrite showed only the second (found live: Tyler
+        # was raided by two people and saw one card). Both must play, in
+        # order, each surviving until its own dismissal.
+        raid_first = dict(robbed_event)
+        raid_second = dict(robbed_event, thiefId=bot_id, thief="Coconut",
+                           cards=[{"name": "Sorry For You", "type": "sorry_for_you"}],
+                           message="Coconut took your Sorry For You")
+        ana.evaluate("(e) => window.SurvivorNarrator.handleGameEvent(e)", raid_first)
+        ana.evaluate("(e) => window.SurvivorNarrator.handleGameEvent(e)", raid_second)
+        check("robbed queue: the first raider's banner shows first — not the second's",
+              wait_for(lambda: ana.locator('.robbed-banner').count() == 1
+                       and 'Ben took your Hidden Immunity Idol'
+                           in ana.locator('.robbed-banner').inner_text(), 5) is not None,
+              ana.locator('.robbed-banner').inner_text()
+              if ana.locator('.robbed-banner').count() else '(no banner)')
+        jsclick(ana, '.robbed-banner')
+        check("robbed queue: dismissing the first advances to the second raider's card",
+              wait_for(lambda: ana.locator('.robbed-banner').count() == 1
+                       and 'Coconut took your Sorry For You'
+                           in ana.locator('.robbed-banner').inner_text(), 5) is not None,
+              ana.locator('.robbed-banner').inner_text()
+              if ana.locator('.robbed-banner').count() else '(no banner)')
+        jsclick(ana, '.robbed-banner')
+        check("robbed queue: the queue drains clean",
               wait_for(lambda: ana.locator('.robbed-banner').count() == 0, 3) is not None)
 
         # Gate: an event addressed to someone else must never render here,
@@ -642,16 +681,11 @@ def run_checks():
         # call, so this exercises the stash/restore mechanics directly: a
         # real reload, on the real code path, standing in for the gate's own.
         #
-        # Uses the ?join= form, not /join/CODE: navigating straight to a
-        # nested path 404s on THIS server today — Flask's own static handler
-        # (static_url_path="") registers at the same "/<path:...>" shape as
-        # the app's SPA-fallback route and Werkzeug ranks it first regardless
-        # of registration order (the plan's Task B2 already names this
-        # quirk for the AASA route), so a bare GET /join/CODE never reaches
-        # index-optimized.html at all — a real bug in survivor_server.py,
-        # outside this suite's ownership, flagged separately. ?join= hits the
-        # exact "/" route and is unaffected, and it exercises the identical
-        # stash/restore code path applyJoinLink() runs for either form.
+        # The ?join= form exercises the stash/restore mechanics; the path
+        # form the share sheet actually mints is checked separately below —
+        # it needs the explicit /join/<code> route (Flask's own static
+        # handler outranks the SPA fallback, so the path 404'd before that
+        # route existed; tests/test_universal_links.py pins the server half).
         join_game = api("/api/game/create", {"deckMode": "official", "expansion": False})
         join_gid = join_game["gameId"]
         join_ctx = browser.new_context(viewport={"width": 390, "height": 844})
@@ -682,6 +716,19 @@ def run_checks():
               join_page.evaluate(
                   "() => sessionStorage.getItem('survivorPendingJoin')") is None)
         join_ctx.close()
+
+        # The path form the share sheet mints — /join/CODE — end to end. The
+        # server 302s it to /?join=CODE (the shell's relative script srcs
+        # half-break under a nested path, so it can't be served in place),
+        # the browser follows, and applyJoinLink prefills as usual.
+        path_game = api("/api/game/create", {"deckMode": "official", "expansion": False})
+        path_ctx = browser.new_context(viewport={"width": 390, "height": 844})
+        path_page = path_ctx.new_page()
+        path_page.goto(f"{BASE}/join/{path_game['gameId']}")
+        path_page.wait_for_selector('#gameCodeInput:visible')
+        check("join link: a /join/CODE path lands on the join form, code prefilled",
+              path_page.input_value('#gameCodeInput') == path_game['gameId'])
+        path_ctx.close()
 
         browser.close()
 

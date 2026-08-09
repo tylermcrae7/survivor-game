@@ -856,12 +856,34 @@ class GameNarrator {
     // raid dialog's icon-over-headline, minus showModal's backdrop and focus
     // trap. No sound here — the victim already heard 'steal' play for the
     // public event this rides alongside; a second cue would double up.
+    //
+    // Queue, don't replace: an alliance raid delivers TWO robbed events
+    // milliseconds apart — one per thief, each naming that thief's card —
+    // and the original "replace, don't stack" overwrite showed only the
+    // second (found live: raided by two people, one card announced). Each
+    // banner now plays out its dismissal — click or timeout — before the
+    // next comes on; a click advances the queue, it doesn't drain it.
     showRobbedBanner(event) {
-        window.SurvivorUI?.hapticFeedback?.('warning');
+        this._robbedQueue = this._robbedQueue || [];
+        this._robbedQueue.push(event);
+        this._playNextRobbery();
+    }
 
-        // Replace, don't stack — a second theft landing before the first
-        // banner clears should read as an update, not a pile of banners.
+    // The full teardown, called on game_reset (network.js) — clears the
+    // stage and the wings both. A queued robbery from the old game must
+    // never play in the next one; iOS clears its queue at the same moment.
+    clearRobberies() {
+        this._robbedQueue = [];
         document.getElementById('robbedBanner')?.remove();
+    }
+
+    _playNextRobbery() {
+        // One on stage at a time — the queue drains through dismiss below.
+        if (document.getElementById('robbedBanner')) return;
+        const event = this._robbedQueue?.shift();
+        if (!event) return;
+
+        window.SurvivorUI?.hapticFeedback?.('warning');
 
         const banner = document.createElement('div');
         banner.id = 'robbedBanner';
@@ -873,10 +895,18 @@ class GameNarrator {
             <span class="robbed-banner-text">${escapeHtml(event.message || '')}</span>
         `;
 
-        const dismiss = () => banner.remove();
+        const dismiss = () => {
+            // A reset may have already torn this banner down (clearRobberies)
+            // — its still-pending timer must not fire into the NEXT game and
+            // take a fresh banner (same element id) down with it.
+            if (!banner.isConnected) return;
+            clearTimeout(timer);
+            banner.remove();
+            this._playNextRobbery();
+        };
+        const timer = setTimeout(dismiss, 5000);
         banner.addEventListener('click', dismiss, { once: true });
         document.body.appendChild(banner);
-        setTimeout(dismiss, 5000);
     }
 
     // Specific narration methods

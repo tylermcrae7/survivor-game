@@ -35,7 +35,46 @@ final class GameClient {
     /// the server.
     private(set) var robberyAlert: RobberyBannerContent?
 
+    /// Bumped every time a banner takes the stage — including a back-to-back
+    /// one with identical content (the same bot taking the same card twice in
+    /// one window is real). The view's auto-dismiss timer and haptic key on
+    /// this, not on content equality, so a repeat still gets its full five
+    /// seconds and its own buzz.
+    private(set) var robberySequence = 0
+
+    /// Robberies waiting their turn on stage. An alliance raid delivers TWO
+    /// `robbed` events milliseconds apart — one per thief, each naming that
+    /// thief's card — and a plain `robberyAlert = content` overwrite showed
+    /// only the second (found live: Tyler was raided by two people and saw
+    /// one card). Each banner now plays out its dismissal — tap or timeout —
+    /// before the next comes on.
+    private var robberyQueue: [RobberyBannerContent] = []
+
+    private func showRobbery(_ content: RobberyBannerContent) {
+        if robberyAlert == nil {
+            robberyAlert = content
+            robberySequence += 1
+        } else {
+            robberyQueue.append(content)
+        }
+    }
+
+    /// Advances to the next queued robbery rather than clearing the lot — a
+    /// tap means "seen it", and the victim wants to flip through their
+    /// losses, not lose the rest of them again.
     func dismissRobberyAlert() {
+        if robberyQueue.isEmpty {
+            robberyAlert = nil
+        } else {
+            robberyAlert = robberyQueue.removeFirst()
+            robberySequence += 1
+        }
+    }
+
+    /// The full teardown — reset, wipe, leave. A queued robbery from a game
+    /// you left must never play in the next one.
+    private func clearRobberies() {
+        robberyQueue.removeAll()
         robberyAlert = nil
     }
 
@@ -638,8 +677,9 @@ final class GameClient {
         // A stale robbery banner surviving into the next game (or the lobby
         // you just left) is the same overlay bug the alliance work already
         // had to fix once — `.wiped` routes through here too, so this covers
-        // both call sites in one place.
-        robberyAlert = nil
+        // both call sites in one place. The queue goes with it: a robbery
+        // that never made the stage is still the old game's news.
+        clearRobberies()
     }
 
     // MARK: - Sync
@@ -728,7 +768,7 @@ final class GameClient {
             // over the lobby.
             narration.reset()
             allianceAlert = nil
-            robberyAlert = nil
+            clearRobberies()
             gameState?.phase = .lobby
             updateNavigationState()
         case .wiped:
@@ -753,7 +793,7 @@ final class GameClient {
                 // defense against a routing bug, not a real expectation.
                 if case .robbed = event {
                     if let content = RobberyBannerContent.forViewer(playerId, event: event) {
-                        robberyAlert = content
+                        showRobbery(content)
                     }
                 } else if let content = AllianceOverlayContent.forViewer(playerId, event: event) {
                     // The two alliance PARTNERS get the blocking overlay

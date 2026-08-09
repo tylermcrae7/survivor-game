@@ -3990,18 +3990,23 @@ def index():
 
 @app.route("/join/<code>")
 def join_link(code):
-    """A shared /join/CODE link lands on the app shell like any other page.
+    """A shared /join/CODE link redirects to the ?join= form the SPA boots on.
 
-    This can't ride spa_fallback below: with `static_url_path=""`, Flask's
-    own built-in static route is registered at the same `/<path:...>` shape
-    and Werkzeug ranks it first regardless of registration order — so a
-    path with no matching file on disk gets the static view's raw 404, and
-    spa_fallback never runs (found while testing Task B3's path-form share
-    links; the AASA route above dodges the same trap the same way). The
-    client reads the code from the URL itself (applyJoinLink); `code` is
-    accepted here only so the rule matches.
+    Two traps stack on this path, and the redirect clears both. First, it
+    can't ride spa_fallback below: with `static_url_path=""`, Flask's own
+    static route registers at the same `/<path:...>` shape and Werkzeug
+    ranks it first regardless of registration order, so the path got the
+    static view's raw 404. Second, serving the shell HERE half-breaks it:
+    index-optimized.html loads its scripts by RELATIVE src, so under
+    /join/ every one resolves to /join/game.js — which spa_fallback
+    answers with HTML, and the browser refuses the MIME. applyJoinLink
+    already handles ?join= completely, so send the browser there.
+
+    A phone with the app installed never loads this URL at all — Universal
+    Link matching happens offline against the AASA components above.
     """
-    return index()
+    from flask import redirect
+    return redirect(f"/?join={code}", code=302)
 
 @app.route("/<path:path>")
 def spa_fallback(path):

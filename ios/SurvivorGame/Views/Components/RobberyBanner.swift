@@ -32,6 +32,14 @@ struct RobberyBanner: View {
             .overlay(alignment: .top) {
                 if let alert = gameClient.robberyAlert {
                     RobberyBannerCard(alert: alert)
+                        // A fresh view identity per STAGING, not per content:
+                        // the same thief taking the same card twice produces
+                        // equal content back to back, and content-keyed
+                        // identity would neither run the hand-off transition,
+                        // restart the five-second clock, nor buzz again — the
+                        // second robbery would ride out the first one's
+                        // remaining seconds in silence.
+                        .id(gameClient.robberySequence)
                         .padding(.horizontal, 20)
                         // Clears the camp strip / FIRE pill the same way
                         // ConnectionBanner does.
@@ -39,16 +47,23 @@ struct RobberyBanner: View {
                         .transition(reduceMotion
                                     ? .opacity
                                     : .move(edge: .top).combined(with: .opacity))
+                        // A tap advances to the next queued robbery, if any —
+                        // an alliance raid delivers two, and dismissing the
+                        // first must not eat the second.
                         .onTapGesture { gameClient.dismissRobberyAlert() }
-                        .onAppear { HapticEngine.notification(.warning) }
-                        .task(id: alert) {
+                        .task {
+                            HapticEngine.notification(.warning)
                             try? await Task.sleep(for: Self.dismissAfter)
                             gameClient.dismissRobberyAlert()
                         }
                 }
             }
+            // Two triggers, one look: sequence animates the banner-to-banner
+            // hand-off; the nil flip animates the last one's exit.
             .animation(reduceMotion ? .none : .torchEaseOut(duration: 0.26),
-                       value: gameClient.robberyAlert)
+                       value: gameClient.robberySequence)
+            .animation(reduceMotion ? .none : .torchEaseOut(duration: 0.26),
+                       value: gameClient.robberyAlert == nil)
     }
 }
 

@@ -868,7 +868,11 @@ function setupSocketEventHandlers() {
         if (data && data.gameId && window.SurvivorGame.localGameState.gameId === data.gameId) {
             console.log('🔄 Game reset received');
             showToast('Game has been reset', 'info');
-            
+
+            // A robbed banner — on stage or still queued — belongs to the
+            // game that just ended; it must not play into the next one.
+            window.SurvivorNarrator?.clearRobberies?.();
+
             // Reset local state
             window.SurvivorGame.localGameState.gameId = null;
             window.SurvivorGame.localGameState.playerId = null;

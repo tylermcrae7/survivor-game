@@ -258,6 +258,66 @@ struct NetworkingTests {
         #expect(client.allianceAlert == nil)
     }
 
+    // MARK: - Robbery queue (alliance raids)
+
+    private func robbedEventData(thief: String, thiefId: String, card: String) -> [String: Any] {
+        [
+            "thiefId": thiefId, "thief": thief,
+            "victimId": "victim-1", "victim": "Tyler",
+            "count": 1, "cards": [["name": card, "type": "x"]],
+            "message": "\(thief) took your \(card)",
+        ]
+    }
+
+    /// An alliance raid delivers TWO robbed events milliseconds apart — one
+    /// per thief. A plain overwrite showed only the second (found live:
+    /// raided by two people, one card announced). The queue plays them out
+    /// one dismissal at a time.
+    @Test @MainActor func twoRobbedEventsPlayOutOneAtATime() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "victim-1"
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData(
+            thief: "Ana", thiefId: "p1", card: "Hidden Immunity Idol")))
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData(
+            thief: "Ben", thiefId: "p2", card: "Sorry For You")))
+
+        #expect(client.robberyAlert?.thiefName == "Ana", "the first robbery shows first")
+        client.dismissRobberyAlert()
+        #expect(client.robberyAlert?.thiefName == "Ben", "dismissal advances, it doesn't clear")
+        client.dismissRobberyAlert()
+        #expect(client.robberyAlert == nil)
+    }
+
+    /// Identical back-to-back robberies are real (the same bot, the same
+    /// card name, one window). Content is equal, so the view keys its clock
+    /// and haptic on the sequence — which must therefore advance per staging.
+    @Test @MainActor func anIdenticalRobberyStillAdvancesTheSequence() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "victim-1"
+        let data = robbedEventData(thief: "Ana", thiefId: "p1", card: "Hidden Immunity Idol")
+        client.handleEvent(.custom(type: "robbed", data: data))
+        let first = client.robberySequence
+        client.handleEvent(.custom(type: "robbed", data: data))
+        client.dismissRobberyAlert()
+        #expect(client.robberyAlert?.thiefName == "Ana", "the twin robbery still gets its turn")
+        #expect(client.robberySequence > first, "each staging bumps the sequence")
+    }
+
+    /// A reset with robberies still queued clears the stage AND the wings —
+    /// a robbery from the old game must never play in the next one.
+    @Test @MainActor func resetClearsTheQueueNotJustTheVisibleBanner() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-robbery-test.invalid")!)
+        client.playerId = "victim-1"
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData(
+            thief: "Ana", thiefId: "p1", card: "Hidden Immunity Idol")))
+        client.handleEvent(.custom(type: "robbed", data: robbedEventData(
+            thief: "Ben", thiefId: "p2", card: "Sorry For You")))
+        client.handleEvent(.reset)
+        #expect(client.robberyAlert == nil)
+        client.dismissRobberyAlert()
+        #expect(client.robberyAlert == nil, "nothing queued may survive the reset")
+    }
+
     /// Leaving a lobby has to stick. A broadcast already in flight when the
     /// leave lands used to be applied anyway, which re-derived navigation and
     /// walked straight back into the lobby — the Leave button looked broken.

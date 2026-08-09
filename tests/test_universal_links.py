@@ -90,20 +90,27 @@ class AASASurvivesTheAccessGateTest(unittest.TestCase):
 
 
 class JoinLinkRouteTest(unittest.TestCase):
-    """A shared /join/CODE link must land on the app shell, not a 404.
+    """A shared /join/CODE link must land a browser on the join form.
 
-    Flask's built-in static route (static_url_path="") outranks the
-    /<path:path> SPA fallback in Werkzeug's rule ordering, so before the
-    explicit /join/<code> route existed, every path-form share link — the
-    very shape the AASA `components` above match — returned the static
-    view's raw 404. Found while testing Task B3's share links."""
+    Two stacked traps: Flask's built-in static route (static_url_path="")
+    outranks the /<path:path> SPA fallback, so the path 404'd raw; and the
+    shell's RELATIVE script srcs mean serving it AT /join/ breaks every
+    script load (/join/game.js comes back as HTML). The route therefore
+    REDIRECTS to /?join=CODE, which applyJoinLink already handles. A phone
+    with the app installed never loads this URL — Universal Link matching
+    is offline against the AASA components."""
 
     def setUp(self):
         survivor_server.app.config['TESTING'] = True
         self.client = survivor_server.app.test_client()
 
-    def test_join_path_serves_the_app_shell(self):
-        response = self.client.get('/join/ABC12345')
+    def test_join_path_redirects_to_the_query_form(self):
+        response = self.client.get('/join/ABC12345', follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/?join=ABC12345')
+
+    def test_join_path_lands_on_the_app_shell(self):
+        response = self.client.get('/join/ABC12345', follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/html', response.content_type)
 
@@ -111,7 +118,7 @@ class JoinLinkRouteTest(unittest.TestCase):
         original = survivor_server.ACCESS_CODE
         try:
             survivor_server.ACCESS_CODE = 'test-gate-code-1234'
-            response = self.client.get('/join/ABC12345')
+            response = self.client.get('/join/ABC12345', follow_redirects=True)
             self.assertEqual(response.status_code, 200)
             self.assertIn('text/html', response.content_type)
         finally:
