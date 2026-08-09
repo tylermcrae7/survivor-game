@@ -120,7 +120,7 @@
       "type": "steal_vote",
       "category": "tribal_advantage",
       "name": "Steal A Vote",
-      "description": "Steal another player's vote at Tribal Council - they cannot vote and you vote twice",
+      "description": "Steal 1 Vote Card from another player at Tribal Council. You must cast it; they cast any ballots they have left.",
       "playable_phases": [
         "tribal_discussion"
       ],

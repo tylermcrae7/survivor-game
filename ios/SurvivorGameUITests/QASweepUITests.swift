@@ -1067,6 +1067,61 @@ final class QASweepUITests: XCTestCase {
         ).firstMatch.exists)
     }
 
+    /// Steal A Vote now moves exactly one physical Vote Card. A player who
+    /// held two still gets a ballot for the one that remains, with a private
+    /// explanation instead of the old full-vote-ban screen.
+    @MainActor
+    func testStolenVoteNoticeAppearsWhileRemainingBallotIsCastable() throws {
+        let camp = try stageGame(allies: 2, bot: false)
+        try setHand(camp.humanId, ["vote", "vote"])
+        try setHand(camp.allyIds[0], ["extra_vote"])
+        try setHand(camp.allyIds[1], ["vote", "steal_vote"])
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_single"]])
+
+        // Keep the mandatory opening steal deterministic and non-ballot; the
+        // human already holds the two Vote Cards this scenario exercises.
+        stealViaUI(camp.app, victimName: "Ally")
+        let draw = camp.app.buttons["Draw card and end your turn"]
+        XCTAssertTrue(draw.waitForExistence(timeout: 10))
+        draw.tap()
+        try waitServer("tribal council opens", timeout: 20) {
+            ($0["phase"] as? String) == "tribal_council"
+        }
+
+        try tapLeaderButton(camp.app, tap: "Advance to Advantages",
+                            to: "advantage_play")
+        try api.post("/api/tribal/advantage", [
+            "gameId": gid,
+            "playerId": camp.allyIds[1],
+            "advantageType": "steal_vote",
+            "targetId": camp.humanId,
+        ])
+
+        let afterSteal = try serverState()
+        let players = try XCTUnwrap(afterSteal["players"] as? [String: [String: Any]])
+        XCTAssertEqual(players[camp.humanId]?["mandatoryVotes"] as? Int, 1,
+                       "the victim should keep the other Vote Card")
+        XCTAssertEqual(players[camp.humanId]?["votesStolenFrom"] as? Int, 1)
+        XCTAssertEqual(players[camp.allyIds[1]]?["mandatoryVotes"] as? Int, 2,
+                       "the thief should receive exactly one Vote Card")
+
+        try tapLeaderButton(camp.app, tap: "Advance to Discussion", to: "discussion")
+        try tapLeaderButton(camp.app, tap: "Start Voting", to: "voting")
+
+        XCTAssertTrue(camp.app.staticTexts[
+            "A vote was stolen from you tonight — cast what remains"
+        ].waitForExistence(timeout: 12),
+        "the victim should privately see why their ballot count fell")
+
+        let branParchment = camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Bran")
+        ).firstMatch
+        XCTAssertTrue(branParchment.waitForExistence(timeout: 8),
+                      "the remaining Vote Card must still be castable")
+        saveShot("verify-stolen-vote-notice-and-ballot")
+    }
+
     /// Open → Advantage → Talk → Vote → Idols → Reveal, driven end to end from
     /// the human leader's action bar (every LEADER_ONLY endpoint now carries
     /// the acting player's id, so the Leader's own buttons are accepted), with
