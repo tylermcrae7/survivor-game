@@ -226,15 +226,34 @@ def test_sorry_for_you_gates_every_taking():
         assert not game.get("pending_theft")
         assert "camp_raid" in hand_types(game, ana)
 
-        # ...but the Vote Card is never the prize — only Control The Vote takes one
+        # ...but the Vote Card is never the prize — only Control The Vote
+        # takes one, and the refusal now lands BEFORE the card leaves the
+        # hand. It used to arrive after: the demand failed but Knowledge Is
+        # Power was consumed for nothing (seen live: Tiki, game b11498a9).
+        # Demanding a card the target doesn't HAVE remains the card's real
+        # gamble and still spends it; a statically illegal demand does not.
         set_turn(game, ana, played=False)
         game["players"][ana]["hand"] = [{"type": "knowledge_is_power"}]
         game["players"][ben]["hand"] = [{"type": "vote"}]
         r = gs.play_card(gid, playerId=ana, cardIdx=0,
                          params={"targetId": ben, "cardType": "vote"})
-        assert r["success"] is True
-        assert "vote" not in hand_types(game, ana)
+        assert r["success"] is False, r.get("message")
+        assert "knowledge_is_power" in hand_types(game, ana), \
+            "an illegal demand must not consume the card"
         assert "vote" in hand_types(game, ben)
+
+        # A misspelled / unknown card type is equally illegal and equally free
+        r = gs.play_card(gid, playerId=ana, cardIdx=0,
+                         params={"targetId": ben, "cardType": "immunity_idol_xx"})
+        assert r["success"] is False
+        assert "knowledge_is_power" in hand_types(game, ana)
+
+        # The real gamble still costs the card: Ben holds no idol to demand.
+        r = gs.play_card(gid, playerId=ana, cardIdx=0,
+                         params={"targetId": ben, "cardType": "immunity_idol"})
+        assert r["success"] is True, r.get("message")
+        assert "knowledge_is_power" not in hand_types(game, ana), \
+            "demanding a card they don't have is the gamble — it spends the card"
 
         print("✅ taking gate\n")
     finally:

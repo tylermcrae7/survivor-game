@@ -826,15 +826,35 @@ class SurvivorRulesEngine:
 			card_types = (card_types,)
 		return sum(1 for c in player.get("hand", []) or [] if c.get("type") in card_types)
 
+	@staticmethod
+	def _is_ballot(card: Dict[str, Any]) -> bool:
+		"""Is this card a MANDATORY ballot in its holder's hand?
+
+		A Vote Card always is. A Goodwill Gamble only is once it has been
+		GIVEN — "Give this card to another player before voting begins. It
+		counts as 1 vote." A goodwill card you merely drew is an Action Card
+		waiting to be played, not a ballot: counting it for the drawer made
+		it a strictly-better Extra Vote nobody would ever give away, and it
+		handed two bots doubled ballots at a live double elimination
+		(game b11498a9). The `given` marker is stamped by
+		`_effect_goodwill_gamble`; a goodwill card without it — including
+		any sitting in an in-flight game's hand when this shipped — is
+		treated as drawn.
+		"""
+		card_type = card.get("type")
+		if card_type == "vote":
+			return True
+		return card_type == "goodwill_gamble" and bool(card.get("given"))
+
 	def get_vote_capacity(self, player: Dict[str, Any]) -> Tuple[int, int]:
 		"""
 		Return (mandatory, optional) vote counts a player can cast from their hand.
 
-		mandatory — Vote Cards and Goodwill Gamble cards, which MUST be placed in
-		            the Voting Box at this Tribal Council.
+		mandatory — Vote Cards and GIVEN Goodwill Gamble cards, which MUST be
+		            placed in the Voting Box at this Tribal Council.
 		optional  — Extra Vote cards, which MAY be used now or saved for later.
 		"""
-		mandatory = self.count_cards_of_type(player, MANDATORY_VOTE_CARD_TYPES)
+		mandatory = sum(1 for c in player.get("hand", []) or [] if self._is_ballot(c))
 		optional = self.count_cards_of_type(player, OPTIONAL_VOTE_CARD_TYPES)
 		return mandatory, optional
 
@@ -848,7 +868,10 @@ class SurvivorRulesEngine:
 		for player in game.get("players", {}).values():
 			mandatory, optional = self.get_vote_capacity(player)
 			player["voteCards"] = self.count_cards_of_type(player, "vote")
-			player["goodwillVotes"] = self.count_cards_of_type(player, "goodwill_gamble")
+			# GIVEN goodwill only — a drawn one is a playable card, not a ballot.
+			player["goodwillVotes"] = sum(
+				1 for c in player.get("hand", []) or []
+				if c.get("type") == "goodwill_gamble" and c.get("given"))
 			player["extraVotes"] = optional
 			player["mandatoryVotes"] = mandatory
 			player["maxVotes"] = mandatory + optional
@@ -863,20 +886,23 @@ class SurvivorRulesEngine:
 		spent = []
 		hand = player.setdefault("hand", [])
 
-		def _take(types, limit):
+		def _take(predicate, limit):
 			taken = 0
 			i = 0
 			while i < len(hand) and taken < limit:
-				if hand[i].get("type") in types:
+				if predicate(hand[i]):
 					spent.append(hand.pop(i))
 					taken += 1
 				else:
 					i += 1
 			return taken
 
-		used = _take(MANDATORY_VOTE_CARD_TYPES, total_votes)
+		# Ballots only: a DRAWN Goodwill Gamble is a playable Action Card, not
+		# a vote, and must survive the spend (see _is_ballot).
+		used = _take(self._is_ballot, total_votes)
 		if used < total_votes:
-			_take(OPTIONAL_VOTE_CARD_TYPES, total_votes - used)
+			_take(lambda c: c.get("type") in OPTIONAL_VOTE_CARD_TYPES,
+			      total_votes - used)
 		return spent
 		
 	def _create_tribal_council_cards(self, player_count: int) -> List[Dict[str, Any]]:
@@ -1303,6 +1329,11 @@ class SurvivorRulesEngine:
 		hand = player.get("hand", [])
 		for i, card in enumerate(hand):
 			if card.get("type") == advantage_type or card.get("type") == "tribal_advantage":
+				# A GIVEN Goodwill Gamble is its recipient's BALLOT — "they
+				# can use it to vote for any player they want" — never a
+				# re-giftable advantage. Only an un-given (drawn) one plays.
+				if advantage_type == "goodwill_gamble" and card.get("given"):
+					continue
 				tribal_card_idx = i
 				break
 				
@@ -1430,6 +1461,22 @@ class SurvivorRulesEngine:
 			if target is not None and target.get("campRaidedBy"):
 				return False, (f"{target.get('name', 'That player')} already has a "
 				               "Camp Raid in front of them")
+
+		elif card_type == "knowledge_is_power":
+			# A statically illegal demand must be refused while the card is
+			# still in the hand. Demanding a card the target doesn't HAVE is
+			# the card's real gamble and rightly spends it — but demanding a
+			# Vote Card can never succeed, and the refusal used to arrive
+			# after the card had already been consumed for nothing (seen
+			# live: Tiki burned one this way, game b11498a9).
+			wanted = params.get("cardType")
+			if not wanted:
+				return False, "Knowledge Is Power requires naming the card type you demand"
+			if wanted in UNTAKEABLE_CARD_TYPES:
+				return False, ("A Vote Card can't be demanded — only Control The Vote "
+				               "takes one, and your Knowledge Is Power stays in hand")
+			if self.get_card_definition(wanted) is None:
+				return False, f"There is no card called '{wanted}' to demand"
 
 		elif card_type == "the_spy_shack":
 			# Official: "Look at any player's cards and take one." — the take is
@@ -1928,9 +1975,13 @@ class SurvivorRulesEngine:
 		player = game["players"][player_id]
 		target = game["players"][target_id]
 
-		# The physical card moves into the recipient's hand and counts as 1 vote
+		# The physical card moves into the recipient's hand and counts as 1
+		# vote — for THEM. The `given` stamp is what makes it a ballot at all:
+		# un-given, a goodwill card is just an Action Card in the drawer's
+		# hand (see _is_ballot).
 		target.setdefault("hand", []).append(
-			{"type": "goodwill_gamble", "uid": card.get("uid") or uuid.uuid4().hex[:12]})
+			{"type": "goodwill_gamble", "given": True,
+			 "uid": card.get("uid") or uuid.uuid4().hex[:12]})
 		self.sync_vote_counters(game)
 
 		return {"message": f"{player['name']} gave a Goodwill Gamble to {target['name']} — it counts as 1 vote and must be used at this Tribal Council"}

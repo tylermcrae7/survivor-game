@@ -189,6 +189,26 @@ def _councils_voted_together(entry_a, entry_b):
     return shared
 
 
+def _goodwill_target(game, bot_id):
+    """Who a bot gives its drawn Goodwill Gamble to.
+
+    The gamble is goodwill: hand a vote to whoever has voted alongside you
+    most, hoping it never comes back at you. Only self is excluded — the
+    necklace holder can't be voted FOR, but they cast a ballot like anyone,
+    so their goodwill is worth exactly as much. Ties break on the same
+    deterministic hash the vote scoring uses, never a sorted id.
+    """
+    candidates = [p for p in _alive(game) if p != bot_id]
+    if not candidates:
+        return None
+    bot_entry = ledger.get_player_ledger(game, bot_id)
+    council_idx = ledger.next_council_index(game)
+    gid = game.get("id", "")
+    return max(candidates, key=lambda cand: (
+        _councils_voted_together(bot_entry, ledger.get_player_ledger(game, cand)),
+        ledger.tiebreak_score(gid, council_idx, bot_id, cand)))
+
+
 def _vote_target(game, bot_id):
     """Who a bot casts its tribal ballot for.
 
@@ -361,8 +381,12 @@ def _choose_card_play(game, bot_id, rng):
         elif card_type == "knowledge_is_power":
             target = _biggest_threat(game, bot_id)
             if target and _hand_count(game, target) >= 1:
-                # Statistical guess, no peeking: the commonest strong holdings
-                guess = rng.choice(["sorry_for_you", "extra_vote", "vote"])
+                # Statistical guess, no peeking: the commonest strong holdings.
+                # Never "vote" — a Vote Card can't be demanded (only Control
+                # The Vote takes one), and the old list included it, so a bot
+                # burned this card on a guaranteed refusal a third of the
+                # time (seen live: Tiki, game b11498a9).
+                guess = rng.choice(["sorry_for_you", "extra_vote"])
                 return idx, {"targetId": target, "cardType": guess}
 
         elif card_type == "lets_form_an_alliance":
@@ -604,13 +628,31 @@ def _tribal_action(game, age, rng):
                         playerId=leader)
         return None
 
-    if vph == "advantage_play":
-        if leader_is_bot and age(("tribal", "advantage_play")) >= w["advantage"]:
-            return _act("advance_tribal_phase", phase="discussion",
-                        playerId=leader)
-        return None
+    if vph in ("advantage_play", "discussion"):
+        # A drawn Goodwill Gamble is worthless in a held hand — since the
+        # `given` fix it only ever votes in someone ELSE'S hand, so a bot
+        # gives it away at the first council it can, to the tablemate who
+        # has voted alongside it most (the ledger's loyalty read). Wedge
+        # safety: the phase gate matches play_tribal_advantage's exactly,
+        # the target is alive and not self, and success moves the card out
+        # of the hand — the condition can't re-fire.
+        for pid in alive:
+            if not is_bot(game, pid):
+                continue
+            if not any(c.get("type") == "goodwill_gamble" and not c.get("given")
+                       for c in _hand(game, pid)):
+                continue
+            target = _goodwill_target(game, pid)
+            if target:
+                return _act("play_tribal_advantage", playerId=pid,
+                            advantageType="goodwill_gamble", targetId=target)
 
-    if vph == "discussion":
+        if vph == "advantage_play":
+            if leader_is_bot and age(("tribal", "advantage_play")) >= w["advantage"]:
+                return _act("advance_tribal_phase", phase="discussion",
+                            playerId=leader)
+            return None
+
         if leader_is_bot and age(("tribal", "discussion")) >= w["discussion"]:
             return _act("advance_tribal_phase", phase="voting",
                         playerId=leader)

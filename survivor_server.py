@@ -370,28 +370,55 @@ class GameState:
             logger.error(f"Failed to backup corrupted file: {e}")
         self.games = {}
 
+    _ARCHIVE_DIR = 'archive'
+
+    def _archive_game(self, gid, game):
+        """Write a game the collector is about to delete to archive/<gid>.json.
+
+        A finished game used to vanish within the hour — which made "review
+        last night's game against the rules" structurally impossible: the
+        first post-game audit (2026-08-08, game b11498a9) lost its entire
+        endgame, including the first live run of the jury ledger, to a
+        restart's sweep. The archive is the durable record; failures are
+        logged and swallowed because the collector must never die on a full
+        disk. Games are small (~100KB) — no pruning, by choice.
+        """
+        try:
+            os.makedirs(self._ARCHIVE_DIR, exist_ok=True)
+            path = os.path.join(self._ARCHIVE_DIR, f"{gid}.json")
+            with open(path, 'w') as f:
+                json.dump(game, f)
+        except Exception as e:
+            logger.warning(f"Could not archive game {gid}: {e}")
+
     def garbage_collect(self):
-        """Removes old and inactive games to save space."""
+        """Removes old and inactive games to save space (archiving them first)."""
         current_time = time.time()
         games_to_remove = []
         LOBBY_TIMEOUT = 24 * 3600  # 24 hours
         PLAYING_TIMEOUT = 30 * 24 * 3600 # 30 days
-        
+        FINISHED_TIMEOUT = 24 * 3600  # a day to savour (and audit) the win
+
+        # NOTE: 'final' was deliberately dropped from the sweep. The live
+        # phase string is 'final_tribal' (never matched), so the entry was
+        # dead — but had any code path ever set phase='final', the hourly
+        # collector would have DELETED A LIVE FINAL TRIBAL mid-ceremony.
         for gid, game in self.games.items():
             last_activity = game.get('lastActivity', game.get('createdAt', current_time))
             age = current_time - last_activity
             phase = game.get('phase', 'lobby')
-            
+
             if (phase == 'lobby' and age > LOBBY_TIMEOUT) or \
                (phase in ['playing', 'tribal_council'] and age > PLAYING_TIMEOUT) or \
-               (phase in ['final', 'finished']):
+               (phase == 'finished' and age > FINISHED_TIMEOUT):
                 games_to_remove.append(gid)
-        
+
         for gid in games_to_remove:
+            self._archive_game(gid, self.games[gid])
             del self.games[gid]
-        
+
         if games_to_remove:
-            logger.info(f"Cleaned up {len(games_to_remove)} old games")
+            logger.info(f"Cleaned up {len(games_to_remove)} old games (archived)")
             self._save()
         return len(games_to_remove)
 

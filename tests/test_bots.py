@@ -973,6 +973,87 @@ def test_jury_vote_robbery_direction_and_style_asymmetry():
     print("✅ robbery points the right way, and the styles disagree on purpose!\n")
 
 
+def test_kip_guess_is_never_an_illegal_demand():
+    """The bot's Knowledge Is Power guess list used to include "vote" — a
+    demand the engine refuses every single time (only Control The Vote takes
+    a Vote Card), so a third of bot KIP plays burned the card for nothing
+    (seen live: Tiki, game b11498a9). Now that the refusal keeps the card in
+    hand, an illegal guess would also loop forever — the guess must be legal
+    by construction."""
+    print("=== Testing bots: KIP never demands the undemandable ===")
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        gid = gs.create_game()
+        gs.add_player(gid, "Tyler", "red")
+        gs.add_bot(gid)
+        gs.add_bot(gid)
+        gs.start_full_game(gid)
+        game = gs.games[gid]
+        bot_id = next(p for p, pl in game["players"].items() if pl.get("isBot"))
+        game["players"][bot_id]["hand"] = [{"type": "knowledge_is_power"}]
+        for seed in range(40):
+            plan = bots._choose_card_play(game, bot_id, random.Random(seed))
+            if plan is None:
+                continue
+            _, params = plan
+            assert params.get("cardType") != "vote", \
+                "a Vote Card can never be demanded — the guess list must not offer it"
+        print("✅ every KIP guess is a legal demand!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_bot_gives_a_drawn_goodwill_at_council():
+    """Since the `given` fix a drawn Goodwill Gamble only ever votes in
+    someone ELSE'S hand — so a bot holding one gives it away during the
+    advantage/discussion window, and one holding a RECEIVED (given) goodwill
+    must NOT try to re-gift it (the server refuses, and a refused action
+    proposed every tick is a wedge)."""
+    print("=== Testing bots: a drawn goodwill is given, a received one is kept ===")
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        gid = gs.create_game()
+        gs.add_player(gid, "Tyler", "red")
+        gs.add_bot(gid)
+        gs.add_bot(gid)
+        gs.start_full_game(gid)
+        game = gs.games[gid]
+        bot_id = next(p for p, pl in game["players"].items() if pl.get("isBot"))
+        gs._trigger_tribal_council(game, "single")
+        gs.advance_tribal_phase(gid, "advantage_play")
+
+        game["players"][bot_id]["hand"] = [{"type": "vote"},
+                                           {"type": "goodwill_gamble"}]
+        plan = bots._tribal_action(game, lambda k: 0.0, random.Random(3))
+        assert plan is not None, "the bot should give its drawn goodwill"
+        assert plan["method"] == "play_tribal_advantage", plan
+        assert plan["kwargs"]["advantageType"] == "goodwill_gamble"
+        target = plan["kwargs"]["targetId"]
+        assert target != bot_id and target in game["players"]
+
+        # Actually give it through the real server path — the plan must be
+        # accepted, and the condition must clear so it can't re-fire.
+        r = gs.play_tribal_advantage(gid, plan["kwargs"]["playerId"],
+                                     "goodwill_gamble", target)
+        assert r["success"], r.get("message")
+        again = bots._tribal_action(game, lambda k: 0.0, random.Random(3))
+        assert again is None or again.get("kwargs", {}).get("advantageType") != "goodwill_gamble", \
+            "a given goodwill must never be proposed again"
+
+        # A RECEIVED goodwill is a ballot, not a gift: the recipient bot
+        # (if the target was a bot) must not try to pass it on.
+        holder = target
+        if game["players"][holder].get("isBot"):
+            plan2 = bots._tribal_action(game, lambda k: 0.0, random.Random(3))
+            assert plan2 is None or plan2.get("kwargs", {}).get("playerId") != holder, \
+                "the recipient must keep the ballot it was given"
+        print("✅ goodwill flows one way, and never wedges!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_jury_vote_empty_ledger_falls_back_to_hand_size():
     print("=== Testing D3: an empty ledger falls back to the hand-count read ===")
     game = _jury_game(["finA", "finB"], ["juror"], ledger_players={},
@@ -1006,6 +1087,8 @@ if __name__ == "__main__":
         test_jury_vote_punishes_the_finalist_who_blindsided_the_juror()
         test_jury_vote_rewards_a_loyal_finalist()
         test_jury_vote_robbery_direction_and_style_asymmetry()
+        test_kip_guess_is_never_an_illegal_demand()
+        test_bot_gives_a_drawn_goodwill_at_council()
         test_jury_can_split()
         test_jury_vote_empty_ledger_falls_back_to_hand_size()
         print("🎉 All computer player tests passed!")

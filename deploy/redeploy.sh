@@ -27,6 +27,7 @@ rsync -a --delete \
     --exclude 'push_keys.json' \
     --exclude 'push_subs.json' \
     --exclude '*.log' \
+    --exclude 'archive' \
     "$REPO_DIR/" "$DEPLOY_DIR/"
 
 # Fresh venv on first run

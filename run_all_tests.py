@@ -216,6 +216,10 @@ def main():
         {
             'file': 'tests/test_ledger.py',
             'description': "The island's private ledger — bots remember the game, clients never see it"
+        },
+        {
+            'file': 'tests/test_game_archive.py',
+            'description': 'The archive — swept games leave a record, wins linger a day, live ceremonies are never swept'
         }
     ]
     

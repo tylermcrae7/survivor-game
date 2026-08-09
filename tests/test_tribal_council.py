@@ -244,6 +244,54 @@ class TestTribalCouncilFlow(unittest.TestCase):
         self.assertIn("goodwill_gamble",
                       [c["type"] for c in game["players"][target_id]["hand"]])
 
+    def test_a_drawn_goodwill_gamble_is_not_its_holders_ballot(self):
+        """The card: "GIVE this card to another player… it counts as 1 vote."
+        Un-given, it's an Action Card waiting to be played — not a ballot.
+        Counting it for the drawer made it a strictly-better Extra Vote nobody
+        would ever give away, and handed two bots doubled ballots at a live
+        double elimination (game b11498a9, 10 votes tallied where 8 were
+        legitimate)."""
+        game = self.gs.games[self.game_id]
+        holder = self.player_ids[0]
+        game["players"][holder]["hand"] = [{"type": "vote"},
+                                           {"type": "goodwill_gamble"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+        self.assertEqual(game["players"][holder]["mandatoryVotes"], 1)
+        self.assertEqual(game["players"][holder]["goodwillVotes"], 0)
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+        result = self.gs.cast_vote(self.game_id, holder,
+                                   [{"targetId": self.player_ids[1], "votes": 2}])
+        self.assertFalse(result["success"], "the drawn goodwill must not be castable")
+
+        # And a legal 1-vote ballot leaves the drawn goodwill in hand,
+        # unspent — it's a card, not a parchment.
+        result = self.gs.cast_vote(self.game_id, holder,
+                                   [{"targetId": self.player_ids[1], "votes": 1}])
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertIn("goodwill_gamble",
+                      [c["type"] for c in game["players"][holder]["hand"]])
+
+    def test_a_given_goodwill_gamble_cannot_be_regifted(self):
+        """Once given, the card is its recipient's BALLOT — "they can use it
+        to vote for any player they want" — never a re-giftable advantage."""
+        game = self.gs.games[self.game_id]
+        giver, recipient, third = self.player_ids[:3]
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.advance_tribal_phase(self.game_id, "advantage_play")
+        game["players"][giver]["hand"].append({"type": "goodwill_gamble"})
+        result = self.gs.play_tribal_advantage(
+            self.game_id, giver, "goodwill_gamble", recipient)
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(game["players"][recipient]["mandatoryVotes"], 2)
+
+        regift = self.gs.play_tribal_advantage(
+            self.game_id, recipient, "goodwill_gamble", third)
+        self.assertFalse(regift["success"], "a given goodwill is a ballot, not a gift")
+        self.assertEqual(game["players"][third]["mandatoryVotes"], 1)
+
     def test_vote_cards_cannot_be_played_from_hand(self):
         """Vote and Extra Vote cards are spent by voting, never played as cards."""
         game = self.gs.games[self.game_id]
