@@ -460,8 +460,8 @@ def test_the_reshuffle_filters_vote_cards_out_of_the_deck():
         os.chdir(cwd); shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_inheritance_never_transfers_the_vote_card():
-    """A dead survivor's Vote Card goes back to the box, not to the heir —
+def test_inheritance_never_transfers_a_ballot():
+    """A dead survivor's ballots go back to the box, not to the heir —
     otherwise the heir votes twice at every council from then on."""
     gs, gid, game, (ana, ben, cam), cwd, tmp = fresh_game()
     try:
@@ -469,7 +469,7 @@ def test_inheritance_never_transfers_the_vote_card():
         import seats
         seat = seats.seat_of(game["players"][ben])
         game["players"][ben]["hand"] = [{"type": "vote"},
-                                        {"type": "goodwill_gamble"},
+                                        {"type": "goodwill_gamble", "given": True},
                                         {"type": "camp_raid"}]
         game["players"][ana]["hand"] = [{"type": "vote"},
                                         {"type": f"inheritance_{seat}"}]
@@ -522,7 +522,7 @@ if __name__ == "__main__":
         test_deck_math_never_strands()
         test_spent_vote_cards_leave_the_game_not_the_discard()
         test_the_reshuffle_filters_vote_cards_out_of_the_deck()
-        test_inheritance_never_transfers_the_vote_card()
+        test_inheritance_never_transfers_a_ballot()
         test_a_ballot_may_split_across_targets()
         print("🎉 All rules-enforcement tests passed!")
     except AssertionError as e:

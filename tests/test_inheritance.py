@@ -155,7 +155,7 @@ class InheritanceEstateTest(unittest.TestCase):
             self.game["players"][pid]["hand"] = []
         self.game["players"][heir]["hand"] = [{"type": "vote"}, {"type": card}]
         self.game["players"][dead]["hand"] = [{"type": "vote"},
-                                              {"type": "goodwill_gamble"},
+                                              {"type": "goodwill_gamble", "given": True},
                                               {"type": "camp_raid"}]
 
         self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
@@ -164,6 +164,24 @@ class InheritanceEstateTest(unittest.TestCase):
         self.assertEqual(heir_hand.count("vote"), 1)
         self.assertNotIn("goodwill_gamble", heir_hand)
         self.assertIn("camp_raid", heir_hand)
+
+    def test_drawn_goodwill_is_inherited_as_an_action_card(self):
+        """Goodwill becomes a ballot only after it has been given."""
+        heir, dead = self.ids[0], self.ids[1]
+        card = f"inheritance_{self.seat(dead)}"
+        for pid in self.ids:
+            self.game["players"][pid]["hand"] = []
+        self.game["players"][heir]["hand"] = [{"type": card}]
+        self.game["players"][dead]["hand"] = [
+            {"type": "goodwill_gamble", "uid": "drawn-goodwill"}
+        ]
+
+        self.gs.rules_engine.process_elimination_inheritance(self.game, dead)
+
+        inherited = self.game["players"][heir]["hand"]
+        self.assertEqual(len(inherited), 1)
+        self.assertEqual(inherited[0]["type"], "goodwill_gamble")
+        self.assertEqual(inherited[0]["uid"], "drawn-goodwill")
 
     def test_an_eliminated_player_cannot_inherit(self):
         heir, dead = self.ids[0], self.ids[1]

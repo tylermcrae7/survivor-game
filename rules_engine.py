@@ -2539,12 +2539,12 @@ class SurvivorRulesEngine:
 		if not eliminated_player:
 			return inheritance_messages
 
-		# A dead survivor's Vote Card (and any Goodwill Gamble bound to a
-		# council they'll never attend) goes back to the box, not to the heir —
-		# otherwise the heir votes twice at every council after this one. This
-		# runs whether or not anyone inherits.
+		# A dead survivor's actual ballots go back to the box, not to the heir —
+		# otherwise the heir votes twice at every council after this one. A
+		# drawn, un-given Goodwill Gamble is still an Action Card and therefore
+		# remains part of the estate. This runs whether or not anyone inherits.
 		eliminated_hand = [c for c in eliminated_player.get("hand", [])
-		                   if c.get("type") not in MANDATORY_VOTE_CARD_TYPES]
+		                   if not self._is_ballot(c)]
 		eliminated_player["hand"] = eliminated_hand
 		if not eliminated_hand:
 			return inheritance_messages

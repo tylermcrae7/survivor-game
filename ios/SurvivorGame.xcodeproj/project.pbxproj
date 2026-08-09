@@ -906,7 +906,7 @@
 				CODE_SIGN_ENTITLEMENTS = SurvivorGame/SurvivorGame.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_TEAM = M5H3893R7A;
 				INFOPLIST_FILE = SurvivorGame/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1105,7 +1105,7 @@
 				CODE_SIGN_ENTITLEMENTS = SurvivorGame/SurvivorGame.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_TEAM = M5H3893R7A;
 				INFOPLIST_FILE = SurvivorGame/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

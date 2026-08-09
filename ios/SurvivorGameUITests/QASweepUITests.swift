@@ -1006,6 +1006,67 @@ final class QASweepUITests: XCTestCase {
 
     // MARK: - 11. Tribal Council — the server-canonical phase order
 
+    /// Control The Vote leaves two mandatory Vote Cards in one hand. They are
+    /// separate parchments: both must be cast, but they may carry different
+    /// names. This is the native regression for the web parity fix.
+    @MainActor
+    func testTwoMandatoryVoteCardsOfferOneNameOrSplit() throws {
+        let camp = try stageGame(allies: 2, bot: false)
+        try setHand(camp.humanId, ["vote", "vote"])
+        try setHand(camp.allyIds[0], ["vote"])
+        try setHand(camp.allyIds[1], ["vote"])
+        try api.post("/api/test/stack_deck",
+                     ["gameId": gid, "top": ["tribal_council_single"]])
+
+        stealViaUI(camp.app, victimName: "Ally")
+        let draw = camp.app.buttons["Draw card and end your turn"]
+        XCTAssertTrue(draw.waitForExistence(timeout: 10))
+        draw.tap()
+        try waitServer("tribal council opens", timeout: 20) {
+            ($0["phase"] as? String) == "tribal_council"
+        }
+
+        try tapLeaderButton(camp.app, tap: "Advance to Advantages",
+                            to: "advantage_play")
+        try tapLeaderButton(camp.app, tap: "Advance to Discussion", to: "discussion")
+        try tapLeaderButton(camp.app, tap: "Start Voting", to: "voting")
+
+        let mandatoryNotice = camp.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "You cast 2 votes tonight")
+        ).firstMatch
+        XCTAssertTrue(mandatoryNotice.waitForExistence(timeout: 12),
+                      "the ballot should explain that both Vote Cards must be cast")
+
+        let allyParchment = camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Ally")
+        ).firstMatch
+        XCTAssertTrue(allyParchment.waitForExistence(timeout: 8),
+                      "the ballot should offer Ally as a target")
+        allyParchment.tap()
+
+        XCTAssertTrue(camp.app.staticTexts["How many votes?"]
+                        .waitForExistence(timeout: 8))
+        XCTAssertTrue(camp.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "You hold 2 Vote Cards tonight")
+        ).firstMatch.exists)
+        XCTAssertTrue(camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "2 votes against Ally")
+        ).firstMatch.exists,
+                      "both mandatory parchments may go on one name")
+
+        let split = camp.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Split votes across players")
+        ).firstMatch
+        XCTAssertTrue(split.exists,
+                      "two mandatory parchments may be split without an Extra Vote")
+        split.tap()
+        XCTAssertTrue(camp.app.staticTexts["Write your parchments"]
+                        .waitForExistence(timeout: 8))
+        XCTAssertTrue(camp.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Cast at least 2")
+        ).firstMatch.exists)
+    }
+
     /// Open → Advantage → Talk → Vote → Idols → Reveal, driven end to end from
     /// the human leader's action bar (every LEADER_ONLY endpoint now carries
     /// the acting player's id, so the Leader's own buttons are accepted), with
