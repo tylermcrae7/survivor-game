@@ -78,7 +78,10 @@ struct VotingView: View {
                     slamBallot(name: target.name)
                     Task { await viewModel.castVote(targetId: target.id, count: total) }
                 },
-                onSplit: (extraVotes >= 1 && eligibleTargets.count >= 2) ? {
+                // Splitting is a property of holding 2+ parchments, not of
+                // Extra Votes specifically — a taken Vote Card (Control The
+                // Vote) splits the same way.
+                onSplit: (maxVotes >= 2 && eligibleTargets.count >= 2) ? {
                     chooserTarget = nil
                     showSplitBuilder = true
                 } : nil
@@ -168,6 +171,18 @@ struct VotingView: View {
 
     private var ballot: some View {
         VStack(spacing: 10) {
+            // Control The Vote raises the MANDATORY count — this line is the
+            // only place the phone ever says so. Without it, casting two
+            // votes with one tap looked exactly like casting one, and the
+            // player who took a Vote Card couldn't tell it had worked at all
+            // (found live: Tyler, council b11498a9).
+            if mandatoryVotes > 1 {
+                Text("You cast \(mandatoryVotes) votes tonight — every Vote Card you hold goes in the box")
+                    .font(Torch.Font.label(Torch.TextSize.xs))
+                    .tracking(Torch.Track.label * Torch.TextSize.xs)
+                    .foregroundStyle(Torch.Color.flame)
+                    .multilineTextAlignment(.center)
+            }
             if extraVotes > 0 {
                 Text("You hold \(extraVotes) Extra Vote\(extraVotes == 1 ? "" : "s")")
                     .font(Torch.Font.label(Torch.TextSize.xs))
@@ -181,7 +196,11 @@ struct VotingView: View {
             // Parchment slips against the night, rotated like scattered paper.
             ForEach(Array(eligibleTargets.enumerated()), id: \.element.id) { index, player in
                 Button {
-                    if extraVotes > 0 {
+                    // Two or more ballots of ANY kind — Extra Votes, or two
+                    // mandatory Vote Cards via Control The Vote — deserve the
+                    // chooser: they are separate parchments and may carry
+                    // different names, exactly like the physical game.
+                    if maxVotes >= 2 {
                         chooserTarget = player
                     } else if confirmVotes {
                         confirmTarget = player
@@ -278,11 +297,19 @@ private struct ExtraVoteChooser: View {
     let onCast: (Int) -> Void
     let onSplit: (() -> Void)?
 
+    /// This sheet opens for ANY hand holding 2+ ballots. With Extra Votes the
+    /// question is "how many"; with two mandatory Vote Cards (Control The
+    /// Vote) the count is fixed and the question is only "one name or two" —
+    /// the copy has to say which conversation this is.
+    private var extras: Int { maxTotal - mandatory }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    Text("You hold \(maxTotal - mandatory) Extra Vote\(maxTotal - mandatory == 1 ? "" : "s"). Spend them now, or keep them hidden for a later Tribal Council.")
+                    Text(extras > 0
+                         ? "You hold \(extras) Extra Vote\(extras == 1 ? "" : "s"). Spend them now, or keep them hidden for a later Tribal Council."
+                         : "You hold \(mandatory) Vote Cards tonight — every one of them goes in the box.")
                         .font(Torch.Font.body(Torch.TextSize.sm))
                         .foregroundStyle(Torch.Color.textSecondary)
                         .multilineTextAlignment(.center)
@@ -294,7 +321,9 @@ private struct ExtraVoteChooser: View {
                             VStack(spacing: 2) {
                                 Text("\(total) vote\(total == 1 ? "" : "s") against \(target.name)")
                                     .font(.body.bold())
-                                Text(total - mandatory == 0
+                                Text(extras == 0
+                                     ? "All of them on one name"
+                                     : total - mandatory == 0
                                      ? "Save your Extra Votes for later"
                                      : "Adds \(total - mandatory) Extra Vote\(total - mandatory == 1 ? "" : "s")")
                                     .font(.caption)

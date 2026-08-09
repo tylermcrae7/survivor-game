@@ -1640,11 +1640,14 @@ function handleVoteTargetClick(event) {
     });
     targetElement.classList.add('selected');
 
-    // Holding Extra Votes? Ask how many to pile on before the parchment goes in.
+    // Holding 2+ ballots of ANY kind — Extra Votes, or two mandatory Vote
+    // Cards via Control The Vote? Ask before the parchment goes in: separate
+    // parchments may carry different names, exactly like the physical game.
     const voterId = window.SurvivorGame?.localGameState?.playerId;
     const me = window.SurvivorGame?.fullGameState?.players?.[voterId];
     const extra = me?.extraVotes ?? 0;
-    if (extra > 0 && !me?.hasVoted) {
+    const mandatory = me?.mandatoryVotes ?? 0;
+    if ((extra > 0 || mandatory >= 2) && !me?.hasVoted) {
         showExtraVoteChooser(playerId);
         return;
     }
@@ -1672,7 +1675,11 @@ function showExtraVoteChooser(targetId) {
     let buttons = '';
     for (let t = minTotal; t <= maxTotal; t++) {
         const extrasUsed = Math.max(0, t - mandatory);
-        const sub = extrasUsed === 0
+        // With no extras (two mandatory Vote Cards via Control The Vote) the
+        // count is fixed — the only choice is one name or several.
+        const sub = extra === 0
+            ? 'All of them on one name'
+            : extrasUsed === 0
             ? 'Save your Extra Votes for later'
             : `Adds ${extrasUsed} Extra Vote${extrasUsed === 1 ? '' : 's'}`;
         buttons += `
@@ -1684,11 +1691,12 @@ function showExtraVoteChooser(targetId) {
             </button>`;
     }
 
-    // Extra Votes are separate ballots — they may land on different heads
+    // Separate ballots may land on different heads — true of Extra Votes and
+    // equally of a second mandatory Vote Card taken with Control The Vote.
     const otherTargets = Object.values(state?.players || {}).filter(p =>
         !p.isEliminated && p.id !== voterId
         && p.id !== state?.necklaceHolder).length;
-    const splitOption = (extra >= 1 && otherTargets >= 2) ? `
+    const splitOption = ((extra >= 1 || mandatory >= 2) && otherTargets >= 2) ? `
         <button class="btn touch-target extra-vote-option-split"
                 style="width:100%; display:block;">
             Split votes across players…
@@ -1696,9 +1704,12 @@ function showExtraVoteChooser(targetId) {
                 Write different names on different parchments</span>
         </button>` : '';
 
+    const headline = extra > 0
+        ? `You hold ${extra} Extra Vote${extra === 1 ? '' : 's'}. Spend them now, or keep them hidden for a later Tribal Council.`
+        : `You hold ${mandatory} Vote Cards tonight — every one of them goes in the box.`;
     showModal(`
         <p class="panel-sub" style="margin-bottom:0.75rem;">
-            You hold ${extra} Extra Vote${extra === 1 ? '' : 's'}. Spend them now, or keep them hidden for a later Tribal Council.
+            ${headline}
         </p>
         ${buttons}
         ${splitOption}

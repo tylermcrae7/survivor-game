@@ -362,6 +362,50 @@ class TestTribalCouncilFlow(unittest.TestCase):
             voter_id = self.player_ids[i]
             self.assertIn(target_id, game["currentVote"]["votes"][voter_id])
             
+    def test_two_mandatory_vote_cards_split_across_two_targets(self):
+        """Control The Vote leaves a player holding TWO Vote Cards — two
+        parchments, and like the physical game they may carry two different
+        names. The server has always accepted the split (validation only
+        checks totals); this pins it against a future 'helpful' one-target
+        rule, because both clients now offer the split UI for exactly this
+        hand (found live: Tyler, council b11498a9, wanted to split and the
+        phone never offered)."""
+        game = self.gs.games[self.game_id]
+        voter = self.player_ids[0]
+        target_a, target_b = self.player_ids[1], self.player_ids[2]
+        # The hand Control The Vote produces: own Vote Card plus the taken one.
+        game["players"][voter]["hand"] = [{"type": "vote"}, {"type": "vote"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+        self.assertEqual(game["players"][voter]["mandatoryVotes"], 2)
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+
+        # Splitting 1 + 1 across two names is a legal ballot...
+        result = self.gs.cast_vote(self.game_id, voter, [
+            {"targetId": target_a, "votes": 1},
+            {"targetId": target_b, "votes": 1},
+        ])
+        self.assertTrue(result["success"], result.get("message"))
+        self.assertEqual(game["currentVote"]["votes"][voter],
+                         {target_a: 1, target_b: 1})
+
+    def test_two_mandatory_vote_cards_cannot_be_held_back(self):
+        """The other half of the same rule: both Vote Cards MUST be cast —
+        splitting is allowed, withholding is not."""
+        game = self.gs.games[self.game_id]
+        voter = self.player_ids[0]
+        game["players"][voter]["hand"] = [{"type": "vote"}, {"type": "vote"}]
+        self.gs.rules_engine.sync_vote_counters(game)
+
+        self.gs._trigger_tribal_council(game, "single")
+        self.gs.start_voting(self.game_id, "elimination")
+
+        result = self.gs.cast_vote(self.game_id, voter,
+                                   [{"targetId": self.player_ids[1], "votes": 1}])
+        self.assertFalse(result["success"])
+        self.assertIn("must cast all 2", result.get("message", ""))
+
     def _vote_out(self, target_id, elimination_type="single", votes_from=None):
         """Run one full tribal council that votes `target_id` out."""
         game = self.gs.games[self.game_id]

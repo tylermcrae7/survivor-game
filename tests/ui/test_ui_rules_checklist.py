@@ -602,6 +602,37 @@ def run_checks():
         check("hall of fame: opens from the camp menu (empty on a fresh island)",
               'No Sole Survivor yet' in hof or 'carved' in hof, hof[:60])
 
+        # ══════════ U5b · Two mandatory Vote Cards offer the chooser ══════════
+        # Control The Vote leaves a hand with two mandatory Vote Cards and no
+        # extras. The chooser (and its split option) used to be gated on
+        # extraVotes >= 1, so that hand cast both votes on one name with one
+        # tap and no choice offered — found live: Tyler wanted to split and
+        # the UI never asked. Synthetic state, real gating code: patch Ana's
+        # own player record the way a state_update would, then drive the same
+        # selectVoteTarget path a tap takes. No cast is made — the modal is
+        # the assertion — so the parked live game is untouched.
+        ana.evaluate("""() => {
+            const state = window.SurvivorGame.fullGameState;
+            const me = state.players[window.SurvivorGame.localGameState.playerId];
+            me.mandatoryVotes = 2; me.extraVotes = 0; me.maxVotes = 2;
+            me.hasVoted = false;
+            // The split option needs 2+ living targets, and the live game
+            // above has already voted someone out — revive the table in this
+            // LOCAL copy only (nothing here touches the server).
+            Object.values(state.players).forEach(p => { p.isEliminated = false; });
+            window.SurvivorUI.renderVoteTargets(state);
+        }""")
+        # The tap handler binds pointerup (not click) — dispatch the real event.
+        ana.locator('.vote-target').first.dispatch_event('pointerup')
+        check("control the vote: two mandatory ballots open the how-many chooser",
+              wait_for(lambda: ana.locator('.extra-vote-option').count() >= 1, 5) is not None)
+        check("control the vote: the split option is offered without any Extra Vote",
+              ana.locator('.extra-vote-option-split').count() == 1)
+        chooser_text = ana.locator('#modalContainer, .modal, body').first.inner_text()
+        check("control the vote: the chooser says every Vote Card goes in the box",
+              'every one of them goes in the box' in chooser_text, chooser_text[:120])
+        ana.evaluate("() => window.SurvivorUI.hideModal?.()")
+
         # ══════════════ U6 · The robbed banner (A4) ══════════════
         # The private-room plumbing this event would ordinarily ride (A1's
         # and A2's server halves) is outside this suite's ownership, so this
