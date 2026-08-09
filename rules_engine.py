@@ -344,7 +344,10 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 		thief.setdefault("hand", []).append(card)
 		_record_steal_alert(game, spec["thiefId"], spec["victimId"], 1, spec.get("source"),
 		                     cards=[card])
-		card_name = spec.get("cardName") or card.get("name", "a card")
+		# A hand card is compact — {type, uid}, no display name — so falling
+		# back to card.get("name") printed nothing useful. The catalogue name
+		# is what a person at the table calls the card.
+		card_name = spec.get("cardName") or _card_display_name(card)
 		return {"success": True,
 		        "message": f"{names(spec['thiefId'])} took {card_name} from {victim.get('name')}",
 		        # Thief and victim both know which card moved; the table only
@@ -366,9 +369,13 @@ def execute_take_spec(game: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 				                     cards=[card])
 				return {"success": True,
 				        "message": f"{names(spec['thiefId'])} demanded and received "
-				                   f"{card.get('name', wanted)} from {victim.get('name')}"}
+				                   # Display name, not the raw type — a live
+				                   # game announced "received immunity_idol"
+				                   # (game 3851c768, line 41).
+				                   f"{_card_display_name(card)} from {victim.get('name')}"}
 		return {"success": True,
-		        "message": f"{victim.get('name')} does not have a {wanted} card"}
+		        "message": f"{victim.get('name')} does not have a "
+		                   f"{_card_display_name({'type': wanted})} card"}
 
 	if kind == "vote_card":
 		thief = game["players"].get(spec.get("thiefId"))
