@@ -58,3 +58,6 @@ push_subs.json
 /push_subs.json.tmp
 # Swept games (anchored: docs/archive is tracked documentation)
 /archive/
+
+# deploy/mac-test.sh output
+/.test-logs/

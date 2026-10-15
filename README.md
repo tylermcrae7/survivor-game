@@ -210,7 +210,12 @@ survivor-game/
 .venv/bin/python run_all_tests.py          # the same suites, one process each
 ```
 
-CI (`.github/workflows/ci.yml`) runs the suites and a pyflakes lint on every push.
+The full pass — lint, every suite, the live harnesses against a scratch server, the UI
+checklist and the iOS unit tests — runs on the Mac mini, not GitHub:
+
+```bash
+bash deploy/mac-test.sh            # summary in .test-logs/<timestamp>/summary.txt
+```
 
 End-to-end harnesses drive a real running server through complete games (turns, thefts, Tribals, ties, Challenges, Final Tribal):
 

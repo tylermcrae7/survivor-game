@@ -16,7 +16,10 @@ class TestSmokeTest:
         """Server responds to ping."""
         data = api_get("/ping")
         assert data["success"] is True
-        assert "server_info" in data
+        # Outside the access gate, ping reports the client build (so a deploy
+        # can be verified) and nothing about the games being played.
+        assert data.get("build")
+        assert "server_info" not in data
 
     def test_app_loads(self, browser_page):
         """App loads without errors and shows start screen."""
