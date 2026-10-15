@@ -16,8 +16,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
+import signal
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -56,9 +59,28 @@ CHANNEL_ENV = {
 OPTIONAL_PLACES = frozenset({"exile_island"})
 
 PLAN_POLL_SECONDS = 2.0
+# Also how often a watched game is checked against /api/voice/active.
 IDLE_POLL_SECONDS = 10.0
+# A failing poll waits 5s, then 10s, 20s ... up to five minutes.
 ERROR_RETRY_SECONDS = 5.0
+ERROR_RETRY_MAX_SECONDS = 300.0
+# After the island refuses the access code, wait at least this long (doubling
+# to ERROR_RETRY_MAX_SECONDS) before presenting it again.
+AUTH_RETRY_SECONDS = 60.0
+# How often a Discord server that failed validation is looked at again.
+CONFIG_RECHECK_SECONDS = 60.0
+# launchd follows SIGTERM with SIGKILL after 20 seconds.
+SHUTDOWN_CLEANUP_SECONDS = 10.0
 MOVE_GAP_SECONDS = 0.25
+
+LINK_CLAIM_PATH = "/api/discord/link/claim"
+LINK_UNAVAILABLE_MESSAGE = "The island could not be reached — try again."
+
+
+def _backoff(failures: int, base: float, cap: float) -> float:
+    """base, 2×base, 4×base … capped. `failures` counts from 1."""
+    # The exponent is clamped too: 2**1100 does not fit in a float.
+    return min(cap, base * 2 ** min(max(failures - 1, 0), 16))
 
 
 class ConfigurationError(RuntimeError):
@@ -68,14 +90,25 @@ class ConfigurationError(RuntimeError):
 class SurvivorAPIError(RuntimeError):
     """A request to the Survivor server failed."""
 
-    def __init__(self, status: int, path: str, detail: str):
+    def __init__(
+        self,
+        status: int,
+        path: str,
+        detail: str,
+        *,
+        user_message: str | None = None,
+    ):
         super().__init__(f"Survivor API {status} for {path}: {detail}")
         self.status = status
         self.path = path
-        # Kept because a refused /link is shown to whoever ran it: the server
-        # writes that sentence for a person, and swallowing it would leave
-        # them with "something went wrong" and no idea what to do next.
+        # Always non-empty — for a dropped connection it is aiohttp's own
+        # wording — so it belongs in the log, never in front of a player.
         self.detail = detail
+        # Set only when the server refused a request with a JSON sentence
+        # written for a person: a 4xx such as "that code has expired". A
+        # refused /link shows it to whoever ran the command; swallowing it
+        # would leave them with "something went wrong" and no idea what to do.
+        self.user_message = user_message
 
 
 def _required(name: str) -> str:
@@ -160,8 +193,20 @@ class SurvivorAPI:
     def __init__(self, config: BotConfig):
         self.config = config
         self.session: aiohttp.ClientSession | None = None
+        self._authenticated = False
+        self._auth_failures = 0
+        self._auth_retry_at = 0.0
+        self._auth_error: SurvivorAPIError | None = None
 
     async def open(self) -> None:
+        """Create the HTTP session. Deliberately makes no request.
+
+        The access cookie is fetched by the first real call instead, from the
+        poll loop, which backs off. Authenticating here made an island that
+        was still starting — redeploy.sh bounces the server and the bot
+        together — a crash at boot, and launchd's restart a fresh Discord
+        login on top of it.
+        """
         if self.session is not None:
             return
         timeout = aiohttp.ClientTimeout(total=15)
@@ -173,42 +218,61 @@ class SurvivorAPI:
             cookie_jar=cookie_jar,
             headers={"User-Agent": "survivor-discord-bot/1.0"},
         )
-        await self.authenticate()
 
     async def close(self) -> None:
         if self.session is not None:
             await self.session.close()
             self.session = None
+        self._authenticated = False
 
     async def authenticate(self) -> None:
         if self.session is None:
             raise RuntimeError("Survivor API session is not open")
         path = "/api/access"
-        status, payload, detail = await self._raw_request(
-            "POST", path, json_body={"code": self.config.access_code}
-        )
-        if status < 200 or status >= 300:
-            raise SurvivorAPIError(status, path, detail)
-        if not isinstance(payload, dict) or payload.get("success") is not True:
-            raise SurvivorAPIError(status, path, "access response was not successful")
+        # The access gate allows ten attempts a minute per client IP, and
+        # behind the tunnel that IP is the host's whole house. A rotated code
+        # presented at poll speed would lock everyone at home out of the
+        # island, so after a refusal stay away for a while. Only an answer
+        # from the island itself counts: a dropped connection or a 5xx from
+        # the tunnel while the server restarts never reached the gate, and is
+        # left to the poll loop's own backoff.
+        if self._auth_error is not None and time.monotonic() < self._auth_retry_at:
+            last = self._auth_error
+            raise SurvivorAPIError(
+                last.status, path,
+                f"{last.detail} (waiting before presenting the code again)",
+            )
+        self._authenticated = False
+        try:
+            status, payload, detail = await self._raw_request(
+                "POST", path, json_body={"code": self.config.access_code}
+            )
+            if status < 200 or status >= 300:
+                raise SurvivorAPIError(status, path, detail)
+            if not isinstance(payload, dict) or payload.get("success") is not True:
+                raise SurvivorAPIError(
+                    status, path, "access response was not successful")
+        except SurvivorAPIError as exc:
+            if 0 < exc.status < 500:
+                self._auth_failures += 1
+                self._auth_error = exc
+                self._auth_retry_at = time.monotonic() + _backoff(
+                    self._auth_failures, AUTH_RETRY_SECONDS, ERROR_RETRY_MAX_SECONDS)
+            raise
+        self._authenticated = True
+        self._auth_failures = 0
+        self._auth_error = None
+        self._auth_retry_at = 0.0
         LOG.info("authenticated with Survivor server at %s", self.config.base_url)
 
     async def get(self, path: str) -> dict[str, Any]:
         """GET JSON, re-authenticating and retrying exactly once after a 401."""
-        if self.session is None:
-            raise RuntimeError("Survivor API session is not open")
-        for attempt in range(2):
-            status, payload, detail = await self._raw_request("GET", path)
-            if status == 401 and attempt == 0:
-                LOG.warning("Survivor access cookie expired; authenticating again")
-                await self.authenticate()
-                continue
-            if status < 200 or status >= 300:
-                raise SurvivorAPIError(status, path, detail)
-            if not isinstance(payload, dict):
-                raise SurvivorAPIError(status, path, "expected a JSON object")
-            return payload
-        raise AssertionError("unreachable")
+        status, payload, detail = await self._authorized_request("GET", path)
+        if status < 200 or status >= 300:
+            raise SurvivorAPIError(status, path, detail)
+        if not isinstance(payload, dict):
+            raise SurvivorAPIError(status, path, "expected a JSON object")
+        return payload
 
     async def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         """POST JSON, with the same one-shot re-auth as `get`.
@@ -217,26 +281,45 @@ class SurvivorAPI:
         Discord account bound to a link code somebody is holding on a phone.
         It cannot reach a game through this.
         """
+        status, payload, detail = await self._authorized_request(
+            "POST", path, json_body=body)
+        if status < 200 or status >= 300:
+            # A 4xx here is usually a wrong or stale code, and the message is
+            # meant to be read by the person who typed it. A 401 is the gate
+            # refusing the bot, and anything else (a 5xx, the tunnel's HTML
+            # error page) is ours to worry about, not theirs.
+            user_message = None
+            if 400 <= status < 500 and status != 401 and isinstance(payload, dict):
+                message = payload.get("message")
+                if isinstance(message, str) and message.strip():
+                    user_message = message
+            raise SurvivorAPIError(status, path, detail, user_message=user_message)
+        if not isinstance(payload, dict):
+            raise SurvivorAPIError(status, path, "expected a JSON object")
+        return payload
+
+    async def _authorized_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+    ) -> tuple[int, Any, str]:
         if self.session is None:
             raise RuntimeError("Survivor API session is not open")
         for attempt in range(2):
-            status, payload, detail = await self._raw_request(
-                "POST", path, json_body=body)
-            if status == 401 and attempt == 0:
-                LOG.warning("Survivor access cookie expired; authenticating again")
+            if not self._authenticated:
                 await self.authenticate()
-                continue
-            if status < 200 or status >= 300:
-                # A 4xx here is usually a wrong or stale code, and the message
-                # is meant to be read by the person who typed it.
-                message = ""
-                if isinstance(payload, dict):
-                    message = str(payload.get("message") or "")
-                raise SurvivorAPIError(status, path, message or detail)
-            if not isinstance(payload, dict):
-                raise SurvivorAPIError(status, path, "expected a JSON object")
-            return payload
-        raise AssertionError("unreachable")
+            status, payload, detail = await self._raw_request(
+                method, path, json_body=json_body)
+            if status != 401:
+                return status, payload, detail
+            # The cookie is derived from the access code, so it dies whenever
+            # the host rotates the code.
+            self._authenticated = False
+            if attempt == 0:
+                LOG.warning("Survivor access cookie expired; authenticating again")
+        return status, payload, detail
 
     async def _raw_request(
         self,
@@ -277,8 +360,31 @@ def _validate_active_games(payload: dict[str, Any]) -> list[dict[str, Any]]:
     for item in games:
         if not isinstance(item, dict) or not isinstance(item.get("gameId"), str):
             raise SurvivorAPIError(200, "/api/voice/active", "invalid game entry")
+        # Optional: an older server neither sends it nor ranks the list. A
+        # value that is not a number is dropped rather than refused, so the
+        # bot still mirrors — it just will not trust that ordering.
+        last_activity = item.get("lastActivity")
+        if "lastActivity" in item and (
+            isinstance(last_activity, bool)
+            or not isinstance(last_activity, (int, float))
+            or not math.isfinite(last_activity)
+        ):
+            LOG.warning("ignoring invalid lastActivity %r for game %s",
+                        last_activity, item["gameId"])
+            del item["lastActivity"]
         valid.append(item)
     return valid
+
+
+def _ranked(games: list[dict[str, Any]]) -> bool:
+    """Whether the server ordered `/api/voice/active` most relevant first.
+
+    A server that sends `lastActivity` ranks the list (live games ahead of
+    lobbies, then most recent). An older one sorts by gameId, which says
+    nothing about which table is tonight's, so its order is not worth
+    switching games over.
+    """
+    return all("lastActivity" in game for game in games)
 
 
 def _validate_plan(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
@@ -337,6 +443,15 @@ def _validate_plan(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
     return payload
 
 
+def _activity_note(game: dict[str, Any]) -> str:
+    """' (last active 3 min ago)' for the log, when the server says."""
+    last_activity = game.get("lastActivity")
+    if last_activity is None:
+        return ""
+    minutes = max(0, int((time.time() - last_activity) // 60))
+    return f" (last active {minutes} min ago)"
+
+
 def _is_voting_state(state: dict[str, Any]) -> bool:
     """Return whether the game is in an actual secret-ballot subphase."""
     phase = state.get("phase")
@@ -363,16 +478,29 @@ class SurvivorDiscordClient(discord.Client):
         self._ready_for_reconcile = asyncio.Event()
         self._wake_reconcile = asyncio.Event()
         self._poll_task: asyncio.Task[None] | None = None
+        self._config_task: asyncio.Task[None] | None = None
+        self._shutdown_task: asyncio.Task[None] | None = None
         self._current_game_id: str | None = None
         self._last_plan_version: str | None = None
         self._last_mute_state = False
         self._force_reconcile = True
         self._muted_member_ids: set[int] = set()
+        # Discord accounts linked in the watched (or just released) game: the
+        # only members whose Connect denies the bot will ever lift.
+        self._attributable_ids: set[int] = set()
+        self._next_discovery_at = 0.0
+        self._switch_candidate: str | None = None
         self._idle_logged = False
-        self._multiple_games_signature: tuple[str, ...] | None = None
+        self._multiple_games_signature: tuple[str, frozenset[str]] | None = None
+        self._poll_failures = 0
+        self._poll_failure_signature: str | None = None
+        self._config_problem: str | None = None
+        self._commands_synced = False
         self._closing = False
 
     async def setup_hook(self) -> None:
+        # No network here: an island that is down at boot is the poll loop's
+        # problem, retried with backoff, not a crash for launchd to restart.
         await self.api.open()
         self._register_commands()
         self._poll_task = asyncio.create_task(
@@ -394,37 +522,87 @@ class SurvivorDiscordClient(discord.Client):
             await interaction.response.defer(ephemeral=True, thinking=True)
             try:
                 payload = await self.api.post(
-                    "/api/discord/link/claim",
+                    LINK_CLAIM_PATH,
                     {"code": code, "discordUserId": str(interaction.user.id)},
                 )
                 message = payload.get("message") or "Linked."
             except SurvivorAPIError as exc:
-                message = exc.detail or "The island could not be reached — try again."
+                # Only the claim's own refusal is worth showing; a dropped
+                # connection or a gateway error page is not the player's to
+                # read, and the log keeps the detail.
+                message = (
+                    exc.user_message
+                    if exc.path == LINK_CLAIM_PATH and exc.user_message
+                    else LINK_UNAVAILABLE_MESSAGE
+                )
                 LOG.warning("link claim failed for %s: %s", interaction.user, exc)
             await interaction.followup.send(message, ephemeral=True)
 
     async def on_ready(self) -> None:
+        if self._closing:
+            return
+        # A gateway session that could not RESUME arrives with new guild and
+        # channel objects. Hold the poller until they have been resolved again.
+        self._ready_for_reconcile.clear()
+        if await self._configure():
+            return
+        # Exiting here handed the fault to launchd, which restarted the bot
+        # every ThrottleInterval: a fresh gateway IDENTIFY each time, thousands
+        # a day, for a problem only somebody editing the Discord server can
+        # fix. Stay connected, say it once, and look again periodically.
+        if self._config_task is None or self._config_task.done():
+            self._config_task = asyncio.create_task(
+                self._recheck_configuration(), name="survivor-config-recheck"
+            )
+
+    async def _configure(self) -> bool:
+        """Resolve the guild and channels; True once the poller may run."""
         try:
             await self._resolve_discord_configuration()
             # A previous process could have died after applying a server mute.
             # Clean that up before reading the current plan; the poller will
             # reapply a voting mute if the optional policy still calls for it.
+            # (A no-op unless the voting mute is turned on.)
             await self._unmute_everyone_in_managed_channels(
                 "Survivor: startup mute safety cleanup"
             )
-            # Same reasoning for the Exile Island bars: reconciliation puts
-            # back whatever the live game still calls for, so starting clean
-            # cannot strand anyone.
-            await self._clear_every_member_bar("Survivor: startup safety cleanup")
-        except Exception:
-            LOG.exception("Discord configuration validation failed")
-            await self.close()
-            return
+            # There is deliberately no startup sweep of Exile Island bars. A
+            # fresh process cannot tell its own old denies from a moderator's,
+            # and it does not need to: the first reconciliation of the live
+            # game readmits every linked player it does not bar.
+        except Exception as exc:
+            problem = f"{type(exc).__name__}: {exc}"
+            if problem != self._config_problem:
+                self._config_problem = problem
+                if isinstance(exc, ConfigurationError):
+                    LOG.error(
+                        "Discord configuration is incomplete — %s. Not mirroring; "
+                        "checking again every %.0fs", exc, CONFIG_RECHECK_SECONDS,
+                    )
+                else:
+                    LOG.exception(
+                        "Discord configuration validation failed; checking again "
+                        "every %.0fs", CONFIG_RECHECK_SECONDS,
+                    )
+            return False
 
+        if self._config_problem is not None:
+            LOG.info("Discord configuration is now complete")
+            self._config_problem = None
         self._force_reconcile = True
         self._ready_for_reconcile.set()
         self._wake_reconcile.set()
         LOG.info("ready as %s (guild %s)", self.user, self.guild)
+        return True
+
+    async def _recheck_configuration(self) -> None:
+        while not self._closing:
+            await asyncio.sleep(CONFIG_RECHECK_SECONDS)
+            # A later on_ready may have succeeded on its own in the meantime.
+            if self._closing or self._ready_for_reconcile.is_set():
+                return
+            if await self._configure():
+                return
 
     async def on_resumed(self) -> None:
         LOG.info("Discord gateway session resumed; forcing voice reconciliation")
@@ -448,23 +626,57 @@ class SurvivorDiscordClient(discord.Client):
         self._wake_reconcile.set()
 
     async def close(self) -> None:
-        if self._closing:
-            return
+        # The SIGTERM handler and discord.py's own teardown both land here.
+        # Every caller waits on the one shutdown, so a second call cannot
+        # return early and let asyncio.run cancel the cleanup half-way.
+        if self._shutdown_task is None:
+            self._shutdown_task = asyncio.create_task(
+                self._shutdown(), name="survivor-shutdown"
+            )
+        await self._shutdown_task
+
+    async def _shutdown(self) -> None:
         self._closing = True
         self._ready_for_reconcile.set()
         self._wake_reconcile.set()
+        if self._config_task is not None:
+            self._config_task.cancel()
+            self._config_task = None
         if self._poll_task is not None:
             self._poll_task.cancel()
             try:
                 await self._poll_task
             except asyncio.CancelledError:
                 pass
+            except Exception:
+                LOG.exception("voice plan poller failed while stopping")
             self._poll_task = None
+        # The bot is a mirror, not a dependency. Once it stops nothing will
+        # lift a Tribal Council lock or readmit a snuffed player, and the game
+        # is meant to carry on with people moving themselves — so hand the
+        # rooms back first. A restart (redeploy) puts back whatever the live
+        # game still calls for within one poll. Bounded, because launchd's
+        # SIGKILL follows SIGTERM whether or not Discord has answered.
+        try:
+            await asyncio.wait_for(
+                self._shutdown_cleanup(), timeout=SHUTDOWN_CLEANUP_SECONDS
+            )
+        except asyncio.TimeoutError:
+            LOG.warning("shutdown cleanup did not finish within %.0fs",
+                        SHUTDOWN_CLEANUP_SECONDS)
+        except Exception:
+            LOG.exception("shutdown cleanup failed")
+        await self.api.close()
+        await super().close()
+
+    async def _shutdown_cleanup(self) -> None:
+        if self.guild is None or not self.channels:
+            return
+        await self._release_game("Survivor: bot shutting down")
         await self._unmute_everyone_in_managed_channels(
             "Survivor: shutdown mute safety cleanup"
         )
-        await self.api.close()
-        await super().close()
+        LOG.info("released Discord channels for shutdown")
 
     async def _resolve_discord_configuration(self) -> None:
         guild = self.get_guild(self.config.guild_id)
@@ -559,7 +771,14 @@ class SurvivorDiscordClient(discord.Client):
         `applications.commands` scope on the invite — a bot added with only
         `bot` connects, runs, mirrors voice perfectly, and simply has no slash
         commands, with nothing anywhere saying why. Hence the loud failure.
+
+        Once per process: the command set cannot change without a restart,
+        and Discord rate-limits registration, so a gateway reconnect (which
+        fires on_ready again) has nothing to publish. A failure is retried on
+        the next on_ready, since nothing was registered.
         """
+        if self._commands_synced:
+            return
         self.tree.copy_global_to(guild=guild)
         try:
             synced = await self.tree.sync(guild=guild)
@@ -575,6 +794,7 @@ class SurvivorDiscordClient(discord.Client):
         except discord.HTTPException as exc:
             LOG.error("slash command registration failed: %s", exc)
             return
+        self._commands_synced = True
         LOG.info("registered %d slash command(s): %s",
                  len(synced), ", ".join(f"/{c.name}" for c in synced) or "none")
 
@@ -587,13 +807,14 @@ class SurvivorDiscordClient(discord.Client):
                 # Clear before polling so a voice event that arrives during the
                 # reconciliation remains set and causes an immediate follow-up.
                 self._wake_reconcile.clear()
-                delay = ERROR_RETRY_SECONDS
                 try:
                     delay = await self._poll_once()
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    LOG.exception("voice plan poll failed")
+                except Exception as exc:
+                    delay = self._poll_failed(exc)
+                else:
+                    self._poll_succeeded()
 
                 try:
                     await asyncio.wait_for(self._wake_reconcile.wait(), timeout=delay)
@@ -604,6 +825,36 @@ class SurvivorDiscordClient(discord.Client):
                 "Survivor: poller exit mute safety cleanup"
             )
 
+    def _poll_failed(self, exc: Exception) -> float:
+        """Log a failed poll and return how long to wait before the next one.
+
+        An island that is down tends to stay down for a while. Retrying every
+        five seconds with a full traceback each time buried the log under
+        thousands of identical stacks, so back off to five minutes and print
+        the traceback once per new kind of failure, one line per retry after.
+        A voice event still wakes the poller early, so a recovered server is
+        noticed as soon as anybody moves.
+        """
+        self._poll_failures += 1
+        delay = _backoff(
+            self._poll_failures, ERROR_RETRY_SECONDS, ERROR_RETRY_MAX_SECONDS)
+        signature = f"{type(exc).__name__}: {exc}"
+        if signature != self._poll_failure_signature:
+            self._poll_failure_signature = signature
+            LOG.error("voice plan poll failed; retrying in %.0fs", delay,
+                      exc_info=exc)
+        else:
+            LOG.warning("voice plan poll still failing (%d in a row): %s; "
+                        "retrying in %.0fs", self._poll_failures, signature, delay)
+        return delay
+
+    def _poll_succeeded(self) -> None:
+        if self._poll_failures:
+            LOG.info("voice plan polling recovered after %d failed attempt(s)",
+                     self._poll_failures)
+        self._poll_failures = 0
+        self._poll_failure_signature = None
+
     async def _poll_once(self) -> float:
         # Every channel that *was* configured must have resolved. Exile Island
         # is optional, so comparing against PLACE_KEYS would idle the bot
@@ -611,33 +862,14 @@ class SurvivorDiscordClient(discord.Client):
         if self.guild is None or len(self.channels) != len(self.config.channel_ids):
             return ERROR_RETRY_SECONDS
 
-        if self._current_game_id is None:
-            active_payload = await self.api.get("/api/voice/active")
-            games = _validate_active_games(active_payload)
-            if not games:
-                if not self._idle_logged:
-                    LOG.info("no active linked Survivor game; waiting")
-                    await self._unlock_all_channels("Survivor: no active game")
-                    await self._set_vote_mute([], False)
-                    self._idle_logged = True
-                return IDLE_POLL_SECONDS
-
-            self._idle_logged = False
-            game_ids = tuple(game["gameId"] for game in games)
-            if len(game_ids) > 1 and game_ids != self._multiple_games_signature:
-                LOG.warning(
-                    "multiple active games found; mirroring %s and ignoring %s",
-                    game_ids[0],
-                    ", ".join(game_ids[1:]),
-                )
-            self._multiple_games_signature = game_ids if len(game_ids) > 1 else None
-            self._current_game_id = game_ids[0]
-            self._last_plan_version = None
-            self._last_mute_state = False
-            self._force_reconcile = True
-            LOG.info("watching Survivor game %s", self._current_game_id)
+        if (self._current_game_id is None
+                or time.monotonic() >= self._next_discovery_at):
+            idle_delay = await self._discover()
+            if idle_delay is not None:
+                return idle_delay
 
         game_id = self._current_game_id
+        assert game_id is not None
         try:
             plan = _validate_plan(
                 await self.api.get(f"/api/voice/plan/{game_id}"), game_id
@@ -645,11 +877,12 @@ class SurvivorDiscordClient(discord.Client):
         except SurvivorAPIError as exc:
             if exc.status == 404:
                 LOG.info("game %s disappeared; releasing channel locks", game_id)
-                await self._unlock_all_channels("Survivor: game no longer exists")
-                await self._set_vote_mute([], False)
-                self._forget_game()
+                await self._release_game("Survivor: game no longer exists")
                 return PLAN_POLL_SECONDS
             raise
+
+        ghosts, living = self._linked_by_state(plan)
+        self._attributable_ids |= ghosts | living
 
         # A lobby can outlive the linked player who made it discoverable. Once
         # that player leaves, the game still exists and its voice plan remains
@@ -663,14 +896,7 @@ class SurvivorDiscordClient(discord.Client):
                 "game %s has no linked players; returning to active-game discovery",
                 game_id,
             )
-            await self._unlock_all_channels(
-                "Survivor: no linked players remain in the game"
-            )
-            await self._set_vote_mute([], False)
-            await self._clear_every_member_bar(
-                "no linked players remain in the game"
-            )
-            self._forget_game()
+            await self._release_game("Survivor: no linked players remain in the game")
             return PLAN_POLL_SECONDS
 
         version_changed = plan["version"] != self._last_plan_version
@@ -699,11 +925,87 @@ class SurvivorDiscordClient(discord.Client):
 
         return PLAN_POLL_SECONDS
 
+    async def _discover(self) -> float | None:
+        """Choose the game to mirror; return a delay if there is none.
+
+        Runs on every poll while idle and every IDLE_POLL_SECONDS while
+        watching. Only looking up again notices that tonight's table has
+        overtaken one the friends abandoned last night: an unfinished game
+        stays listed for a day, and nothing about its own plan changes.
+        """
+        games = _validate_active_games(await self.api.get("/api/voice/active"))
+        self._next_discovery_at = time.monotonic() + IDLE_POLL_SECONDS
+        if not games:
+            if self._current_game_id is not None:
+                LOG.info("game %s is no longer active; releasing it",
+                         self._current_game_id)
+                await self._release_game("Survivor: game is no longer active")
+            if not self._idle_logged:
+                LOG.info("no active linked Survivor game; waiting")
+                await self._unlock_all_channels("Survivor: no active game")
+                await self._set_vote_mute([], False)
+                self._idle_logged = True
+            return IDLE_POLL_SECONDS
+
+        self._idle_logged = False
+        game_ids = [game["gameId"] for game in games]
+        top = game_ids[0]
+        current = self._current_game_id
+        if current == top:
+            self._switch_candidate = None
+        elif current is not None and current not in game_ids:
+            LOG.info("game %s is no longer active; switching to %s", current, top)
+            await self._release_game("Survivor: switching to the active game")
+        elif current is not None and _ranked(games):
+            # Still listed but outranked. One look is not enough: lastActivity
+            # moves whenever anybody touches a game, so a single poke at last
+            # night's table would otherwise drag everyone's voice across and
+            # straight back. Switch when the same game leads two looks running.
+            # (An unranked list from an older server never gets this far.)
+            if self._switch_candidate != top:
+                self._switch_candidate = top
+            else:
+                LOG.info("game %s has overtaken %s; switching", top, current)
+                await self._release_game("Survivor: switching to the active game")
+
+        if self._current_game_id is None:
+            self._switch_candidate = None
+            self._current_game_id = top
+            self._last_plan_version = None
+            self._last_mute_state = False
+            self._force_reconcile = True
+            self._attributable_ids = set()
+            LOG.info("watching Survivor game %s%s", top,
+                     _activity_note(games[0]))
+
+        others = frozenset(game_ids) - {self._current_game_id}
+        signature = (self._current_game_id, others) if others else None
+        if signature is not None and signature != self._multiple_games_signature:
+            LOG.warning(
+                "multiple active games found; mirroring %s and ignoring %s",
+                self._current_game_id, ", ".join(sorted(others)),
+            )
+        self._multiple_games_signature = signature
+        return None
+
+    async def _release_game(self, reason: str) -> None:
+        """Let go of the watched game: open its doors, lift its mutes and bars.
+
+        The bars are lifted for the released game's linked players only, so
+        this must run before the next game resets `_attributable_ids`.
+        """
+        if self.guild is not None:
+            await self._unlock_all_channels(reason)
+            await self._set_vote_mute([], False)
+            await self._clear_every_member_bar(reason)
+        self._forget_game()
+
     def _forget_game(self) -> None:
         self._current_game_id = None
         self._last_plan_version = None
         self._last_mute_state = False
         self._force_reconcile = True
+        self._switch_candidate = None
 
     async def _reconcile(self, plan: dict[str, Any]) -> bool:
         success = True
@@ -853,16 +1155,33 @@ class SurvivorDiscordClient(discord.Client):
     ) -> bool:
         assert self.guild is not None
         channel = self.channels[place_key]
-        member = self.guild.get_member(user_id)
-        if member is None:
-            # Not cached and not worth a fetch per channel per poll: an absent
-            # member cannot be in a voice channel to bar.
-            return True
-        overwrite = channel.overwrites_for(member)
+        # Read the overwrite by id. Without the members intent only people in
+        # voice are cached, and for anyone else channel.overwrites hands back
+        # a bare discord.Object rather than a Member.
+        overwrite = channel.overwrites_for(discord.Object(id=user_id))
         if locked and overwrite.connect is False:
             return True
         if not locked and overwrite.connect is not False:
             return True   # nothing of ours to clear (and never erase an allow)
+        member = self.guild.get_member(user_id)
+        if member is None and locked:
+            # Not cached and not worth a fetch per channel per reconcile: an
+            # absent member cannot be in a voice channel to bar, and joining
+            # one forces a reconcile that bars them then.
+            return True
+        if member is None:
+            # Readmitting cannot wait for that. The snuffed player who gave up
+            # and left voice is exactly the one who is not cached, and a deny
+            # skipped here bars them from The Beach for good. set_permissions
+            # needs a real Member, so fetch one.
+            try:
+                member = await self.guild.fetch_member(user_id)
+            except discord.NotFound:
+                return True   # left the server; there is no door to open
+            except discord.HTTPException as exc:
+                LOG.error("cannot fetch Discord user %s to readmit them to %s: %s",
+                          user_id, channel.name, exc)
+                return False
         overwrite.connect = False if locked else None
         try:
             await channel.set_permissions(
@@ -1033,30 +1352,33 @@ class SurvivorDiscordClient(discord.Client):
         return success
 
     async def _clear_every_member_bar(self, reason: str) -> None:
-        """Drop every per-member Connect deny this bot could have written.
+        """Drop the per-member Connect denies this bot can account for.
 
-        A process that dies mid-season would otherwise leave a snuffed player
-        locked out of The Beach with nothing left running to let them back in.
-        Reconciliation re-applies whatever the live game still calls for within
-        one poll, so clearing on the way in costs a couple of API calls and
-        removes the whole class of stranding.
+        Releasing a game must readmit its snuffed players: nothing will be
+        left running to let them back into The Beach otherwise.
 
-        Only denies are cleared, and only for members who have one — an allow
-        written by an administrator is never touched.
+        Discord keeps no record of who wrote an overwrite, so the rule is
+        deliberately narrow. A deny is the bot's to lift only when it sits on
+        a Discord account linked in the game being released — the same
+        accounts reconciliation bars and readmits. A moderator's deny on
+        anybody else is never touched, and neither is an allow. The cost is a
+        bar left by a process that died for a game that ended before it came
+        back: that player is readmitted by the first reconciliation of the
+        next game they are linked in, or by hand.
         """
-        if self.guild is None or not self.channels:
+        if self.guild is None or not self.channels or not self._attributable_ids:
             return
-        for place_key, channel in self.channels.items():
-            for target, overwrite in list(channel.overwrites.items()):
-                if not isinstance(target, discord.Member):
-                    continue
-                if overwrite.connect is not False:
-                    continue
-                await self._set_member_lock(place_key, target.id, locked=False)
-        LOG.info("cleared member channel bars (%s)", reason)
+        for place_key in self.channels:
+            for user_id in sorted(self._attributable_ids):
+                await self._set_member_lock(place_key, user_id, locked=False)
+        LOG.info("cleared linked players' channel bars (%s)", reason)
 
     async def _unmute_everyone_in_managed_channels(self, reason: str) -> None:
         if self.guild is None or not self.channels:
+            return
+        # With the voting mute off this bot never server-mutes anybody, so
+        # every mute in these rooms belongs to a person or a moderator.
+        if not self.config.mute_during_voting and not self._muted_member_ids:
             return
         user_ids: set[int] = set(self._muted_member_ids)
         for channel in self.channels.values():
@@ -1071,11 +1393,11 @@ class SurvivorDiscordClient(discord.Client):
             try:
                 await member.edit(mute=False, reason=reason)
                 self._muted_member_ids.discard(user_id)
+            except discord.Forbidden as exc:
+                LOG.error("mute safety cleanup forbidden for %s: %s", member, exc)
             except discord.HTTPException as exc:
                 if exc.status != 400:
                     LOG.error("mute safety cleanup failed for %s: %s", member, exc)
-            except discord.Forbidden as exc:
-                LOG.error("mute safety cleanup forbidden for %s: %s", member, exc)
 
 
 def _configure_logging() -> None:
@@ -1091,6 +1413,40 @@ def _configure_logging() -> None:
     )
 
 
+async def _run(client: SurvivorDiscordClient, token: str) -> None:
+    """Client.run, plus a clean exit on SIGTERM.
+
+    launchd stops a job with SIGTERM — every redeploy, every bootout. Python's
+    default for it is to die on the spot, leaving Tribal Council locked and
+    any voting mute in place with nothing running to lift them. Route it, and
+    Ctrl-C, through close(), which releases the channels before disconnecting.
+    """
+    loop = asyncio.get_running_loop()
+    stopping: set[asyncio.Task[None]] = set()
+
+    def stop(signame: str) -> None:
+        LOG.info("%s received; releasing Discord channels and shutting down",
+                 signame)
+        task = asyncio.create_task(client.close())
+        stopping.add(task)   # keep a reference until it finishes
+        task.add_done_callback(stopping.discard)
+
+    installed = []
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, stop, sig.name)
+            installed.append(sig)
+        except (NotImplementedError, RuntimeError):
+            pass   # no loop signal support here; Ctrl-C still interrupts
+
+    try:
+        async with client:
+            await client.start(token, reconnect=True)
+    finally:
+        for sig in installed:
+            loop.remove_signal_handler(sig)
+
+
 def main() -> int:
     try:
         _configure_logging()
@@ -1101,7 +1457,7 @@ def main() -> int:
 
     client = SurvivorDiscordClient(config)
     try:
-        client.run(config.token, reconnect=True, log_handler=None)
+        asyncio.run(_run(client, config.token))
     except discord.LoginFailure:
         LOG.error("Discord rejected DISCORD_BOT_TOKEN; rotate the token and restart")
         return 3

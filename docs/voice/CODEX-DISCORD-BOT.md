@@ -1,6 +1,11 @@
 # Build the Survivor Discord voice bot
 
 **Audience:** an AI coding agent (Codex) building this from scratch.
+
+> **Status:** built — this is the original brief, kept for its reasoning. The
+> bot has since grown Exile Island (a fifth channel), the `/link` slash
+> command, and periodic re-discovery of the active game. Where the two
+> disagree, `discord_bot.py` and `DISCORD-OPERATIONS.md` describe what runs.
 **Everything the bot talks to already exists and works.** The game server, the
 places model, and both clients are built, tested, and deployed. Your job is the
 Discord half only. Do not modify anything outside the files listed in §7.
@@ -29,12 +34,14 @@ is simply skipped — that is a normal state, not an error.
 
 1. Discord → **＋** (Add a Server) → **Create My Own** → **For me and my friends**
    → name it e.g. *Survivor Island*.
-2. Create **four voice channels** (not text). Exact names are yours to choose,
+2. Create **five voice channels** (not text). Exact names are yours to choose,
    but the bot maps by ID, not name, so record each ID.
    - 🔥 Camp Fire → `camp_fire`
    - 🏝 The Beach → `the_beach`
    - 💧 The Water Well → `the_water_well`
    - 🗳 Tribal Council → `tribal_council`
+   - Exile Island → `exile_island` (optional to configure; where snuffed
+     players wait out the season)
 3. **Set every one of them to `user_limit = 0`** (Edit Channel → no user limit).
    Discord does not document whether Move Members bypasses a channel's user
    limit, so do not find out the hard way.
@@ -44,9 +51,10 @@ is simply skipped — that is a normal state, not an error.
    right-click (or long-press) any channel → **Copy Channel ID**. Same gesture on
    the server name gives the **Guild ID**, and on a person gives their **User ID**.
 
-Each player also pastes their own **Discord user ID** into the Survivor app once:
-**Settings → Discord user ID**. That is what links `TDawg` in the game to
-`@tyler` in Discord. Without it, that player is invisible to the bot.
+Each player also links their Discord account once — on iOS with **Settings →
+Link Discord** and the `/link` command, otherwise by pasting their **Discord
+user ID** into **Settings → Discord user ID**. That is what links `TDawg` in the
+game to `@tyler` in Discord. Without it, that player is invisible to the bot.
 
 ---
 
@@ -68,10 +76,11 @@ Each player also pastes their own **Discord user ID** into the Survivor app once
 **Invite URL** (substitute your application ID):
 
 ```
-https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot&permissions=290456576
+https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot+applications.commands&permissions=290456576
 ```
 
-`applications.commands` is **not** needed — this bot has no slash commands.
+`applications.commands` is needed for `/link`. A bot invited with `bot` alone
+still mirrors voice but has no slash commands, and nothing says why.
 
 6. **After inviting: drag the bot's role near the top of Server Settings → Roles.**
    Discord's docs only state role-hierarchy rules for kick/ban/nickname, but a
@@ -161,7 +170,10 @@ the last 24 hours, and with at least one human who has linked a Discord ID.
 
 In practice there will be one. Handle zero (idle — poll slowly) and more than one
 (mirror only the first, and log that you're ignoring the rest — six friends
-cannot be in two voice sets at once).
+cannot be in two voice sets at once). Keep asking while watching a game: an
+abandoned game stays listed for a day, and only a fresh look notices that
+tonight's has overtaken it. (A newer server adds `lastActivity` and lists the
+most relevant game first.)
 
 ### `GET /api/voice/plan/<gameId>` — the whole picture
 
@@ -183,8 +195,9 @@ cannot be in two voice sets at once).
 
 Guarantees you can rely on:
 
-- **All four place keys are always present**, empty ones included, so you can
-  clear a channel you no longer need.
+- **Every place key is always present**, empty ones included, so you can
+  clear a channel you no longer need. (Except `exile_island` from a server
+  older than Exile Island — treat it as optional.)
 - **Computer players are excluded entirely** — they have no Discord presence.
   Eliminated human players *are* included; they become the jury and still belong
   in a voice channel.
@@ -267,7 +280,7 @@ await channel.set_permissions(guild.default_role, overwrite=ow, reason="Survivor
 override and restores whatever the category/guild intended; `True` writes a
 permanent explicit allow that would stomp a deliberate category-level deny.
 
-If the four channels live inside a category, log the category's overwrites at
+If the channels live inside a category, log the category's overwrites at
 startup too — a category that denies `CONNECT` to `@everyone` will make your
 unlock appear to do nothing.
 
@@ -335,9 +348,10 @@ The API you need already exists.
   anything the game server depends on.
 - LaunchAgent must use the **absolute** venv python path (launchd provides
   almost no environment — never `python3`), with `RunAtLoad`, `KeepAlive`,
-  `ThrottleInterval 10`, logs to `/tmp/survivor-game-discord.{log,err}`, and
-  `EnvironmentVariables` carrying `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, the
-  four channel IDs, `SURVIVOR_BASE_URL`, and `SURVIVOR_ACCESS_CODE`.
+  `ThrottleInterval 60` (each relaunch is a fresh Discord login), logs to
+  `/tmp/survivor-game-discord.{log,err}`, and `EnvironmentVariables` carrying
+  `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, the five channel IDs,
+  `SURVIVOR_BASE_URL`, and `SURVIVOR_ACCESS_CODE`.
 - Leave `reconnect=True` (the default). `discord.py` handles Wi-Fi drops and
   Discord blips with its own exponential backoff; `KeepAlive` is only the outer
   net for hard crashes. Do not write your own restart loop.
@@ -348,7 +362,7 @@ The API you need already exists.
 
 ## 8. Definition of done
 
-- [ ] Bot connects, logs the guild and all four resolved channels at startup, and
+- [ ] Bot connects, logs the guild and every resolved channel at startup, and
       warns loudly if any channel ID is missing or has `user_limit != 0`.
 - [ ] Authenticates through the access gate; re-authenticates once on a 401.
 - [ ] Discovers the active game via `/api/voice/active`; idles gracefully with zero.

@@ -54,7 +54,11 @@
         <string>false</string>
     </dict>
 
+    <!-- The bot no longer exits for a Discord-side configuration problem or
+         an unreachable island; it waits and re-checks. What is left to crash
+         on (a rejected token, a broken environment) will not fix itself in
+         ten seconds, and each relaunch is a fresh Discord login. -->
     <key>ThrottleInterval</key>
-    <integer>10</integer>
+    <integer>60</integer>
 </dict>
 </plist>

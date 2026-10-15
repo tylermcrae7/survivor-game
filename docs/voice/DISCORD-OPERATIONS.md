@@ -1,8 +1,9 @@
 # Survivor Discord bot operations
 
-The bot mirrors the game server's places into the four Discord voice channels.
-It is a separate process from `survivor_server.py`; the game keeps working if
-the bot is stopped.
+The bot mirrors the game server's places into the five Discord voice channels
+(Camp Fire, The Beach, The Water Well, Tribal Council, and Exile Island). It is
+a separate process from `survivor_server.py`; the game keeps working if the bot
+is stopped.
 
 ## Current production deployment
 
@@ -49,18 +50,21 @@ with an installation link to add Jeff to another server. Turn it off under
 
 ### Player setup
 
-1. In Discord, enable **User Settings → Advanced → Developer Mode**.
-2. Right-click your own name on one of your messages and choose **Copy User ID**.
-3. In Survivor, open **Settings → Discord user ID**, paste the digit string, and
-   save it.
-4. If you were already in a game when you saved the ID, relaunch or leave and
-   rejoin so the join request synchronizes the link.
-5. Join **Camp Fire** voice manually. Jeff can move a connected member, but
+1. **iOS app:** open **Settings → Link Discord**, then run `/link <code>` in
+   the Discord server with the code it shows (see
+   [Linking a Discord account](#linking-a-discord-account)). Nothing to copy.
+2. **Web, or when Jeff is down:** enable Discord's **User Settings → Advanced →
+   Developer Mode**, right-click your own name and choose **Copy User ID**, then
+   paste it into Survivor's **Settings → Discord user ID** (on iOS, under
+   **Enter ID manually**).
+3. If you were already in a game when you linked, relaunch or leave and rejoin
+   so the join request synchronizes the link.
+4. Join **Camp Fire** voice manually. Jeff can move a connected member, but
    Discord will not let a bot pull someone into voice from a disconnected state.
 
-The Discord user ID is not the username, display name, guild ID, or channel ID.
-It is a 15–25 digit value unique to that player and should remain a string when
-sent through JSON.
+A pasted Discord user ID is not the username, display name, guild ID, or
+channel ID. It is a 15–25 digit value unique to that player and should remain a
+string when sent through JSON.
 
 ## One-time installation
 
@@ -122,7 +126,14 @@ applications.commands scope
 
 If you see that, generate a fresh OAuth URL with **both** `bot` and
 `applications.commands` and re-add the bot. Voice mirroring is unaffected
-either way. On success it logs `registered 1 slash command(s): /link`.
+either way. On success it logs `registered 1 slash command(s): /link`, once per
+process — a gateway reconnect does not register again.
+
+A player whose `/link` fails sees the server's own sentence only when the
+island refused the code itself ("that code has expired"). Anything else — the
+island unreachable, a gateway error page, the bot locked out of the access gate
+— shows "The island could not be reached — try again." and the detail goes to
+the bot's log.
 
 This is the one thing the bot writes back to the game server, through an
 endpoint that can only bind an account to a pending code — it cannot reach a
@@ -155,6 +166,25 @@ launchctl kickstart -k "gui/$(id -u)/com.survivor-game.discord-bot"
 Each person must join **Camp Fire** voice manually at the start of the night.
 Discord cannot let the bot pull in someone who is not already connected.
 
+## Which game the bot mirrors
+
+The bot asks `/api/voice/active` for games worth mirroring and follows the
+first one. While it is watching a game it asks again every ten seconds, so a
+table abandoned last night does not keep the channels through tonight's game:
+
+- **The watched game leaves the list** (finished, untouched for a day, or no
+  linked players left): the bot releases it at once and moves on to the top
+  game, or goes idle.
+- **Another game outranks it:** the bot switches once the same game has led
+  two looks in a row. `lastActivity` moves whenever anyone touches a game, so a
+  single poke at an old table does not drag everybody's voice across and back.
+  A server old enough not to send `lastActivity` sorts the list by game id,
+  which ranks nothing; against one, the bot stays put until its game leaves
+  the list.
+
+Releasing a game unlocks the channels, lifts any voting mute the bot applied,
+and readmits that game's snuffed players before the next game is reconciled.
+
 ## Start, stop, status, and logs
 
 ```bash
@@ -172,9 +202,17 @@ launchctl bootout "gui/$(id -u)" \
 tail -F /tmp/survivor-game-discord.log /tmp/survivor-game-discord.err
 ```
 
-The bot logs the resolved guild and all four channels on every fresh gateway
-connection. A channel limit, a category-level Connect deny, a missing permission,
-an expired island cookie, or a failed member move is called out explicitly.
+The bot logs the resolved guild and every configured channel on every fresh
+gateway connection. A channel limit, a category-level Connect deny, a missing
+permission, an expired island cookie, or a failed member move is called out
+explicitly.
+
+Stopping the bot with SIGTERM — `bootout`, or the `unload` that
+`deploy/redeploy.sh` does — releases the channels before it disconnects:
+Tribal Council locks are lifted, the bot's own voting mutes are undone, and the
+watched game's snuffed players are readmitted. The game is meant to carry on without the bot, with
+people moving themselves. A restart reapplies whatever the live game still
+calls for within one poll.
 Discord's audit log will contain one entry for every move and permission change;
 the bot supplies a `Survivor:` reason for each one.
 
@@ -213,6 +251,11 @@ installed plist changes, then `bootout` and `bootstrap` the bot. The bot also
 re-authenticates and retries once if a cookie receives a 401, so a code rotation
 does not require code changes.
 
+If the island refuses the bot's code, the bot waits a minute before presenting
+it again (doubling to five minutes). The access gate allows ten attempts a
+minute per IP, and behind the tunnel the bot shares the house's IP with every
+player at home: retrying a stale code at poll speed would lock all of them out.
+
 ## Optional voting mute
 
 `DISCORD_MUTE_DURING_VOTING` defaults to `false`. When set to `true`, linked
@@ -220,6 +263,25 @@ players already in voice are server-muted only while the game reports the
 Tribal Council or Final Tribal `voting` subphase. They are explicitly unmuted on
 phase exit, bot startup, poller exit, and clean shutdown. Leave this off until
 players have been told that a server mute prevents self-unmuting.
+
+With it off, the bot never changes anybody's mute — including the startup and
+shutdown cleanups, which with it on unmute everyone in the five channels. If
+you turn it off right after a crash mid-vote, unmute those players by hand.
+
+## Exile Island bars
+
+While camp is open, a snuffed player gets a per-member Connect deny on Camp
+Fire, The Beach, and The Water Well so they cannot walk back in from Exile
+Island (only when the Exile Island channel is configured). Discord does not
+record who wrote an overwrite, so the bot only ever lifts a deny on a Discord
+account linked in the game it is watching or has just released. A moderator's deny on anyone
+else is never touched, and neither is any explicit allow.
+
+The one gap: if the bot dies while a player is barred and that game ends before
+it comes back, nothing it can see ties the deny to Survivor. That player is
+readmitted by the first reconciliation of the next game they are linked in, or
+an admin can remove the deny (its audit-log reason is `Survivor: snuffed
+players do not join breakouts`).
 
 ## Common failures
 
@@ -230,8 +292,18 @@ players have been told that a server mute prevents self-unmuting.
 - **Unlock appears ineffective:** inspect the voice channel's category; a
   category-level Connect deny still applies after the bot correctly clears its
   channel-level override.
-- **Immediate restart every ten seconds:** read the `.err` log. Common causes are
-  an unreplaced `{{...}}`, invalid token, missing channel permission, or using an
-  unsupported Python environment.
+- **Online but `Discord configuration is incomplete` in the log:** a channel
+  ID is wrong, a channel is not a voice channel, or the bot role is missing a
+  permission. The bot does not exit for this — it stays connected, logs the
+  problem once, and re-checks every minute, so fix the Discord server and wait.
+- **`voice plan poll failed`:** the island is unreachable or erroring. The
+  first failure logs a traceback; repeats log one line each while the bot
+  backs off from 5 seconds to 5 minutes. It picks up again on its own (sooner
+  if anybody moves in voice), and logs `recovered` when it does.
+- **Restarting every minute:** read the `.err` log. Common causes are an
+  unreplaced `{{...}}`, an invalid token, or an unsupported Python environment.
+  The template's `ThrottleInterval` is 60 seconds; an installed plist copied
+  before that change still says 10 — edit it there, since redeploys never
+  touch the installed copy.
 - **Wrong island code:** update the installed plist. The bot never reads secrets
   from the repository.

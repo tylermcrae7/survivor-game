@@ -29,6 +29,7 @@ feature; voice is what makes it fun.
 | `the_beach` | The Beach | `playing` |
 | `the_water_well` | The Water Well | `playing` |
 | `tribal_council` | Tribal Council | `tribal_council`, `final_tribal` (forced) |
+| `exile_island` | Exile Island | snuffed players only, `playing` and `tribal_council` (forced for them) |
 
 Policy is **derived from the game phase**, never stored:
 
@@ -78,7 +79,13 @@ Moves are deliberately kept out of the event log; the log caps at 120 entries an
 someone pacing between the beach and the well would erase the game's history.
 
 **`GET /api/voice/active`** — games worth mirroring: not finished, touched in the
-last 24 hours, at least one human with a linked Discord ID.
+last 24 hours, at least one human with a linked Discord ID. Each entry is
+`{gameId, phase, linkedPlayers, lastActivity}`, most recently touched first (so
+tonight's lobby outranks last night's unfinished game). The bot follows the first entry
+and re-checks every ten seconds while watching one, switching once another game
+has led two checks running. `lastActivity` (epoch seconds) is optional: an older
+server omits it and sorts by `gameId`, and the bot then never switches away from
+a game that is still listed.
 
 **`GET /api/voice/plan/<gameId>`** — the bot's whole view, with a 12-character
 content-hash `version` so it can poll cheaply and act only on change. Every place
@@ -91,10 +98,14 @@ already receive.
 
 ## Linking a person to a Discord account
 
-Each player pastes their Discord user ID once, in **Settings → Discord user ID**
-(Discord → Settings → Advanced → Developer Mode, then long-press your own name →
-Copy User ID). It rides along on join. A player who never links it stays
-invisible to the bot and simply moves themselves — everything else still works.
+On iOS, **Settings → Link Discord** shows a short code; running `/link <code>`
+in the Discord server binds whoever ran it, because Discord tells the bot who
+that was. Nobody copies an ID and no username is matched. On the web — or when
+the bot is down — a player pastes their Discord user ID once instead, in
+**Settings → Discord user ID** (iOS: **Enter ID manually**; Discord → Settings
+→ Advanced → Developer Mode, then long-press your own name → Copy User ID).
+Either way it rides along on join. A player who never links stays invisible to
+the bot and simply moves themselves — everything else still works.
 
 IDs are validated as 15–25 digit strings and must arrive **quoted**. A Discord
 snowflake exceeds 2^53, so a JavaScript client that sent one as a JSON number has
