@@ -14,6 +14,10 @@ let localGameState = {
 
 let fullGameState = {};
 let appInitialized = false;
+// Whether /api/cards has loaded for real (not the one-card fallback) — see
+// ensureCardDefinitions().
+let cardDefinitionsLoaded = false;
+let cardDefinitionsLoading = null;
 
 // Survivor Card Database - Loaded from JSON
 let SURVIVOR_CARDS = {};
@@ -102,12 +106,27 @@ async function loadCardDefinitions() {
         if (window.SurvivorGame) window.SurvivorGame.SURVIVOR_CARDS = SURVIVOR_CARDS;
 
         console.log(`Loaded ${Object.keys(SURVIVOR_CARDS).length} card types from server`);
+        cardDefinitionsLoaded = true;
         return true;
     } catch (error) {
         console.error('Failed to load card definitions:', error);
         _fallbackCardDefinitions();
         return false;
     }
+}
+
+/**
+ * Retry the card registry if the boot-time load failed (tunnel blip, server
+ * bounce). Without the real registry no card in the hand is playable, for the
+ * whole session. Called on resync (foreground / back online); a no-op once
+ * loaded.
+ */
+function ensureCardDefinitions() {
+    if (cardDefinitionsLoaded) return Promise.resolve(true);
+    if (!cardDefinitionsLoading) {
+        cardDefinitionsLoading = loadCardDefinitions().finally(() => { cardDefinitionsLoading = null; });
+    }
+    return cardDefinitionsLoading;
 }
 
 /**
@@ -450,12 +469,18 @@ async function checkAccessGate() {
     return true;
 }
 
+// One attempt at a time — the server allows ten a minute per address, and a
+// held Enter key (or a double tap) used to spend several of them at once.
+let _submittingAccess = false;
+
 async function submitAccessCode() {
+    if (_submittingAccess) return;
     const input = document.getElementById('accessCodeInput');
     const code = input?.value.trim();
     const toast = window.SurvivorUI?.showToast || window.showToast;
     if (!code) { toast('Enter the access code', 'warning'); input?.focus(); return; }
 
+    _submittingAccess = true;
     try {
         const response = await fetch('/api/access', {
             method: 'POST',
@@ -467,6 +492,7 @@ async function submitAccessCode() {
             toast('Welcome ashore', 'success');
             // Reload so every module boots with the cookie (sockets included)
             setTimeout(() => location.reload(), 400);
+            return;   // stays locked: the reload is the next thing that happens
         } else {
             toast(data.message || 'That code did not open the island', 'error');
             input?.select();
@@ -474,6 +500,7 @@ async function submitAccessCode() {
     } catch (error) {
         toast('Could not reach the island — try again', 'error');
     }
+    _submittingAccess = false;
 }
 
 /**
@@ -497,7 +524,10 @@ async function passVotingBox() {
 
 async function addBot() {
     const gameId = localGameState.gameId;
-    if (!gameId) { toast('Join a game first', 'warning'); return; }
+    if (!gameId) {
+        (window.SurvivorUI?.showToast || window.showToast)('Join a game first', 'warning');
+        return;
+    }
     await safeApiCall('/player/add_bot', { gameId });
 }
 
@@ -529,6 +559,9 @@ function wipeLocalGame() {
     // Header chips belong to the old game
     document.getElementById('gameChip')?.setAttribute('hidden', '');
     document.getElementById('playerChip')?.setAttribute('hidden', '');
+    const storyBtn = document.getElementById('storyBtn');
+    if (storyBtn) storyBtn.hidden = true;
+    window.SurvivorUI?.closeStory?.();
     document.body.removeAttribute('data-mode');
 
     const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
@@ -667,8 +700,21 @@ function showJoinForm() {
     }
 }
 
+/**
+ * Game codes are lowercase hex and the server matches them exactly. Phones
+ * auto-capitalize, people read codes aloud in capitals, and older share links
+ * upper-cased them — so normalise on read, whatever the field shows.
+ */
+function normalizeGameCode(code) {
+    return String(code || '').trim().toLowerCase();
+}
+
+// Same guard as _creatingGame: one Enter key / double tap must send ONE join.
+let _joiningGame = false;
+
 async function joinGame() {
-    const gameId = document.getElementById('gameCodeInput').value.trim();
+    if (_joiningGame) return;
+    const gameId = normalizeGameCode(document.getElementById('gameCodeInput').value);
     const name = document.getElementById('playerNameInput').value.trim();
     const colorBtn = document.querySelector('.color-btn.selected');
     const color = colorBtn ? (colorBtn.dataset.seat || colorBtn.dataset.color) : null;
@@ -684,13 +730,19 @@ async function joinGame() {
     const joinBody = { gameId, name, color };
     const discordUserId = window.SurvivorSettings?.discordUserId?.() || '';
     if (discordUserId) joinBody.discordUserId = discordUserId;
-    const result = await safeApiCall('/player/join', joinBody);
+    _joiningGame = true;
+    let result;
+    try {
+        result = await safeApiCall('/player/join', joinBody);
+    } finally {
+        _joiningGame = false;
+    }
 
     if (result && result.success) {
         if (window.SurvivorGame) {
             window.SurvivorGame.localGameState.gameId = gameId;
             window.SurvivorGame.localGameState.playerId = result.playerId;
-            window.SurvivorGame.fullGameState = result.gameState || {};
+            window.SurvivorGame.fullGameState = {};
         }
 
         // The code did its job — it doesn't need to keep surviving reloads
@@ -698,17 +750,24 @@ async function joinGame() {
         try { sessionStorage.removeItem(PENDING_JOIN_KEY); } catch (e) { /* ignore */ }
 
         if (window.SurvivorNetwork && window.SurvivorNetwork.socketManager) {
-            window.SurvivorNetwork.socketManager.connect(gameId);
+            window.SurvivorNetwork.socketManager.connect(gameId).catch(() => {
+                // Socket.IO keeps retrying on its own; the HTTP state below
+                // already drew the lobby.
+            });
+            // Turn notifications follow you into this game, not just the first one
+            window.SurvivorNetwork.resendPushSubscription?.();
         }
 
         document.getElementById('gameCode').textContent = gameId;
         document.getElementById('playerInfo').textContent = name;
 
-        localStorage.setItem('survivorState', JSON.stringify({
-            gameId: gameId,
-            playerId: result.playerId,
-            playerName: name
-        }));
+        try {
+            localStorage.setItem('survivorState', JSON.stringify({
+                gameId: gameId,
+                playerId: result.playerId,
+                playerName: name
+            }));
+        } catch (e) { /* private mode — this seat just won't survive a reload */ }
 
         // Remember who you are for next time (device identity defaults)
         if (window.SurvivorSettings) {
@@ -716,7 +775,6 @@ async function joinGame() {
             if (color) window.SurvivorSettings.set('identityColor', color);
         }
 
-        toast('Joined game successfully!', 'success');
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
         showScreen('lobbyScreen');
 
@@ -737,10 +795,20 @@ async function startFullGame() {
     console.log('Starting full game...');
     const result = await safeApiCall('/game/start_full', { gameId: localGameState.gameId });
     if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Game started successfully!', 'success');
+        // No toast: the narrator announces the start and the screen changes.
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
         showScreen('playingScreen');
     }
+}
+
+/**
+ * The in-app confirm (a styled, accessible dialog) — native confirm() blocks
+ * the page, can't be styled, and some home-screen web apps suppress it.
+ */
+function confirmThen(message, action) {
+    const ask = window.SurvivorUI?.showConfirm;
+    if (ask) ask(message, action);
+    else if (window.confirm(message)) action();
 }
 
 async function resetGame() {
@@ -748,15 +816,12 @@ async function resetGame() {
         (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
         return;
     }
-    if (!confirm('Are you sure you want to reset the game? This cannot be undone.')) return;
-
-    console.log('Resetting game...');
-    const result = await safeApiCall('/game/reset', { gameId: localGameState.gameId });
-    if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Game reset successfully!', 'success');
-        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
-        showScreen('lobbyScreen');
-    }
+    confirmThen('Reset the game? This cannot be undone.', async () => {
+        console.log('Resetting game...');
+        // Everyone (this phone included) hears game_reset and heads back to
+        // the start screen; the narrator says so.
+        await safeApiCall('/game/reset', { gameId: localGameState.gameId });
+    });
 }
 
 async function drawCard() {
@@ -768,8 +833,9 @@ async function drawCard() {
     }
     console.log('Drawing card...');
     const result = await safeApiCall('/turn/draw', { gameId, playerId });
-    if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Card drawn successfully!', 'success');
+    if (result && result.success && result.message) {
+        // The server says what you drew ("Drew Extra Vote — your turn is over")
+        (window.SurvivorUI?.showToast || window.showToast)(result.message, 'info');
     }
 }
 
@@ -810,10 +876,7 @@ async function advanceTurn() {
         return;
     }
     console.log('Advancing turn...');
-    const result = await safeApiCall('/turn/advance', { gameId: localGameState.gameId });
-    if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Turn advanced!', 'success');
-    }
+    await safeApiCall('/turn/advance', { gameId: localGameState.gameId });
 }
 
 async function revealVotes() {
@@ -824,9 +887,12 @@ async function revealVotes() {
     console.log('Revealing votes...');
     const result = await safeApiCall('/vote/reveal', { gameId: localGameState.gameId, playerId: localGameState.playerId });
     if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Votes revealed!', 'success');
-        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
-        showScreen('resultsScreen');
+        // The first tap only seals the box and opens the idol window (the
+        // narrator tells the table); the routing follows the state either way.
+        if (!result.idolWindowOpened) {
+            const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+            showScreen('resultsScreen');
+        }
     }
 }
 
@@ -859,7 +925,6 @@ async function completeTribal() {
     console.log('Completing tribal council...');
     const result = await safeApiCall('/tribal/complete', { gameId: localGameState.gameId, playerId: localGameState.playerId });
     if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Tribal council completed!', 'success');
         const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
         showScreen('playingScreen');
     }
@@ -870,15 +935,16 @@ async function resetTribal() {
         (window.SurvivorUI?.showToast || window.showToast)('No active game found', 'error');
         return;
     }
-    if (!confirm('Are you sure you want to reset the tribal council?')) return;
-
-    console.log('Resetting tribal council...');
-    const result = await safeApiCall('/tribal/reset', { gameId: localGameState.gameId, playerId: localGameState.playerId });
-    if (result && result.success) {
-        (window.SurvivorUI?.showToast || window.showToast)('Tribal council reset!', 'success');
-        const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
-        showScreen('playingScreen');
-    }
+    confirmThen('Reset this tribal council?', async () => {
+        console.log('Resetting tribal council...');
+        // The server refuses once any ballot is in the box — safeApiCall
+        // shows its reason.
+        const result = await safeApiCall('/tribal/reset', { gameId: localGameState.gameId, playerId: localGameState.playerId });
+        if (result && result.success) {
+            const showScreen = window.SurvivorUI?.showScreen || window.showScreen;
+            showScreen('playingScreen');
+        }
+    });
 }
 
 function recordWinner() {
@@ -886,10 +952,10 @@ function recordWinner() {
 }
 
 function startNewGame() {
-    if (confirm('Start a new game? Current game will be lost.')) {
-        localStorage.removeItem('survivorState');
+    confirmThen('Start a new game? This device leaves the current one.', () => {
+        try { localStorage.removeItem('survivorState'); } catch (e) { /* ignore */ }
         location.reload();
-    }
+    });
 }
 
 // Export functions for use in other modules
@@ -929,6 +995,8 @@ window.SurvivorGame = {
     getJury,
     
     // Game Actions
+    ensureCardDefinitions,
+    normalizeGameCode,
     safeApiCall,
     checkAccessGate,
     submitAccessCode,
@@ -992,6 +1060,7 @@ function applyJoinLink() {
         try { code = sessionStorage.getItem(PENDING_JOIN_KEY); } catch (e) { /* ignore */ }
     }
     if (!code) return;
+    code = normalizeGameCode(code);
 
     const joinForm = document.getElementById('joinForm');
     const gameCodeInput = document.getElementById('gameCodeInput');

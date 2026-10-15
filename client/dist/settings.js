@@ -93,19 +93,37 @@
         root.classList.toggle('text-large', get('textSize') === 'large');
         root.classList.toggle('text-xl', get('textSize') === 'xl');
         root.classList.toggle('reduce-motion', motionReduced());
+        // "Off" means full motion even when the OS asks for less — the
+        // stylesheet honours the OS preference unless this class is set.
+        root.classList.toggle('motion-full', get('reduceMotion') === 'off');
         syncWakeLock();
     }
 
     // ── Wake lock: hold the screen open while a game screen is showing ──
     let wakeLock = null;
+    let wakeRequest = null;   // the request in flight — never two at once
     let wakeWanted = false;
 
-    async function acquireWakeLock() {
-        if (!('wakeLock' in navigator)) return;
-        try {
-            wakeLock = await navigator.wakeLock.request('screen');
-            wakeLock.addEventListener('release', () => { wakeLock = null; });
-        } catch (e) { wakeLock = null; /* low battery or unsupported — fine */ }
+    function wakeShould() {
+        return wakeWanted && !!get('keepAwake') && document.visibilityState === 'visible';
+    }
+
+    function acquireWakeLock() {
+        if (!('wakeLock' in navigator) || wakeLock || wakeRequest) return;
+        wakeRequest = navigator.wakeLock.request('screen')
+            .then(lock => {
+                // Every screen change calls sync; the answer can arrive after
+                // we stopped wanting it. A lock nobody holds a reference to
+                // can never be released — let go of it right here instead.
+                if (!wakeShould()) {
+                    lock.release().catch(() => {});
+                    return;
+                }
+                wakeLock = lock;
+                lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+            })
+            .catch(() => { /* low battery or unsupported — fine */ })
+            .finally(() => { wakeRequest = null; });
     }
 
     /** ui.js calls this with true when entering game screens, false on leave. */
@@ -115,12 +133,25 @@
     }
 
     function syncWakeLock() {
-        const should = wakeWanted && get('keepAwake') && document.visibilityState === 'visible';
+        const should = wakeShould();
         if (should && !wakeLock) acquireWakeLock();
-        if (!should && wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+        if (!should && wakeLock) {
+            const lock = wakeLock;
+            wakeLock = null;
+            try { lock.release().catch(() => {}); } catch (e) { /* already gone */ }
+        }
     }
 
     document.addEventListener('visibilitychange', syncWakeLock);
+
+    // "Match device" follows the OS setting live, not just at load
+    try {
+        const mq = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+        if (mq) {
+            if (mq.addEventListener) mq.addEventListener('change', apply);
+            else if (mq.addListener) mq.addListener(apply);
+        }
+    } catch (e) { /* very old browser */ }
 
     window.SurvivorSettings = {
         get, set, reset, apply, toastMs, hapticsOn, soundOn, motionReduced,

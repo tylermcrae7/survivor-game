@@ -30,13 +30,12 @@
         (https:// or localhost), which this redirect never provided anyway.
     -->
 
-    <!-- Preconnect to external CDN -->
-    <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
-
-    <!-- Preload critical resources -->
-    <link rel="preload" href="styles.css?v=torchlit-3.17.0" as="style">
-    <link rel="preload" href="game.js?v=torchlit-3.17.0" as="script">
-    <link rel="preload" href="https://cdn.socket.io/4.7.5/socket.io.min.js" as="script" crossorigin="anonymous">
+    <!-- Every local reference below is ABSOLUTE. A page opened at /join/CODE
+         resolves "game.js" to /join/game.js — which is not a script — so a
+         relative src breaks share links whenever the page is served from that
+         path (as the service worker's cached shell used to be). -->
+    <link rel="preload" href="/styles.css?v=torchlit-3.17.0" as="style">
+    <link rel="preload" href="/game.js?v=torchlit-3.17.0" as="script">
 
     <!-- Tribal typography: Fraunces (ceremony) + Alegreya Sans (signage & body).
          display=swap so the offline PWA degrades to the serif/sans fallbacks. -->
@@ -45,31 +44,21 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Alegreya+Sans+SC:wght@500;700;800&display=swap">
 
     <!-- Critical CSS -->
-    <link rel="stylesheet" href="styles.css?v=torchlit-3.17.0">
+    <link rel="stylesheet" href="/styles.css?v=torchlit-3.17.0">
 
     <!-- Web App Manifest for PWA -->
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="/manifest.json">
 
     <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png?v=torchlit-3.17.0">
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png?v=torchlit-3.17.0">
 
-    <!-- Socket.IO with fallback -->
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+    <!-- Socket.IO client 4.7.5, vendored (the npm release's dist/socket.io.min.js,
+         byte-for-byte). Served from this origin so it can't drift, be swapped
+         on a third-party CDN, or fail to load while the island is reachable.
+         If it ever fails to load, network.js refuses to connect (rather than
+         faking a socket) and the app falls back to HTTP resyncs. -->
+    <script src="/socket.io.min.js?v=4.7.5"></script>
     <script>
-        // Socket.IO fallback detection
-        setTimeout(function() {
-            if (typeof io === 'undefined') {
-                console.warn('Socket.IO failed to load, features may be limited');
-                window.io = function() {
-                    return {
-                        on: function() {},
-                        emit: function() {},
-                        disconnect: function() {}
-                    };
-                };
-            }
-        }, 2000);
-
         // Emergency loading overlay removal
         setTimeout(() => {
             const loadingOverlay = document.getElementById('loading-overlay');
@@ -197,14 +186,6 @@
 
     <!-- Skip Navigation -->
     <a href="#app" class="skip-link sr-only" style="position:absolute;top:-40px;left:0;z-index:10000;background:var(--torch,#c17a2a);color:#fff;padding:8px 16px;transition:top 0.2s;" onfocus="this.style.top='0'" onblur="this.style.top='-40px'">Skip to content</a>
-
-    <!-- Phase Indicator (legacy element, kept for JS references; never shown) -->
-    <div id="phaseIndicator" class="phase-indicator-container" style="display: none;" aria-hidden="true">
-        <div class="phase-indicator">
-            <span class="phase-icon"></span>
-            <span class="phase-text">Lobby</span>
-        </div>
-    </div>
 
     <!-- Main App Container -->
     <div id="app" class="app-container">
@@ -358,7 +339,7 @@
                 <div id="joinForm" class="panel" style="display: none;">
                     <div class="form-group">
                         <label for="gameCodeInput">Game Code</label>
-                        <input type="text" id="gameCodeInput" placeholder="········" class="form-input" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                        <input type="text" id="gameCodeInput" placeholder="········" class="form-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
                     </div>
                     <div class="form-group">
                         <label for="playerNameInput">Your Name</label>
@@ -367,14 +348,14 @@
                     <div class="form-group">
                         <label>Your Buff</label>
                         <div id="colorSelection" class="color-grid" role="radiogroup" aria-label="Player color selection">
-                            <div class="color-btn touch-target" data-seat="red" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" aria-label="Red" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="teal" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" aria-label="Teal" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="blue" data-color="#45B7D1" style="background: #45B7D1;" role="radio" aria-label="Blue" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="orange" data-color="#F9844A" style="background: #F9844A;" role="radio" aria-label="Orange" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="green" data-color="#90BE6D" style="background: #90BE6D;" role="radio" aria-label="Green" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="yellow" data-color="#F9C74F" style="background: #F9C74F;" role="radio" aria-label="Yellow" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="purple" data-color="#9B5DE5" style="background: #9B5DE5;" role="radio" aria-label="Purple" aria-checked="false"></div>
-                            <div class="color-btn touch-target" data-seat="pink" data-color="#F06595" style="background: #F06595;" role="radio" aria-label="Pink" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="red" data-color="#FF6B6B" style="background: #FF6B6B;" role="radio" tabindex="0" aria-label="Red" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="teal" data-color="#4ECDC4" style="background: #4ECDC4;" role="radio" tabindex="-1" aria-label="Teal" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="blue" data-color="#45B7D1" style="background: #45B7D1;" role="radio" tabindex="-1" aria-label="Blue" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="orange" data-color="#F9844A" style="background: #F9844A;" role="radio" tabindex="-1" aria-label="Orange" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="green" data-color="#90BE6D" style="background: #90BE6D;" role="radio" tabindex="-1" aria-label="Green" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="yellow" data-color="#F9C74F" style="background: #F9C74F;" role="radio" tabindex="-1" aria-label="Yellow" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="purple" data-color="#9B5DE5" style="background: #9B5DE5;" role="radio" tabindex="-1" aria-label="Purple" aria-checked="false"></div>
+                            <div class="color-btn touch-target" data-seat="pink" data-color="#F06595" style="background: #F06595;" role="radio" tabindex="-1" aria-label="Pink" aria-checked="false"></div>
                         </div>
                     </div>
                     <button class="btn btn-success btn-enhanced touch-target" data-action="joinGame" style="width:100%">
@@ -452,16 +433,16 @@
                     <!-- The tribe: lives, card counts — and steal targets on your turn -->
                     <div id="livesTracker" class="lives-tracker" aria-label="Survivor Character Cards"></div>
 
+                    <div id="playerHand" class="hand-zone">
+                        <!-- Player's cards will be rendered here -->
+                    </div>
+
                     <!-- Where everyone is: camp places, and who slipped off together -->
                     <!-- No aria-live here on purpose: the whole panel is re-rendered
                          on every state update, so a live region would read the entire
                          camp aloud each time. movePlaceTo() announces the one move. -->
                     <div id="placesPanel" class="places-panel" style="display: none;"
                          role="region" aria-label="Places around camp">
-                    </div>
-
-                    <div id="playerHand" class="hand-zone">
-                        <!-- Player's cards will be rendered here -->
                     </div>
 
                     <div id="gameActions" class="game-actions action-bar">
@@ -573,9 +554,6 @@
                         <button class="btn btn-success btn-enhanced touch-target" data-action="completeTribal">
                             Continue Game
                         </button>
-                        <button class="btn btn-ghost btn-enhanced touch-target" data-action="resetTribal">
-                            Reset Tribal
-                        </button>
                     </div>
                 </div></div>
             </div>
@@ -638,7 +616,7 @@
     <!-- The Story So Far: slide-over history drawer -->
     <div id="storyOverlay" class="story-overlay" aria-hidden="true"></div>
     <aside id="storyDrawer" class="story-drawer" role="dialog" aria-modal="true"
-           aria-label="The story so far" aria-hidden="true">
+           aria-label="The story so far" aria-hidden="true" inert>
         <div class="story-head">
             <h3><svg class="icon" aria-hidden="true"><use href="#i-scroll"></use></svg> The Story So Far</h3>
             <button class="chip chip-btn" data-action="closeStory" aria-label="Close history">
@@ -647,21 +625,6 @@
         </div>
         <div id="storyList" class="story-list"></div>
     </aside>
-
-    <!-- Card Tooltip (Popover API) -->
-    <div id="cardTooltip" class="card-tooltip" popover>
-        <div class="card-tooltip-arrow bottom"></div>
-        <div class="card-tooltip-header">
-            <span class="card-tooltip-name"></span>
-            <span class="card-tooltip-category"></span>
-        </div>
-        <div class="card-tooltip-description"></div>
-        <div class="card-tooltip-timing">
-            <span class="card-tooltip-timing-icon"></span>
-            <span class="card-tooltip-timing-text">Playable during:</span>
-        </div>
-        <div class="card-tooltip-phases"></div>
-    </div>
 
     <!-- Screen Reader Announcements -->
     <div id="srAnnouncer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
@@ -679,12 +642,12 @@
     </div>
 
     <!-- JavaScript Modules (with defer for proper loading order) -->
-    <script src="settings.js?v=torchlit-3.17.0" defer></script>
-    <script src="game.js?v=torchlit-3.17.0" defer></script>
-    <script src="network.js?v=torchlit-3.17.0" defer></script>
-    <script src="ui.js?v=torchlit-3.17.0" defer></script>
-    <script src="state-manager.js?v=torchlit-3.17.0" defer></script>
-    <script src="narrator.js?v=torchlit-3.17.0" defer></script>
+    <script src="/settings.js?v=torchlit-3.17.0" defer></script>
+    <script src="/game.js?v=torchlit-3.17.0" defer></script>
+    <script src="/network.js?v=torchlit-3.17.0" defer></script>
+    <script src="/ui.js?v=torchlit-3.17.0" defer></script>
+    <script src="/state-manager.js?v=torchlit-3.17.0" defer></script>
+    <script src="/narrator.js?v=torchlit-3.17.0" defer></script>
 
     <!-- Slim Initialization Script -->
     <script>
@@ -694,18 +657,33 @@
 
         // ── Module Readiness ──
         const _modules = { game: false, network: false, ui: false, stateManager: false };
+        // _initApp() must run exactly once. Every module reports ready twice
+        // (its own DOMContentLoaded callback and the 100ms sweep below), and
+        // each report past "all ready" used to re-run _initApp — five copies of
+        // every listener, so one Enter sent five joins / five access-code tries.
+        let _booted = false;
 
+        // Buttons stay disabled until the modules are ready. Only the ones this
+        // boot disabled are re-enabled, and no inline opacity is written — the
+        // stylesheet's :disabled look must keep working for buttons that are
+        // disabled on purpose.
         function _disableButtons() {
             document.querySelectorAll('button').forEach(btn => {
-                if (!btn.classList.contains('color-btn')) { btn.disabled = true; btn.style.opacity = '0.6'; }
+                if (btn.classList.contains('color-btn') || btn.disabled) return;
+                btn.disabled = true;
+                btn.dataset.bootDisabled = '1';
             });
         }
         function _enableButtons() {
-            document.querySelectorAll('button').forEach(btn => { btn.disabled = false; btn.style.opacity = '1'; });
+            document.querySelectorAll('button[data-boot-disabled]').forEach(btn => {
+                btn.disabled = false;
+                delete btn.dataset.bootDisabled;
+            });
         }
 
-        // Fallback toast (replaced by ui.js showToast once loaded)
+        // Fallback toast (hands off to ui.js's showToast once that has loaded)
         window.showToast = function(msg, type) {
+            if (window.SurvivorUI?.showToast) return window.SurvivorUI.showToast(msg, type);
             console.log(`[${(type||'info').toUpperCase()}] ${msg}`);
             const t = document.createElement('div');
             t.className = 'toast toast-' + (type||'info');
@@ -721,9 +699,12 @@
             if (!o) {
                 o = document.createElement('div'); o.id = 'app-loading';
                 o.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:oklch(0.09 0.012 175/0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;';
-                o.innerHTML = '<div class="loading-spinner"></div><div class="loading-text">' + (msg||'Loading...') + '</div>';
+                const spinner = document.createElement('div'); spinner.className = 'loading-spinner';
+                const text = document.createElement('div'); text.className = 'loading-text';
+                o.append(spinner, text);
                 document.body.appendChild(o);
             }
+            o.querySelector('.loading-text').textContent = msg || 'Loading...';
             o.style.display = 'flex';
         };
         window.hideLoading = function() {
@@ -732,16 +713,21 @@
         };
 
         function checkModuleReady(name) {
+            if (_modules[name]) return;
             _modules[name] = true;
             console.log(name + ' module ready');
-            if (Object.values(_modules).every(Boolean)) {
-                console.log('All modules ready');
-                window.appReady = true;
-                _enableButtons();
-                window.hideLoading();
-                document.getElementById('loading-overlay').style.display = 'none';
-                _initApp();
-            }
+            if (Object.values(_modules).every(Boolean)) _boot('All modules ready');
+        }
+
+        function _boot(reason) {
+            if (_booted) return;
+            _booted = true;
+            console.log(reason);
+            window.appReady = true;
+            _enableButtons();
+            window.hideLoading();
+            document.getElementById('loading-overlay').style.display = 'none';
+            _initApp();
         }
 
         // ── Event Delegation (data-action) ──
@@ -805,13 +791,31 @@
         })(id);
 
         // ── State Update ──
+        // The one door every game state comes through (socket pushes, HTTP
+        // responses, resyncs). It only lets in:
+        //   · the game this device is in — a push or a slow response for a game
+        //     we just left (or before we joined one) must not drag us back in;
+        //   · states no older than the one on screen — an HTTP answer generated
+        //     before the last socket push can arrive after it.
         window.updateGameState = function(state) {
+            if (!state || typeof state !== 'object') return;
+            const G = window.SurvivorGame;
+            const myGameId = G?.localGameState?.gameId;
+            if (!myGameId) return;
+            if (state.id && state.id !== myGameId) return;
+            const current = G.fullGameState;
+            if (current && current.id === state.id &&
+                typeof state.lastActivity === 'number' && typeof current.lastActivity === 'number' &&
+                state.lastActivity < current.lastActivity) {
+                console.log('Ignoring a stale game state');
+                return;
+            }
             if (window.SurvivorStateManager?.updateState) window.SurvivorStateManager.updateState(state, 'server');
-            if (window.SurvivorGame) window.SurvivorGame.fullGameState = state;
+            G.fullGameState = state;
             if (window.SurvivorUI) window.SurvivorUI.updateCurrentScreen(state);
         };
 
-        // ── Initialization ──
+        // ── Initialization (runs once — see _booted) ──
         function _initApp() {
             // Access gate first: when the server is code-locked and this browser
             // has no cookie yet, boot into the gate screen instead of the app.
@@ -825,13 +829,32 @@
                 }
             }
 
-            // Color selection
-            document.querySelectorAll('.color-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('.color-btn').forEach(b => { b.classList.remove('selected'); b.setAttribute('aria-checked', 'false'); });
-                    this.classList.add('selected');
-                    this.setAttribute('aria-checked', 'true');
-                    if (window.SurvivorGame) window.SurvivorGame.localGameState.playerColor = this.dataset.color;
+            // Color selection — a radio group: one tab stop (the chosen buff),
+            // arrows move the choice, Space/Enter pick.
+            const swatches = [...document.querySelectorAll('#colorSelection .color-btn')];
+            const pickSwatch = (btn, focus) => {
+                swatches.forEach(b => {
+                    b.classList.remove('selected');
+                    b.setAttribute('aria-checked', 'false');
+                    b.tabIndex = -1;
+                });
+                btn.classList.add('selected');
+                btn.setAttribute('aria-checked', 'true');
+                btn.tabIndex = 0;
+                if (focus) btn.focus();
+                if (window.SurvivorGame) window.SurvivorGame.localGameState.playerColor = btn.dataset.color;
+            };
+            swatches.forEach((btn, i) => {
+                btn.addEventListener('click', () => pickSwatch(btn, false));
+                btn.addEventListener('keydown', (e) => {
+                    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+                    if (step) {
+                        e.preventDefault();
+                        pickSwatch(swatches[(i + step + swatches.length) % swatches.length], true);
+                    } else if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        pickSwatch(btn, false);
+                    }
                 });
             });
 
@@ -898,7 +921,11 @@
             // Deep link
             if (window.SurvivorUI?.handleDeepLink) window.SurvivorUI.handleDeepLink();
 
-            // Saved state reconnection
+            // Saved state reconnection (+ retries while it can't reach the server)
+            window.addEventListener('online', () => { if (_rejoinPending) _checkSaved(); });
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && _rejoinPending) _checkSaved();
+            });
             _checkSaved();
 
             // Touch feedback
@@ -909,28 +936,104 @@
             });
         }
 
+        // ── Saved seat: rejoin on cold start ──
+        // The seat is forgotten ONLY when the server definitively says it is
+        // gone (400/404 from /api/player/rejoin). A 502 from the tunnel, a
+        // server mid-bounce, a 429, the access gate, a timeout or no network at
+        // all keep it, and the rejoin is retried — on a backoff while the page
+        // is in front, and whenever the device comes back online or to the
+        // foreground. It used to be deleted on ANY failure: one cold start
+        // during a deploy and the player's seat was gone for good.
+        let _rejoinPending = false;
+        let _rejoinInFlight = false;
+        let _rejoinRetryTimer = null;
+        let _rejoinRetryDelay = 3000;
+
+        function _forgetSaved() {
+            try { localStorage.removeItem('survivorState'); } catch (e) { /* ignore */ }
+        }
+
+        function _scheduleRejoinRetry() {
+            if (_rejoinRetryTimer) return;
+            _rejoinRetryTimer = setTimeout(() => {
+                _rejoinRetryTimer = null;
+                if (_rejoinPending && document.visibilityState === 'visible') _checkSaved();
+            }, _rejoinRetryDelay);
+            _rejoinRetryDelay = Math.min(_rejoinRetryDelay * 2, 30000);
+        }
+
         async function _checkSaved() {
-            const saved = localStorage.getItem('survivorState');
-            if (!saved) return;
+            if (_rejoinInFlight) return;
+            let s = null;
+            try { s = JSON.parse(localStorage.getItem('survivorState') || 'null'); }
+            catch (e) { _forgetSaved(); _rejoinPending = false; return; }   // unreadable
+            if (!s || !s.gameId || !s.playerId) { _rejoinPending = false; return; }
+            const G = window.SurvivorGame;
+            if (!G) return;
+            // Joined a game by hand in the meantime — nothing left to restore.
+            if (G.localGameState.gameId) { _rejoinPending = false; return; }
+
+            _rejoinInFlight = true;
+            const ui = window.SurvivorUI;
+            (ui?.showLoading || window.showLoading)('Finding your seat at the fire…');
+            let status = 0, result = null;
             try {
-                const s = JSON.parse(saved);
-                if (!s.gameId || !s.playerId) return;
-                const safeApiCall = window.SurvivorGame?.safeApiCall;
-                if (!safeApiCall) return;
+                const body = { gameId: s.gameId, playerId: s.playerId };
                 // Carry the saved Discord link back with us — see GameAPI.rejoinGame
-                const _rejoinBody = { gameId: s.gameId, playerId: s.playerId };
-                const _discord = window.SurvivorSettings?.discordUserId?.() || '';
-                if (_discord) _rejoinBody.discordUserId = _discord;
-                const result = await safeApiCall('/player/rejoin', _rejoinBody);
-                if (result?.success) {
-                    if (window.SurvivorGame) { window.SurvivorGame.localGameState.gameId = s.gameId; window.SurvivorGame.localGameState.playerId = s.playerId; }
-                    document.getElementById('gameCode').textContent = s.gameId;
-                    document.getElementById('playerInfo').textContent = s.playerName || result.playerName || 'Player';
-                    window.showToast('Reconnected to game!', 'success');
-                    window.showScreen('lobbyScreen');
-                    if (result.gameState) window.updateGameState(result.gameState);
-                } else { localStorage.removeItem('survivorState'); }
-            } catch (e) { localStorage.removeItem('survivorState'); }
+                const discord = window.SurvivorSettings?.discordUserId?.() || '';
+                if (discord) body.discordUserId = discord;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 10000);
+                try {
+                    const response = await fetch(window.API_URL + '/api/player/rejoin', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                        cache: 'no-store',
+                        signal: controller.signal
+                    });
+                    status = response.status;
+                    result = await response.json().catch(() => null);
+                } finally {
+                    clearTimeout(timer);
+                }
+            } catch (e) {
+                status = 0;   // offline, tunnel down, timed out
+            } finally {
+                _rejoinInFlight = false;
+                (ui?.hideLoading || window.hideLoading)();
+            }
+
+            if (status === 400 || status === 404) {
+                // The server looked and the seat (or the whole game) is gone.
+                _rejoinPending = false;
+                _forgetSaved();
+                return;
+            }
+            if (!(status >= 200 && status < 300) || !result?.success) {
+                _rejoinPending = true;
+                console.warn('Rejoin did not reach the server (status ' + status + ') — keeping the seat, will retry');
+                // The gate (401) waits for the code instead — unlocking reloads.
+                if (status !== 401) _scheduleRejoinRetry();
+                return;
+            }
+            // A manual join may have finished while we were waiting.
+            if (G.localGameState.gameId) { _rejoinPending = false; return; }
+
+            _rejoinPending = false;
+            _rejoinRetryDelay = 3000;
+            G.localGameState.gameId = s.gameId;
+            G.localGameState.playerId = s.playerId;
+            document.getElementById('gameCode').textContent = s.gameId;
+            document.getElementById('playerInfo').textContent = s.playerName || result.playerName || 'Player';
+            window.showToast('Reconnected to game!', 'success');
+            window.showScreen('lobbyScreen');
+            if (result.gameState) window.updateGameState(result.gameState);
+            const net = window.SurvivorNetwork;
+            // Open the socket now — it used to depend on a one-shot timer that
+            // fired before a slow rejoin finished, leaving this phone deaf.
+            net?.socketManager?.connect(s.gameId).catch(() => { /* Socket.IO keeps retrying */ });
+            net?.resendPushSubscription?.();
         }
 
         // ── DOMContentLoaded ──
@@ -944,19 +1047,18 @@
                 if (window.SurvivorStateManager) checkModuleReady('stateManager');
             }, 100);
             setTimeout(() => {
-                if (!window.appReady) {
+                if (!_booted) {
                     console.warn('Fallback: enabling basic functionality');
-                    window.appReady = true;
-                    _enableButtons(); window.hideLoading();
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    _initApp();
+                    _boot('Fallback boot after 5s');
                 }
             }, 5000);
         });
 
         // ── Error Handlers ──
         window.addEventListener('error', e => { if (e.error) window.showToast('Error: ' + e.error.message, 'error'); });
-        window.addEventListener('unhandledrejection', e => window.showToast('Connection error occurred', 'error'));
+        // A rejected promise nobody awaited: the API layer has already told the
+        // player whatever they need to know — a second, vaguer toast only confused.
+        window.addEventListener('unhandledrejection', e => console.warn('Unhandled rejection:', e.reason));
 
         // ── Module Ready Callbacks ──
         window.onGameModuleReady = () => checkModuleReady('game');
@@ -967,17 +1069,84 @@
 
     <!-- Service Worker Registration -->
     <script>
-        if ('serviceWorker' in navigator) {
+        (function () {
+            if (!('serviceWorker' in navigator)) return;
+            const sw = navigator.serviceWorker;
+
+            // A page that loaded without a worker gets one claimed on first
+            // install — that controllerchange is not an update.
+            let hadController = !!sw.controller;
+            let reloading = false;
+            let updateWaiting = false;
+
+            // Which build this page's code came from. App code is fetched
+            // network-first, so a page opened after a deploy already runs the
+            // new build even though the new worker only takes over a moment
+            // later — no reason to reload it. /api/ping is outside the gate.
+            async function serverBuild() {
+                try {
+                    const r = await fetch('/api/ping', { cache: 'no-store' });
+                    return r.ok ? ((await r.json()).build || null) : null;
+                } catch (e) { return null; }
+            }
+            const loadedBuild = serverBuild();
+
+            // Reload into a new version only where nothing is lost: the start
+            // or lobby screen, nothing being typed, no dialog open.
+            function safeToReload() {
+                const G = window.SurvivorGame;
+                const phase = G?.fullGameState?.phase;
+                if (G?.localGameState?.gameId && phase && phase !== 'lobby') return false;
+                const screen = window.SurvivorUI?.currentScreen?.() || G?.localGameState?.currentScreen || 'startScreen';
+                if (!['startScreen', 'lobbyScreen', 'accessScreen'].includes(screen)) return false;
+                const el = document.activeElement;
+                if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.value) return false;
+                if (document.querySelector('dialog[open]')) return false;
+                return true;
+            }
+
+            function reloadIntoNewVersion() {
+                if (reloading) return;
+                reloading = true;
+                window.location.reload();
+            }
+
+            sw.addEventListener('controllerchange', async () => {
+                if (!hadController) { hadController = true; return; }
+                const [mine, now] = await Promise.all([loadedBuild, serverBuild()]);
+                if (mine && now && mine === now) return;   // already running it
+                if (safeToReload()) { reloadIntoNewVersion(); return; }
+                if (!updateWaiting) {
+                    updateWaiting = true;
+                    window.showToast('A new version of Survivor is ready — it loads next time you open the app', 'info');
+                }
+            });
+
+            // The service worker re-subscribed this device for push — tell the game.
+            sw.addEventListener('message', (event) => {
+                if (event.data && event.data.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+                    window.SurvivorNetwork?.resendPushSubscription?.();
+                }
+            });
+
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('sw.js')
+                sw.register('/sw.js')
                     .then(function(registration) {
+                        if (!registration) return;
                         console.log('✅ Service Worker registered');
+                        // An installed PWA can stay open for days; look for a
+                        // new build every time it comes back to the front.
+                        document.addEventListener('visibilitychange', () => {
+                            if (document.visibilityState !== 'visible') return;
+                            if (updateWaiting && safeToReload()) { reloadIntoNewVersion(); return; }
+                            registration.update().catch(() => { /* offline — next time */ });
+                        });
                     })
                     .catch(function(error) {
-                        console.log('❌ Service Worker registration failed');
+                        console.log('❌ Service Worker registration failed', error);
                     });
             });
-        }
+        })();
     </script>
 </body>
 </html>

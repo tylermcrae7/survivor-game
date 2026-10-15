@@ -95,7 +95,8 @@ def jsfill(page, sel, value):
 
 
 def pointer_tap(page, sel, text=None):
-    """Dispatch a real pointerup (vote targets listen for pointerup, not click)."""
+    """Dispatch pointerup then click — vote targets act on the click (a bare
+    pointerup used to cast through the chooser it had just opened)."""
     return page.evaluate(
         """([sel, text]) => {
             const els = [...document.querySelectorAll(sel)];
@@ -622,8 +623,9 @@ def run_checks():
             Object.values(state.players).forEach(p => { p.isEliminated = false; });
             window.SurvivorUI.renderVoteTargets(state);
         }""")
-        # The tap handler binds pointerup (not click) — dispatch the real event.
-        ana.locator('.vote-target').first.dispatch_event('pointerup')
+        # Vote targets act on click (+ Enter/Space): pointerup let the touch's
+        # synthesized click land on the vote-count chooser it had just opened.
+        ana.locator('.vote-target').first.dispatch_event('click')
         check("control the vote: two mandatory ballots open the how-many chooser",
               wait_for(lambda: ana.locator('.extra-vote-option').count() >= 1, 5) is not None)
         check("control the vote: the split option is offered without any Extra Vote",
@@ -643,7 +645,7 @@ def run_checks():
             me.hasVoted = false;
             window.SurvivorUI.renderVoteTargets(state);
         }""")
-        ana.locator('.vote-target').first.dispatch_event('pointerup')
+        ana.locator('.vote-target').first.dispatch_event('click')
         wait_for(lambda: ana.locator('.extra-vote-option').count() >= 1, 5)
         combined_text = ana.locator('#modalContainer, .modal, body').first.inner_text()
         check("control the vote + extra: the chooser names both counts",

@@ -1,412 +1,218 @@
 /**
  * Survivor App - Service Worker
- * Provides offline functionality and performance optimization
+ *
+ * How a deploy reaches a phone:
+ *   1. The server serves THIS file through a dedicated route that replaces
+ *      every `__BUILD__` with a hash of the static files (it changes on every
+ *      deploy) and sends `Cache-Control: no-cache`. New bytes → the browser
+ *      installs a new worker on its next update check.
+ *   2. The new worker precaches under a new cache name, skips waiting, and on
+ *      activate deletes every older survivor-* cache and claims the pages.
+ *   3. Independently of 1–2, the app's own code (HTML/JS/CSS) is fetched
+ *      NETWORK-FIRST, so even a page still controlled by an old worker gets the
+ *      new files from the server. The cache is only an offline fallback.
+ *
+ * The old worker served game.js/ui.js/styles.css cache-first under a cache name
+ * nobody remembered to bump, so phones kept running code that had been fixed
+ * on the server for weeks. Do not make app code cache-first again.
  */
 
-// Bump these on every client change — the static cache is cache-first, so a stale
-// cache name means installed PWAs keep running the old game.js/ui.js/styles.css.
-const CACHE_NAME = 'survivor-v3.17.0';
-const STATIC_CACHE = 'survivor-static-v3.17.0';
-const DYNAMIC_CACHE = 'survivor-dynamic-v3.17.0';
+const BUILD = '__BUILD__';
+const STATIC_CACHE = `survivor-static-${BUILD}`;
 
-// Assets to cache immediately
+// Precached so the app shell still opens offline. Paths are absolute.
 const STATIC_ASSETS = [
     '/',
-    '/index-optimized.html',
     '/styles.css',
+    '/settings.js',
     '/game.js',
     '/network.js',
     '/ui.js',
-    '/settings.js',
-    '/narrator.js',
     '/state-manager.js',
+    '/narrator.js',
+    '/socket.io.min.js',
     '/manifest.json',
     '/icon-192x192.png',
-    '/icon-512x512.png',
-    'https://cdn.socket.io/4.7.5/socket.io.min.js'
+    '/icon-512x512.png'
 ];
 
-// API endpoints that can be cached
-const CACHEABLE_API_ENDPOINTS = [
-    '/api/cards',
-    '/api/winners'
-];
+// App code: always try the server first; the cache is the offline fallback.
+const NETWORK_FIRST_EXT = ['.js', '.css', '.html', '.json', '.webmanifest'];
+// Images only change with a deploy, and every deploy gets a fresh cache.
+const CACHE_FIRST_EXT = ['.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp'];
 
-// Maximum cache age in milliseconds
-const CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
-const DYNAMIC_CACHE_MAX_ITEMS = 50;
+/** A response we are willing to keep: a plain, same-origin 200 that was not redirected. */
+function cacheable(response) {
+    return !!response && response.ok && !response.redirected && response.type === 'basic';
+}
 
-/**
- * Service Worker Installation
- */
+// ── Install: precache what we can, then take over without waiting ──
 self.addEventListener('install', event => {
-    console.log('🔧 Service Worker installing...');
-    
-    event.waitUntil(
-        caches.open(STATIC_CACHE)
-            .then(cache => {
-                console.log('📦 Caching static assets');
-                return cache.addAll(STATIC_ASSETS);
-            })
-            .then(() => {
-                console.log('✅ Service Worker installed');
-                return self.skipWaiting();
-            })
-            .catch(error => {
-                console.error('❌ Service Worker installation failed:', error);
-            })
-    );
+    event.waitUntil((async () => {
+        const cache = await caches.open(STATIC_CACHE);
+        // allSettled: one missing icon must not abort the whole install (the
+        // old addAll did, which left the previous worker — and its stale code —
+        // in charge). `cache: 'reload'` skips the HTTP cache so the new build
+        // is what lands in the new cache.
+        await Promise.allSettled(STATIC_ASSETS.map(async url => {
+            const response = await fetch(new Request(url, { cache: 'reload' }));
+            if (cacheable(response)) await cache.put(url, response);
+        }));
+    })());
+    self.skipWaiting();
 });
 
-/**
- * Service Worker Activation
- */
+// ── Activate: drop every older cache and claim the open pages ──
 self.addEventListener('activate', event => {
-    console.log('🚀 Service Worker activating...');
-    
-    event.waitUntil(
-        Promise.all([
-            // Clean up old caches
-            cleanupOldCaches(),
-            // Take control of all clients
-            self.clients.claim()
-        ]).then(() => {
-            console.log('✅ Service Worker activated');
-        })
-    );
+    event.waitUntil((async () => {
+        const names = await caches.keys();
+        await Promise.all(names
+            .filter(name => name.startsWith('survivor-') && name !== STATIC_CACHE)
+            .map(name => caches.delete(name)));
+        await self.clients.claim();
+    })());
 });
 
-/**
- * Fetch Event Handler
- */
+// ── Fetch routing ──
 self.addEventListener('fetch', event => {
-    const { request } = event;
+    const request = event.request;
+    if (request.method !== 'GET') return;
+
     const url = new URL(request.url);
-    
-    // Skip non-GET requests
-    if (request.method !== 'GET') {
+    // Cross-origin (fonts) — the browser handles it; nothing here to go stale.
+    if (url.origin !== self.location.origin) return;
+
+    const path = url.pathname;
+    // Live data and the share-link redirect are never the worker's business:
+    //   /api/      game state must come from the server, every time
+    //   /socket.io/ the long-polling transport (NOT /socket.io.min.js — the
+    //               vendored client is app code and must work offline)
+    //   /join/CODE  a 302 to /?join=CODE — a redirected response must not be
+    //               handed to a navigation or cached as the app shell
+    if (path.startsWith('/api/') || path.startsWith('/socket.io/') || path.startsWith('/join/')) return;
+
+    if (request.mode === 'navigate') {
+        event.respondWith(handleNavigation(event));
         return;
     }
-    
-    // Skip Socket.IO requests
-    if (url.pathname.includes('socket.io')) {
-        return;
+
+    const lower = path.toLowerCase();
+    if (CACHE_FIRST_EXT.some(ext => lower.endsWith(ext))) {
+        event.respondWith(cacheFirst(request));
+    } else if (NETWORK_FIRST_EXT.some(ext => lower.endsWith(ext))) {
+        event.respondWith(networkFirst(request));
     }
-    
-    // Handle different types of requests.
-    // API first: game state must NEVER be served cache-first.
-    if (isAPIRequest(url)) {
-        event.respondWith(handleAPIRequest(request));
-    } else if (isStaticAsset(url)) {
-        event.respondWith(handleStaticAsset(request));
-    } else if (isNavigationRequest(request)) {
-        event.respondWith(handleNavigationRequest(request));
-    } else {
-        event.respondWith(handleDynamicRequest(request));
-    }
+    // Anything else: no respondWith — straight to the network.
 });
 
 /**
- * Background Sync (for offline actions)
+ * Network first for app code. `cache: 'no-cache'` makes the browser revalidate
+ * with the server (a cheap 304 when nothing changed) instead of trusting its
+ * HTTP cache. Falls back to the cache when offline or when the tunnel answers
+ * with an error page (502 during a server bounce).
  */
-self.addEventListener('sync', event => {
-    console.log('🔄 Background sync triggered:', event.tag);
-    
-    if (event.tag === 'survivor-offline-actions') {
-        event.waitUntil(syncOfflineActions());
-    }
-});
-
-// (The real Web Push handlers live at the bottom of this file — a legacy
-// "future feature" push listener here used to double-notify on every send.)
-
-/**
- * Helper Functions
- */
-
-function isStaticAsset(url) {
-    // NEVER treat an API call as a static asset — those are network-first.
-    if (isAPIRequest(url)) return false;
-
-    const staticExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.json'];
-    if (staticExtensions.some(ext => url.pathname.endsWith(ext))) return true;
-
-    // Match precached entries by exact pathname (for same-origin) or exact href
-    // (for the CDN entry). The old `url.href.includes(asset)` test matched EVERY
-    // request because STATIC_ASSETS contains '/', so live game state was served
-    // cache-first and every resync returned permanently stale data.
-    return STATIC_ASSETS.some(asset =>
-        asset.startsWith('http') ? url.href === asset : url.pathname === asset
-    );
-}
-
-function isAPIRequest(url) {
-    return url.pathname.startsWith('/api/');
-}
-
-function isNavigationRequest(request) {
-    const accept = request.headers.get('accept') || '';
-    return request.mode === 'navigate' ||
-           (request.method === 'GET' && accept.includes('text/html'));
-}
-
-/**
- * Static Asset Handler (Cache First Strategy)
- */
-async function handleStaticAsset(request) {
+async function networkFirst(request) {
     try {
-        // Try cache first
-        const cachedResponse = await caches.match(request);
-        if (cachedResponse) {
-            return cachedResponse;
+        const response = await fetch(new Request(request, { cache: 'no-cache' }));
+        if (cacheable(response)) {
+            const copy = response.clone();
+            caches.open(STATIC_CACHE)
+                .then(cache => cache.put(stripSearch(request.url), copy))
+                .catch(() => {});
+            return response;
         }
-        
-        // Fetch from network and cache
-        const networkResponse = await fetch(request);
-        if (networkResponse.ok) {
-            const cache = await caches.open(STATIC_CACHE);
-            cache.put(request, networkResponse.clone());
-        }
-        
-        return networkResponse;
+        if (response.ok) return response;
+        const cached = await matchCached(request);
+        return cached || response;
     } catch (error) {
-        console.error('Static asset fetch failed:', error);
-        // Return offline fallback if available
-        return new Response('Offline', { status: 503 });
+        const cached = await matchCached(request);
+        if (cached) return cached;
+        throw error;
     }
 }
 
-/**
- * API Request Handler (Network First with Cache Fallback)
- */
-async function handleAPIRequest(request) {
-    let networkResponse;
+async function cacheFirst(request) {
+    const cached = await matchCached(request);
+    if (cached) return cached;
+    const response = await fetch(request);
+    if (cacheable(response)) {
+        const copy = response.clone();
+        caches.open(STATIC_CACHE)
+            .then(cache => cache.put(stripSearch(request.url), copy))
+            .catch(() => {});
+    }
+    return response;
+}
 
+/**
+ * Navigations: network first. Only the app shell ('/' and the file behind it)
+ * is kept, under the '/' key, so ?join=CODE visits don't pile up in the cache.
+ */
+async function handleNavigation(event) {
+    const url = new URL(event.request.url);
+    const isShell = url.pathname === '/' || url.pathname === '/index-optimized.html';
     try {
-        // Try network first, bypassing the HTTP cache entirely — game state changes
-        // several times a second and a reused response silently desyncs the board.
-        networkResponse = await fetch(new Request(request, { cache: 'no-store' }));
-    } catch (error) {
-        // The request never reached the server — this is the only real offline case.
-        console.log('API request failed, trying cache:', error.message);
-
-        const cachedResponse = await caches.match(request);
-        if (cachedResponse) {
-            return cachedResponse;
+        const response = await fetch(event.request);
+        if (isShell && cacheable(response)) {
+            const copy = response.clone();
+            caches.open(STATIC_CACHE).then(cache => cache.put('/', copy)).catch(() => {});
         }
-
-        return new Response(JSON.stringify({
-            success: false,
-            message: 'Offline - this action will be retried when connection is restored',
-            offline: true
-        }), {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
-
-    // Cache successful GET requests for certain endpoints
-    if (networkResponse.ok && CACHEABLE_API_ENDPOINTS.some(endpoint => request.url.includes(endpoint))) {
-        const cache = await caches.open(DYNAMIC_CACHE);
-        cache.put(request, networkResponse.clone());
-    }
-
-    // The server answered. Pass it through even when it's a 404 or a 500 — a wiped
-    // game must read as "gone", not as "you're offline".
-    return networkResponse;
-}
-
-/**
- * Navigation Request Handler (Cache First with Network Fallback)
- */
-async function handleNavigationRequest(request) {
-    try {
-        // Try cache first for the main app
-        const cachedResponse = await caches.match('/index-optimized.html') || 
-                              await caches.match('/');
-        
-        if (cachedResponse) {
-            return cachedResponse;
-        }
-        
-        // Try network
-        return await fetch(request);
+        if (response.ok || response.type === 'opaqueredirect') return response;
+        // The server (or the tunnel in front of it) answered with an error page —
+        // the cached shell is more useful than Cloudflare's 502.
+        return (await caches.match('/', { ignoreSearch: true })) || response;
     } catch (error) {
-        // Return offline page
-        return new Response(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Survivor - Offline</title>
-                <meta name="viewport" content="width=device-width,initial-scale=1">
-                <style>
-                    body { 
-                        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        min-height: 100vh;
-                        margin: 0;
-                        background: #0e1916;
-                        color: #f7f5ef;
-                        text-align: center;
-                    }
-                    .offline-content {
-                        max-width: 400px;
-                        padding: 2rem;
-                    }
-                    .btn {
-                        background: #e07a2e;
-                        color: white;
-                        border: none;
-                        padding: 1rem 2rem;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        margin-top: 1rem;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="offline-content">
-                    <h1>🏝️ Survivor</h1>
-                    <p>You're currently offline. Please check your connection and try again.</p>
-                    <button class="btn" onclick="location.reload()">Retry</button>
-                </div>
-            </body>
-            </html>
-        `, {
-            headers: { 'Content-Type': 'text/html' }
-        });
+        return (await caches.match('/', { ignoreSearch: true })) || offlinePage();
     }
 }
 
-/**
- * Dynamic Request Handler (Network First)
- */
-async function handleDynamicRequest(request) {
-    try {
-        const networkResponse = await fetch(request);
-        
-        if (networkResponse.ok) {
-            // Cache in dynamic cache with size limit
-            const cache = await caches.open(DYNAMIC_CACHE);
-            await limitCacheSize(cache, DYNAMIC_CACHE_MAX_ITEMS);
-            cache.put(request, networkResponse.clone());
-        }
-        
-        return networkResponse;
-    } catch (error) {
-        // Try cache fallback
-        const cachedResponse = await caches.match(request);
-        return cachedResponse || new Response('Offline', { status: 503 });
-    }
+function matchCached(request) {
+    // Pages reference assets with ?v=... — match the stored copy regardless.
+    return caches.match(request, { ignoreSearch: true });
 }
 
-/**
- * Cache Management
- */
-async function cleanupOldCaches() {
-    const cacheNames = await caches.keys();
-    const oldCaches = cacheNames.filter(name => 
-        name !== STATIC_CACHE && 
-        name !== DYNAMIC_CACHE && 
-        name.startsWith('survivor-')
-    );
-    
-    return Promise.all(
-        oldCaches.map(cacheName => {
-            console.log('🗑️ Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-        })
-    );
+function stripSearch(href) {
+    const u = new URL(href);
+    u.search = '';
+    return u.href;
 }
 
-async function limitCacheSize(cache, maxItems) {
-    const keys = await cache.keys();
-    if (keys.length > maxItems) {
-        // Remove oldest entries
-        const excessKeys = keys.slice(0, keys.length - maxItems);
-        await Promise.all(excessKeys.map(key => cache.delete(key)));
-    }
+function offlinePage() {
+    return new Response(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Survivor - Offline</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex;
+               align-items: center; justify-content: center; min-height: 100vh; margin: 0;
+               background: #0e1916; color: #f7f5ef; text-align: center; }
+        .offline-content { max-width: 400px; padding: 2rem; }
+        .btn { background: #e07a2e; color: white; border: none; padding: 1rem 2rem;
+               border-radius: 8px; cursor: pointer; margin-top: 1rem; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="offline-content">
+        <h1>Survivor</h1>
+        <p>You're offline. Check your connection and try again.</p>
+        <button class="btn" onclick="location.reload()">Retry</button>
+    </div>
+</body>
+</html>`, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
-/**
- * Offline Action Sync
- */
-async function syncOfflineActions() {
-    try {
-        // Get offline actions from IndexedDB (would need to implement storage)
-        const offlineActions = await getOfflineActions();
-        
-        for (const action of offlineActions) {
-            try {
-                const response = await fetch(action.url, action.options);
-                if (response.ok) {
-                    await removeOfflineAction(action.id);
-                    console.log('✅ Synced offline action:', action.type);
-                }
-            } catch (error) {
-                console.error('❌ Failed to sync action:', action.type, error);
-            }
-        }
-    } catch (error) {
-        console.error('❌ Background sync failed:', error);
-    }
-}
-
-// Placeholder functions for offline action storage
-async function getOfflineActions() {
-    // Would implement IndexedDB storage for offline actions
-    return [];
-}
-
-async function removeOfflineAction(id) {
-    // Would implement removal from IndexedDB
-    return true;
-}
-
-/**
- * Message Handling (for communication with main thread)
- */
+// ── Messages from the page ──
 self.addEventListener('message', event => {
-    const { type, payload } = event.data;
-    
-    switch (type) {
-        case 'SKIP_WAITING':
-            self.skipWaiting();
-            break;
-        case 'CACHE_URLS':
-            event.waitUntil(cacheUrls(payload.urls));
-            break;
-        case 'CLEAR_CACHE':
-            event.waitUntil(clearCaches());
-            break;
-        default:
-            console.log('Unknown message type:', type);
+    const type = event.data && event.data.type;
+    if (type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    } else if (type === 'CLEAR_CACHE') {
+        event.waitUntil(caches.keys().then(names =>
+            Promise.all(names.filter(n => n.startsWith('survivor-')).map(n => caches.delete(n)))));
     }
 });
-
-async function cacheUrls(urls) {
-    const cache = await caches.open(DYNAMIC_CACHE);
-    return Promise.all(
-        urls.map(url => 
-            fetch(url).then(response => {
-                if (response.ok) {
-                    return cache.put(url, response);
-                }
-            }).catch(error => {
-                console.error('Failed to cache URL:', url, error);
-            })
-        )
-    );
-}
-
-async function clearCaches() {
-    const cacheNames = await caches.keys();
-    return Promise.all(
-        cacheNames.map(cacheName => caches.delete(cacheName))
-    );
-}
 
 // ── Turn notifications (Web Push) ──
 self.addEventListener('push', (event) => {
@@ -426,4 +232,35 @@ self.addEventListener('notificationclick', (event) => {
         .then(list => list.length ? list[0].focus() : clients.openWindow('/')));
 });
 
-console.log('🎮 Survivor Service Worker loaded');
+/**
+ * The push service rotated (or expired) this device's subscription. The worker
+ * doesn't know which game/seat it belongs to, so it re-subscribes with the
+ * server's key and tells any open page, which re-registers it with the game.
+ * With no page open, the next join/rejoin re-sends it (see network.js).
+ */
+self.addEventListener('pushsubscriptionchange', (event) => {
+    event.waitUntil((async () => {
+        try {
+            let options = event.oldSubscription && event.oldSubscription.options;
+            if (!options || !options.applicationServerKey) {
+                const r = await fetch('/api/push/pubkey', { cache: 'no-store' });
+                const body = r.ok ? await r.json() : null;
+                if (!body || !body.key) return;
+                options = { userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(body.key) };
+            }
+            await self.registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: options.applicationServerKey
+            });
+            const pages = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+            pages.forEach(page => page.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' }));
+        } catch (e) { /* best effort — the next join re-sends the subscription */ }
+    })());
+});
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(ch => ch.charCodeAt(0)));
+}

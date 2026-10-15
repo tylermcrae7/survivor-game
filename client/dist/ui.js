@@ -9,10 +9,6 @@ let currentScreen = 'startScreen';
 let toastContainer = null;
 let modalOverlay = null;
 let loadingOverlay = null;
-let cardTooltip = null;
-
-// Animation state
-let isAnimating = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ICON SYSTEM — inline SVG sprite (see index-optimized.html). No emoji chrome.
@@ -46,7 +42,7 @@ const Haptics = {
         if (window.SurvivorSettings && !window.SurvivorSettings.hapticsOn()) return;
         if ('vibrate' in navigator) {
             const pattern = this.patterns[type] || this.patterns.light;
-            navigator.vibrate(pattern);
+            try { navigator.vibrate(pattern); } catch (e) { /* not critical */ }
         }
     },
 
@@ -65,160 +61,28 @@ document.addEventListener('click', (e) => {
     }
 }, { passive: true });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CARD TOOLTIP SYSTEM
-// ─────────────────────────────────────────────────────────────────────────────
-
-const CardTooltipManager = {
-    tooltip: null,
-    hideTimeout: null,
-    currentCardType: null,
-
-    init() {
-        this.tooltip = document.getElementById('cardTooltip');
-        // Fallback: create tooltip if not in HTML (shouldn't happen)
-        if (!this.tooltip) {
-            const tooltip = document.createElement('div');
-            tooltip.id = 'cardTooltip';
-            tooltip.className = 'card-tooltip';
-            tooltip.setAttribute('popover', '');
-            tooltip.innerHTML = `
-                <div class="card-tooltip-arrow bottom"></div>
-                <div class="card-tooltip-header">
-                    <span class="card-tooltip-name"></span>
-                    <span class="card-tooltip-category"></span>
-                </div>
-                <div class="card-tooltip-description"></div>
-                <div class="card-tooltip-timing">
-                    <span class="card-tooltip-timing-icon"></span>
-                    <span class="card-tooltip-timing-text">Playable during:</span>
-                </div>
-                <div class="card-tooltip-phases"></div>
-            `;
-            document.body.appendChild(tooltip);
-            this.tooltip = tooltip;
-        }
-    },
-
-    show(cardType, targetElement) {
-        if (!this.tooltip) this.init();
-        if (this.hideTimeout) {
-            clearTimeout(this.hideTimeout);
-            this.hideTimeout = null;
-        }
-
-        const cardInfo = window.SurvivorGame?.getCardInfo(cardType);
-        if (!cardInfo) return;
-
-        this.currentCardType = cardType;
-
-        // Populate tooltip content
-        this.tooltip.querySelector('.card-tooltip-name').textContent = cardInfo.name || cardType;
-        this.tooltip.querySelector('.card-tooltip-category').textContent =
-            (cardInfo.category || 'Card').replace(/_/g, ' ');
-        this.tooltip.querySelector('.card-tooltip-description').textContent = cardInfo.description || '';
-
-        // Format playable phases
-        const phasesContainer = this.tooltip.querySelector('.card-tooltip-phases');
-        const phases = cardInfo.playablePhases || [];
-        phasesContainer.innerHTML = phases.map(phase => {
-            const phaseName = this.formatPhaseName(phase);
-            return `<span class="card-tooltip-phase">${phaseName}</span>`;
-        }).join('');
-
-        // Position tooltip
-        this.position(targetElement);
-
-        // Show via Popover API (with fallback)
-        if (this.tooltip.showPopover) {
-            try { this.tooltip.showPopover(); } catch(e) { /* already open */ }
-        } else {
-            this.tooltip.classList.add('visible');
-        }
-    },
-
-    hide() {
-        if (this.tooltip) {
-            if (this.tooltip.hidePopover) {
-                try { this.tooltip.hidePopover(); } catch(e) { /* already closed */ }
-            } else {
-                this.tooltip.classList.remove('visible');
-            }
-            this.currentCardType = null;
-        }
-    },
-
-    hideDelayed(delay = 150) {
-        this.hideTimeout = setTimeout(() => this.hide(), delay);
-    },
-
-    position(targetElement) {
-        if (!this.tooltip || !targetElement) return;
-
-        const rect = targetElement.getBoundingClientRect();
-        const arrow = this.tooltip.querySelector('.card-tooltip-arrow');
-
-        // Temporarily make visible to measure (popover may not have dimensions yet)
-        const wasHidden = !this.tooltip.matches(':popover-open') && !this.tooltip.classList.contains('visible');
-        if (wasHidden) {
-            this.tooltip.style.visibility = 'hidden';
-            this.tooltip.style.opacity = '0';
-        }
-
-        const tooltipRect = this.tooltip.getBoundingClientRect();
-
-        // Default: show above the card
-        let top = rect.top - tooltipRect.height - 12;
-        let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
-
-        // If would go above viewport, show below instead
-        if (top < 10) {
-            top = rect.bottom + 12;
-            arrow.className = 'card-tooltip-arrow top';
-        } else {
-            arrow.className = 'card-tooltip-arrow bottom';
-        }
-
-        // Keep within horizontal bounds
-        if (left < 10) left = 10;
-        if (left + tooltipRect.width > window.innerWidth - 10) {
-            left = window.innerWidth - tooltipRect.width - 10;
-        }
-
-        this.tooltip.style.top = `${top}px`;
-        this.tooltip.style.left = `${left}px`;
-
-        if (wasHidden) {
-            this.tooltip.style.visibility = '';
-            this.tooltip.style.opacity = '';
-        }
-    },
-
-    formatPhaseName(phase) {
-        const phaseNames = {
-            'turn_steal': 'Steal',
-            'turn_play': 'Play',
-            'turn_draw': 'Draw',
-            'tribal_announcement': 'Tribal Start',
-            'tribal_advantage_play': 'Advantage',
-            'tribal_discussion': 'Discussion',
-            'tribal_immunity': 'Immunity',
-            'tribal_voting': 'Voting',
-            'tribal_reveal': 'Reveal',
-            'reactive': 'Reactive'
-        };
-        return phaseNames[phase] || phase.replace(/_/g, ' ');
-    }
-};
+/** Readable name for a card's playable phase (the card sheet's timing chips). */
+function formatPhaseName(phase) {
+    const phaseNames = {
+        'turn_steal': 'Steal',
+        'turn_play': 'Play',
+        'turn_draw': 'Draw',
+        'tribal_announcement': 'Tribal Start',
+        'tribal_advantage_play': 'Advantage',
+        'tribal_discussion': 'Discussion',
+        'tribal_immunity': 'Immunity',
+        'tribal_voting': 'Voting',
+        'tribal_reveal': 'Reveal',
+        'reactive': 'Reactive'
+    };
+    return phaseNames[phase] || String(phase).replace(/_/g, ' ');
+}
 
 /**
  * Screen Management
  */
 function showScreen(screenId) {
     function applyScreenChange() {
-        // A tooltip anchored to the old screen must not haunt the new one
-        CardTooltipManager.hide();
-
         // Hide all screens
         document.querySelectorAll('.screen').forEach(screen => {
             screen.classList.remove('active');
@@ -245,8 +109,8 @@ function showScreen(screenId) {
                 'resultsScreen', 'finalTribalScreen'
             ].includes(screenId));
 
-            // Announce screen change for accessibility
-            announce && announce(`Navigated to ${screenId.replace('Screen', ' screen')}`);
+            // Announce screen change for accessibility — in words, not ids
+            announce && announce(SCREEN_NAMES[screenId] || 'Screen changed');
 
             console.log(`Navigated to screen: ${screenId}`);
         } else {
@@ -322,11 +186,28 @@ function setupLeaderControls() {
     
     const player = gameState.players[localPlayerId];
     if (player && player.isCouncilLeader) {
-        leaderControls.style.display = 'block';
+        leaderControls.style.display = '';   // the stylesheet's own layout (stacks on phones)
     } else {
         leaderControls.style.display = 'none';
     }
 }
+
+const SCREEN_NAMES = {
+    accessScreen: 'Access gate',
+    startScreen: 'Start',
+    leaderboardScreen: 'Hall of Fame',
+    settingsScreen: 'Settings',
+    lobbyScreen: 'The fire circle — lobby',
+    playingScreen: 'Your turn at camp',
+    tribalAnnouncementScreen: 'Tribal Council',
+    tribalAdvantageScreen: 'Tribal Council — advantages',
+    tribalDiscussionScreen: 'Tribal Council — the discussion',
+    votingScreen: 'Tribal Council — the vote',
+    immunityScreen: 'Tribal Council — the idols',
+    resultsScreen: 'Tribal Council — the tribe decides',
+    finalTribalScreen: 'Final Tribal Council',
+    gameOverScreen: 'Sole Survivor'
+};
 
 function updateGameInfo(gameState) {
     if (!gameState) return;
@@ -350,6 +231,8 @@ function updateGameInfo(gameState) {
     const lobbyGameCode = document.getElementById('lobbyGameCode');
     if (lobbyGameCode && gameState.id) {
         lobbyGameCode.textContent = gameState.id;
+        document.querySelector('.code-hero')
+            ?.setAttribute('aria-label', `Game code ${gameState.id.split('').join(' ')} — tap to copy`);
     }
 
     // Update player count/info
@@ -365,23 +248,6 @@ function updateGameInfo(gameState) {
 
     // (The legacy fixed phase indicator stays hidden — the phase guidance strip
     //  and ceremony modes carry that information now.)
-}
-
-function updatePhaseIndicator(gameState) {
-    if (!gameState) return;
-    
-    const phaseIndicator = document.querySelector('.phase-indicator .phase-text');
-    if (phaseIndicator && gameState.phase) {
-        const phaseNames = {
-            'lobby': 'Lobby',
-            'playing': 'Playing',
-            'tribal_discussion': 'Tribal Discussion',
-            'voting': 'Voting',
-            'immunity': 'Immunity',
-            'results': 'Results'
-        };
-        phaseIndicator.textContent = phaseNames[gameState.phase] || gameState.phase;
-    }
 }
 
 function updateVotingInfo(gameState) {
@@ -427,6 +293,54 @@ function updateVotingInfo(gameState) {
         ?.addEventListener('click', () => window.SurvivorGame?.passVotingBox());
 }
 
+let lastAnnouncedTurn = null;
+
+/**
+ * "Draw Card & End Turn" is only live when the server would take it: your
+ * turn, after your steal, before you've drawn, with no raid still being
+ * answered. Otherwise it is disabled and says why. (Anything subtler — a
+ * challenge in progress — the server still refuses with its own reason.)
+ */
+function updateDrawButton(gameState) {
+    const btn = document.getElementById('drawCardBtn');
+    if (!btn || !gameState) return;
+    const SG = window.SurvivorGame;
+    const me = SG?.localGameState?.playerId;
+    const player = gameState.players?.[me];
+    const phase = SG?.getCurrentTurnPhase?.(gameState, me);
+    const T = SG?.TURN_PHASES || {};
+
+    let reason = '';
+    if (!player) {
+        reason = '';
+    } else if (player.isEliminated) {
+        reason = 'Your torch is out — you no longer draw.';
+    } else if (gameState.phase === 'playing' && phase === 'waiting') {
+        const currentId = (gameState.turnOrder || [])[gameState.currentTurnIndex || 0];
+        const who = gameState.players?.[currentId]?.name;
+        reason = who ? `It's ${who}'s turn — you draw on yours.` : 'You draw on your own turn.';
+    } else if (phase === T.STEAL) {
+        reason = 'Steal first — tap a player in the tribe above.';
+    } else if (phase === T.DONE) {
+        reason = 'You already drew — your turn is over.';
+    } else if (gameState.pending_theft?.reactive_window_open) {
+        reason = 'Waiting for the raid to be answered…';
+    }
+
+    btn.disabled = !!reason;
+    let hint = document.getElementById('drawCardHint');
+    if (!hint) {
+        hint = document.createElement('p');
+        hint.id = 'drawCardHint';
+        hint.className = 'panel-sub draw-card-hint';
+        hint.style.cssText = 'text-align:center; margin:0.4rem 0 0; width:100%; display:none;';
+        btn.insertAdjacentElement('afterend', hint);
+        btn.setAttribute('aria-describedby', 'drawCardHint');
+    }
+    hint.textContent = reason;
+    hint.style.display = reason ? '' : 'none';
+}
+
 function renderTurnInfo(gameState) {
     if (!gameState) return;
 
@@ -446,7 +360,12 @@ function renderTurnInfo(gameState) {
             ${isMine ? 'Your torch burns' : escapeHtml(currentPlayer.name) + '’s turn'}
         </div>
     `;
-    announce(`It is ${currentPlayer.name}'s turn`);
+    // Said once per turn — every state push re-renders this strip
+    const turnKey = `${gameState.id}:${gameState.currentTurnIndex}:${currentPlayerId}`;
+    if (turnKey !== lastAnnouncedTurn) {
+        lastAnnouncedTurn = turnKey;
+        announce(isMine ? 'It is your turn' : `It is ${currentPlayer.name}'s turn`);
+    }
 
     // STEAL → PLAY → DRAW tracker for the player whose turn it is.
     // One steal, at most one play, one draw — the draw ends the turn.
@@ -630,10 +549,9 @@ function renderVoteResults(gameState) {
     }
 
     if (eliminationResults && gameState.currentVote && gameState.currentVote.eliminated) {
-        const eliminated = gameState.currentVote.eliminated.map(id => {
-            const player = gameState.players[id];
-            return escapeHtml(player?.name || id);
-        });
+        const eliminatedNames = gameState.currentVote.eliminated.map(id =>
+            gameState.players[id]?.name || id);
+        const eliminated = eliminatedNames.map(escapeHtml);
 
         if (eliminated.length > 0) {
             // The announcement waits for the last ballot to flip
@@ -648,7 +566,7 @@ function renderVoteResults(gameState) {
                     <p class="elimination-subtext">The torch is turned. Bring your Vote Card back to camp.</p>
                 </div>
             `;
-            announce(`Eliminated: ${eliminated.join(', ')}. The tribe has spoken.`);
+            announce(`Eliminated: ${eliminatedNames.join(', ')}. The tribe has spoken.`);
         } else {
             eliminationResults.innerHTML = '';
         }
@@ -959,7 +877,8 @@ function renderLivesTracker(gameState) {
             if (!(gameId && thiefId && targetId)) return;
             const doSteal = () => {
                 hapticFeedback('medium');
-                window.SurvivorNetwork?.GameAPI.stealCard(gameId, thiefId, targetId);
+                // apiCall has already toasted any refusal
+                window.SurvivorNetwork?.GameAPI.stealCard(gameId, thiefId, targetId)?.catch(() => {});
             };
             if (window.SurvivorSettings?.get('confirmSteals')) {
                 const name = window.SurvivorGame?.fullGameState?.players?.[targetId]?.name || 'them';
@@ -1176,11 +1095,23 @@ function renderChallengePanel(gameState) {
     if (!ch) {
         container.style.display = 'none';
         container.innerHTML = '';
+        delete container.dataset.controlsKey;
         return;
     }
 
     const myId = window.SurvivorGame?.localGameState?.playerId;
     const isMyMove = ch.currentPlayerId === myId && ch.phase !== 'complete';
+    // Everything the move controls are built from. While it is unchanged, the
+    // live controls stay in the page — so a bid half-typed (and the keyboard
+    // holding it) survives the state pushes other players' moves cause.
+    const controlsKey = isMyMove ? JSON.stringify([
+        ch.type, ch.phase, ch.round, ch.currentPlayerId, ch.currentBid ?? null,
+        ch.maxBid ?? null, ch.maxPull ?? null, (ch.actions || []).join(','),
+        (ch.stealTargets || []).join(','),
+        // every challenge move writes a log line — so a move of mine always
+        // re-renders (and re-enables) the controls
+        (ch.log || []).length
+    ]) : '';
     const name = pid => escapeHtml(gameState.players?.[pid]?.name || 'Player');
 
     const bag = ch.bag || { grey: 0, purple: 0 };
@@ -1260,7 +1191,7 @@ function renderChallengePanel(gameState) {
                     rockDot(true).repeat(Math.min(bag.purple || 0, 4));
 
     container.style.display = 'block';
-    container.innerHTML = `
+    const html = `
         <div class="challenge-header">
             <h3>${icon('rock')} ${escapeHtml(ch.name || 'Challenge')}</h3>
             <span class="challenge-round">Round ${ch.round || 1}</span>
@@ -1277,11 +1208,27 @@ function renderChallengePanel(gameState) {
         ${log ? `<ul class="challenge-log">${log}</ul>` : ''}
     `;
 
-    setupChallengeInteractions();
+    const liveControls = container.querySelector(':scope > .challenge-controls');
+    if (controlsKey && liveControls && container.dataset.controlsKey === controlsKey) {
+        // Patch around the live controls; they never leave the document, so
+        // neither focus nor a typed value is lost.
+        const fresh = document.createElement('div');
+        fresh.innerHTML = html;
+        const nodes = [...fresh.childNodes];
+        const at = nodes.findIndex(n => n.nodeType === 1 && n.classList.contains('challenge-controls'));
+        [...container.childNodes].forEach(n => { if (n !== liveControls) n.remove(); });
+        nodes.slice(0, at).forEach(n => container.insertBefore(n, liveControls));
+        nodes.slice(at + 1).forEach(n => container.appendChild(n));
+        return;
+    }
+
+    container.innerHTML = html;
+    container.dataset.controlsKey = controlsKey;
+    setupChallengeInteractions(container);
 }
 
-function setupChallengeInteractions() {
-    const buttons = Array.from(document.querySelectorAll('[data-challenge-action]'));
+function setupChallengeInteractions(root = document) {
+    const buttons = Array.from(root.querySelectorAll('[data-challenge-action]'));
 
     buttons.forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1307,37 +1254,64 @@ function setupChallengeInteractions() {
     });
 }
 
+// Per hand container: the markup last rendered and the cards it held, so an
+// unchanged hand isn't rebuilt and only newly-arrived cards deal in.
+const handRenderMemo = new Map();
+
+/** A card's identity across renders: its server uid (type#n for old servers). */
+function handCardKeys(hand) {
+    const seen = {};
+    return hand.map(card => {
+        if (card.uid) return String(card.uid);
+        seen[card.type] = (seen[card.type] || 0) + 1;
+        return `${card.type}#${seen[card.type]}`;
+    });
+}
+
 function renderPlayerHand(gameState, containerId = 'playerHand') {
     const container = document.getElementById(containerId);
     if (!container) return;
 
     const playerId = window.SurvivorGame?.localGameState.playerId;
     const player = gameState.players?.[playerId];
+    const memo = handRenderMemo.get(containerId);
 
     if (!player || !player.hand || !player.hand.length) {
         container.innerHTML = `
             <p class="tribe-label">${icon('cards')} Your hand</p>
             <p class="empty-hand">No cards — the island provides at the next draw.</p>
         `;
+        handRenderMemo.set(containerId, { html: '', keys: new Set(), node: container });
         return;
     }
 
     const currentPhase = window.SurvivorGame?.getCurrentTurnPhase(gameState, playerId);
-    const html = player.hand.map((card, index) =>
-        createCardElement(card, index, currentPhase)
+    const keys = handCardKeys(player.hand);
+    const cardsHtml = player.hand.map((card, index) =>
+        createCardElement(card, index, currentPhase, keys[index])
     ).join('');
-
-    container.innerHTML = `
+    const html = `
         <p class="tribe-label">${icon('cards')} Your hand <span style="letter-spacing:0; color:var(--text-faint)">· ${player.hand.length}</span></p>
-        <div class="hand-grid">${html}</div>
+        <div class="hand-grid">${cardsHtml}</div>
     `;
 
-    // Animate cards entering the hand
-    const handRail = container.querySelector('.hand-grid');
-    if (handRail) animateCardEntrance(handRail);
+    // Same hand, same phase, same element: leave the DOM (and its listeners,
+    // and any keyboard focus on a card) exactly as it is.
+    if (memo && memo.node === container && memo.html === html && container.querySelector('.hand-grid')) return;
 
-    // Setup card interactions
-    setupCardInteractions();
+    container.innerHTML = html;
+    handRenderMemo.set(containerId, { html, keys: new Set(keys), node: container });
+
+    // Deal in only the cards this container hasn't shown before. A container
+    // seen for the first time deals its whole hand once.
+    const before = memo ? memo.keys : null;
+    const arrived = [...container.querySelectorAll('.hand-grid .card-button')]
+        .filter(el => !before || !before.has(el.dataset.cardUid));
+    animateCardEntrance(arrived);
+
+    // Setup card interactions — this container only: other hands on the page
+    // already have theirs, and a second listener opened every sheet twice.
+    setupCardInteractions(container);
 }
 
 const CATEGORY_LABELS = {
@@ -1348,7 +1322,7 @@ const CATEGORY_LABELS = {
     tribal_council: 'Tribal Council'
 };
 
-function createCardElement(card, index, currentPhase) {
+function createCardElement(card, index, currentPhase, cardKey = '') {
     const cardInfo = window.SurvivorGame?.getCardInfo(card.type);
     const isPlayable = window.SurvivorGame?.canPlayCard(card, currentPhase);
     const requiresTarget = cardInfo?.requiresTarget;
@@ -1361,7 +1335,8 @@ function createCardElement(card, index, currentPhase) {
         <div class="card-button card-mini card-cat-${escapeHtml(category)} ${isPlayable ? 'playable' : 'locked'} touch-target"
              role="button" tabindex="0"
              data-card-index="${index}"
-             data-card-type="${card.type}"
+             data-card-uid="${escapeHtml(cardKey)}"
+             data-card-type="${escapeHtml(card.type)}"
              aria-label="${escapedName}${isPlayable ? ' — playable now' : ''}">
             <div class="card-category">${escapeHtml(CATEGORY_LABELS[category] || category)}</div>
             <div class="card-name">${escapedName}</div>
@@ -1392,7 +1367,7 @@ function openCardSheet(cardIndex) {
     const phases = (cardInfo?.playablePhases || []).filter(ph => ph !== 'reactive_theft');
 
     const timingChips = phases.map(ph =>
-        `<span class="card-sheet-phase">${escapeHtml(CardTooltipManager.formatPhaseName(ph))}</span>`
+        `<span class="card-sheet-phase">${escapeHtml(formatPhaseName(ph))}</span>`
     ).join('');
 
     let footer;
@@ -1435,12 +1410,13 @@ function openCardSheet(cardIndex) {
     }, 0);
 }
 
-// HTML escaping utility for XSS prevention
+// HTML escaping for anything interpolated into markup — text AND attribute
+// values. The old textContent/innerHTML trick left quotes alone, so a name
+// with a `"` broke out of value="..." (stored XSS via the Hall of Fame edit form).
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    if (text === null || text === undefined) return '';
+    return String(text).replace(/[&<>"']/g, ch => HTML_ESCAPES[ch]);
 }
 
 function renderVoteTargets(gameState) {
@@ -1453,6 +1429,7 @@ function renderVoteTargets(gameState) {
     // them, never who did it (Block A Vote stays dark at the table; nothing
     // here is shown to anyone else).
     if (gameState.players?.[playerId]?.voteBanned) {
+        voteTargetsMemo = { node: null, markup: '' };
         container.innerHTML = `
             <p class="panel-sub" style="text-align:center">
                 Your vote was taken tonight — who took it stays in the shadows.
@@ -1474,11 +1451,19 @@ function renderVoteTargets(gameState) {
     const eligibleTargets = window.SurvivorGame?.getEligibleVoteTargets(gameState, playerId) || [];
 
     const html = eligibleTargets.map(player => createVoteTargetElement(player)).join('');
-    container.innerHTML = `${stolenNotice}<div class="vote-targets">${html}</div>`;
+    const markup = `${stolenNotice}<div class="vote-targets">${html}</div>`;
+    // Every ballot cast pushes a state; rebuilding identical targets each time
+    // threw away keyboard focus (and the tap highlight) mid-choice.
+    if (voteTargetsMemo.node === container && voteTargetsMemo.markup === markup
+            && container.querySelector('.vote-targets')) return;
+    container.innerHTML = markup;
+    voteTargetsMemo = { node: container, markup };
 
-    // Setup vote interactions
-    setupVoteInteractions();
+    // Setup vote interactions (this container's targets only)
+    setupVoteInteractions(container);
 }
+
+let voteTargetsMemo = { node: null, markup: '' };
 
 function createVoteTargetElement(player) {
     const safeId = escapeHtml(player.id);
@@ -1502,45 +1487,42 @@ function createVoteTargetElement(player) {
  * Event Handlers — Unified Pointer Events
  */
 
-// Long-press state tracking
-const LONG_PRESS_MS = 400;
-let longPressTimer = null;
-let longPressTriggered = false;
-let activePointerId = null;
+/**
+ * click + Enter/Space for a role="button" element. `click` — never pointerup:
+ * on touch the click synthesized AFTER pointerup lands on whatever the
+ * pointerup just opened under the finger (it cast ballots straight through the
+ * "How many votes?" chooser), and pointerup also fires for a right-click.
+ */
+function onActivate(el, handler) {
+    el.addEventListener('click', handler);
+    el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handler(e);
+        }
+    });
+}
 
-function setupCardInteractions() {
-    CardTooltipManager.hide();
-    document.querySelectorAll('.card-mini').forEach(cardElement => {
+function setupCardInteractions(root = document) {
+    root.querySelectorAll('.card-mini').forEach(cardElement => {
         const cardIndex = parseInt(cardElement.dataset.cardIndex);
 
-        cardElement.addEventListener('click', () => {
+        onActivate(cardElement, () => {
             hapticFeedback('light');
             openCardSheet(cardIndex);
-        });
-        cardElement.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                openCardSheet(cardIndex);
-            }
         });
         cardElement.addEventListener('contextmenu', (e) => e.preventDefault());
     });
 }
 
-function setupVoteInteractions() {
-    document.querySelectorAll('.vote-target').forEach(target => {
-        target.addEventListener('pointerup', handleVoteTargetClick);
+function setupVoteInteractions(root = document) {
+    root.querySelectorAll('.vote-target:not(.final-vote-target):not(.final-tiebreak-target)').forEach(target => {
+        onActivate(target, handleVoteTargetClick);
         target.addEventListener('contextmenu', (e) => e.preventDefault());
     });
 }
 
 function setupPlayerCardEvents(playerCard) {
-    // Steal button
-    const stealBtn = playerCard.querySelector('.steal-btn');
-    if (stealBtn) {
-        stealBtn.addEventListener('click', handleStealClick);
-    }
-    
     // Leader button
     const leaderBtn = playerCard.querySelector('.leader-btn');
     if (leaderBtn) {
@@ -1844,17 +1826,6 @@ async function castSplitBallot(voterId, votesData, skipConfirm = false) {
     }
 }
 
-function handleStealClick(event) {
-    event.stopPropagation();
-    const targetId = event.currentTarget.dataset.targetId;
-    const gameId = window.SurvivorGame?.localGameState.gameId;
-    const thiefId = window.SurvivorGame?.localGameState.playerId;
-    
-    if (gameId && thiefId && targetId) {
-        window.SurvivorNetwork?.GameAPI.stealCard(gameId, thiefId, targetId);
-    }
-}
-
 function handleLeaderClick(event) {
     event.stopPropagation();
     const newLeaderId = event.currentTarget.dataset.targetId;
@@ -1862,12 +1833,10 @@ function handleLeaderClick(event) {
     
     if (gameId && newLeaderId) {
         showConfirm('Make this player the new Tribal Council Leader?', () => {
-            window.SurvivorNetwork?.apiCall('/leader/change', { gameId, newLeaderId });
+            window.SurvivorNetwork?.apiCall('/leader/change', { gameId, newLeaderId })?.catch(() => {});
         });
     }
 }
-
-// Touch handlers replaced by unified Pointer Events in setupCardInteractions
 
 /**
  * Game Actions
@@ -1949,6 +1918,38 @@ async function castVote(targetId, totalVotes = null, skipConfirm = false) {
  */
 // Store modal callbacks safely (avoid eval/new Function vulnerability)
 let modalCloseCallback = null;
+// True while hideModal() itself is closing the dialog — any other close of a
+// blocking dialog (Escape, Android back) is undone.
+let modalClosingOnPurpose = false;
+
+/**
+ * A dialog shown with showClose:false is BLOCKING: the server is waiting on
+ * this player's answer (a raid, an idol window, a reward pick). The native
+ * <dialog> still offers Escape and the Android back gesture as a way out, and
+ * nothing ever brought the dialog back — the game then waited forever on a
+ * question nobody could see. Refuse the cancel; if the browser closes it
+ * anyway (Chrome lets a repeated Escape through), open it again.
+ */
+function guardBlockingDialog(dialog) {
+    if (!dialog || dialog.dataset.guarded) return;
+    dialog.dataset.guarded = '1';
+    dialog.addEventListener('cancel', (e) => {
+        if (dialog.dataset.blocking === '1') e.preventDefault();
+    });
+    dialog.addEventListener('close', () => {
+        if (dialog.dataset.blocking === '1' && !modalClosingOnPurpose && !dialog.open
+                && typeof dialog.showModal === 'function') {
+            try { dialog.showModal(); } catch (err) { /* detached — the next render re-shows it */ }
+        }
+    });
+}
+
+/** Is the dialog up and showing content matching `selector`? */
+function modalShowing(selector) {
+    if (!modalOverlay) return false;
+    const up = modalOverlay.open || modalOverlay.style.display === 'flex';
+    return up && !!modalOverlay.querySelector(selector);
+}
 
 function showModal(content, options = {}) {
     const {
@@ -1960,6 +1961,8 @@ function showModal(content, options = {}) {
     if (!modalOverlay) {
         modalOverlay = document.getElementById('modalOverlay') || createModalOverlay();
     }
+    guardBlockingDialog(modalOverlay);
+    modalOverlay.dataset.blocking = showClose ? '' : '1';
 
     const modalContent = modalOverlay.querySelector('.modal-content');
     const safeTitle = title ? escapeHtml(title) : '';
@@ -1999,12 +2002,18 @@ function showModal(content, options = {}) {
 
 function hideModal() {
     if (modalOverlay) {
+        modalOverlay.dataset.blocking = '';
         // Use native dialog API if available. Never set inline display:none on a
         // real <dialog> — hiding an ALREADY-closed dialog used to fall through to
         // the style branch, and the stale inline style then kept every future
         // dialog invisible while "open".
         if (typeof modalOverlay.close === 'function') {
-            if (modalOverlay.open) modalOverlay.close();
+            modalClosingOnPurpose = true;
+            try {
+                if (modalOverlay.open) modalOverlay.close();
+            } finally {
+                modalClosingOnPurpose = false;
+            }
         } else {
             modalOverlay.style.display = 'none';
         }
@@ -2070,7 +2079,7 @@ function confirmAction(confirmed) {
  * Prompt helpers for the card play pipeline.
  * All of them render into the shared modal and hand the choice to `onPick`.
  */
-function showPlayerPicker({ title = 'Select Target', hint = '', excludeIds = [], onPick }) {
+function showPlayerPicker({ title = 'Select Target', hint = '', excludeIds = [], onPick, blocking = false, extraClass = '' }) {
     const gameState = window.SurvivorGame?.fullGameState;
     if (!gameState?.players) return;
 
@@ -2080,7 +2089,7 @@ function showPlayerPicker({ title = 'Select Target', hint = '', excludeIds = [],
     );
 
     const content = `
-        <div class="target-selection">
+        <div class="target-selection ${extraClass}">
             ${hint ? `<p class="picker-hint">${escapeHtml(hint)}</p>` : ''}
             <div class="target-grid">
                 ${eligible.map(player => {
@@ -2098,7 +2107,8 @@ function showPlayerPicker({ title = 'Select Target', hint = '', excludeIds = [],
         </div>
     `;
 
-    showModal(content, { title });
+    // blocking: the server is waiting on this pick — no way to close it unanswered
+    showModal(content, { title, showClose: !blocking });
 
     setTimeout(() => {
         document.querySelectorAll('.target-option').forEach(btn => {
@@ -2235,22 +2245,22 @@ function showRpsPicker({ onPick }) {
     }, 0);
 }
 
-/** Back-compat shims — older call sites route through the pipeline. */
-function showTargetSelectionModal(cardIndex, cardType) {
-    beginCardPlay(parseInt(cardIndex), cardType);
-}
-
-function selectTarget(cardIndex, targetId) {
-    hideModal();
-    playCard(parseInt(cardIndex), { targetId });
-}
-
 /**
  * Toast Notifications
  */
 function showToast(message, type = 'info', duration = null) {
-    if (!toastContainer) {
-        toastContainer = createToastContainer();
+    const text = String(message ?? '');
+    if (!text) return null;
+    const container = raiseToastContainer();
+
+    // The same words twice in a row (an apiCall refusal plus the caller's own
+    // catch, two sockets' worth of one event) read as a glitch — show it once.
+    const key = `${type}|${text}`;
+    const now = Date.now();
+    for (const existing of container.querySelectorAll('.toast:not(.fade-out)')) {
+        if (existing.dataset.toastKey === key && now - Number(existing.dataset.toastAt || 0) < 2500) {
+            return existing;
+        }
     }
 
     // Reading pace is a device setting; errors linger ~30% longer.
@@ -2260,30 +2270,70 @@ function showToast(message, type = 'info', duration = null) {
             ? window.SurvivorSettings.toastMs(type)
             : ((type === 'error' || type === 'warning') ? 6500 : 5000);
     }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type} fade-in`;
-    toast.innerHTML = `
-        <div class="toast-content">
-            <span class="toast-icon">${getToastIcon(type)}</span>
-            <span class="toast-message">${message}</span>
-        </div>
-    `;
-    
-    toastContainer.appendChild(toast);
+
+    const toast = buildToast(text, type);
+    toast.dataset.toastKey = key;
+    toast.dataset.toastAt = String(now);
+    container.appendChild(toast);
 
     // Every toast dismisses on tap; only a positive duration auto-removes,
     // so the "pinned" pace waits for the reader.
-    const dismiss = () => {
-        if (!toast.parentNode) return;
-        toast.classList.add('fade-out');
-        setTimeout(() => toast.remove(), 300);
-    };
+    const dismiss = () => dismissToast(toast);
     toast.addEventListener('click', dismiss);
 
     if (duration > 0) {
         setTimeout(dismiss, duration);
     }
+    return toast;
+}
+
+/** Message text goes in as TEXT, never markup — toasts carry server strings. */
+function buildToast(text, type) {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type} fade-in`;
+    toast.style.pointerEvents = 'auto';   // the stack itself is click-through
+    const content = document.createElement('div');
+    content.className = 'toast-content';
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'toast-icon';
+    iconSpan.innerHTML = getToastIcon(type);   // our own static SVG markup
+    const msg = document.createElement('span');
+    msg.className = 'toast-message';
+    msg.textContent = text;
+    content.append(iconSpan, msg);
+    toast.appendChild(content);
+    return toast;
+}
+
+function dismissToast(toast) {
+    if (!toast || !toast.parentNode || toast.classList.contains('fade-out')) return;
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 300);
+}
+
+/**
+ * One persistent toast per `key` (e.g. the connection status): shown once,
+ * updated in place, removed by clearStatus — never a new toast per attempt.
+ */
+function showStatus(key, message, type = 'info') {
+    const container = raiseToastContainer();
+    let toast = container.querySelector(`.toast[data-status-key="${CSS.escape(key)}"]`);
+    if (!toast) {
+        toast = buildToast(String(message ?? ''), type);
+        toast.dataset.statusKey = key;
+        toast.addEventListener('click', () => dismissToast(toast));
+        container.appendChild(toast);
+    } else {
+        toast.classList.remove('toast-info', 'toast-success', 'toast-warning', 'toast-error');
+        toast.classList.add(`toast-${type}`);
+        toast.querySelector('.toast-message').textContent = String(message ?? '');
+    }
+    return toast;
+}
+
+function clearStatus(key) {
+    const toast = toastContainer?.querySelector(`.toast[data-status-key="${CSS.escape(key)}"]`);
+    dismissToast(toast);
 }
 
 function getToastIcon(type) {
@@ -2378,28 +2428,19 @@ function hideLoading() {
 /**
  * Animations
  */
-function addCardPlayAnimation(cardElement) {
-    // Enhanced card play animation using Web Animations API
-    const animation = cardElement.animate([
-        { transform: 'scale(1) translateY(0)', opacity: 1 },
-        { transform: 'scale(1.1) translateY(-20px)', opacity: 1, offset: 0.3 },
-        { transform: 'scale(0.8) translateY(-60px)', opacity: 0 }
-    ], {
-        duration: 500,
-        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-        fill: 'forwards'
-    });
 
-    animation.onfinish = () => {
-        cardElement.style.opacity = '0';
-    };
+/** Device setting (or the OS preference, under "Match device"). */
+function motionReduced() {
+    return !!window.SurvivorSettings?.motionReduced?.();
 }
 
 /**
- * Animate cards dealing into the hand (entrance animation)
+ * Deal cards into the hand. Only cards that just ARRIVED animate — the whole
+ * hand used to replay its deal-in on every state push, two or three times
+ * per push — and nothing animates when motion is reduced.
  */
-function animateCardEntrance(container) {
-    const cards = container.querySelectorAll('.card-button');
+function animateCardEntrance(cards) {
+    if (motionReduced() || typeof Element.prototype.animate !== 'function') return;
     cards.forEach((card, i) => {
         card.animate([
             { transform: 'translateY(40px) scale(0.9)', opacity: 0 },
@@ -2410,50 +2451,6 @@ function animateCardEntrance(container) {
             easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
             fill: 'backwards'
         });
-    });
-}
-
-/**
- * Animate a stolen card flying from target to thief
- */
-function animateCardSteal(fromEl, toEl) {
-    if (!fromEl || !toEl) return;
-    const fromRect = fromEl.getBoundingClientRect();
-    const toRect = toEl.getBoundingClientRect();
-    const dx = toRect.left - fromRect.left;
-    const dy = toRect.top - fromRect.top;
-
-    const ghost = document.createElement('div');
-    ghost.className = 'card-button';
-    ghost.style.cssText = `position:fixed;top:${fromRect.top}px;left:${fromRect.left}px;width:${fromRect.width}px;height:${fromRect.height}px;z-index:9999;pointer-events:none;`;
-    ghost.textContent = '?';
-    document.body.appendChild(ghost);
-
-    ghost.animate([
-        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
-        { transform: `translate(${dx}px,${dy}px) rotate(${dx > 0 ? 15 : -15}deg)`, opacity: 0.6 }
-    ], { duration: 400, easing: 'ease-in-out' }).onfinish = () => ghost.remove();
-}
-
-function animateStateChange(element, property, from, to, duration = 300) {
-    return new Promise(resolve => {
-        const start = performance.now();
-        
-        function animate(now) {
-            const elapsed = now - start;
-            const progress = Math.min(elapsed / duration, 1);
-            
-            const current = from + (to - from) * progress;
-            element.style[property] = current;
-            
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                resolve();
-            }
-        }
-        
-        requestAnimationFrame(animate);
     });
 }
 
@@ -2474,9 +2471,9 @@ function createModalOverlay() {
     overlay.innerHTML = '<div class="modal-content"></div>';
     document.body.appendChild(overlay);
     
-    // Close on overlay click
+    // Close on overlay click (never a blocking dialog)
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
+        if (e.target === overlay && overlay.dataset.blocking !== '1') {
             hideModal();
         }
     });
@@ -2484,83 +2481,63 @@ function createModalOverlay() {
     return overlay;
 }
 
+const SUPPORTS_POPOVER = typeof HTMLElement !== 'undefined' &&
+    Object.prototype.hasOwnProperty.call(HTMLElement.prototype, 'showPopover');
+
 function createToastContainer() {
     const container = document.createElement('div');
     container.id = 'toastContainer';
     container.className = 'toast-container';
+    container.setAttribute('role', 'status');
+    container.setAttribute('aria-live', 'polite');
+    // A popover lives in the browser's top layer, so toasts show above an
+    // open <dialog> (which a z-index never can). popover="manual": no light
+    // dismiss. The resets undo the UA popover box (centered, bordered, Canvas
+    // background) so it stays an invisible, click-through stack.
+    if (SUPPORTS_POPOVER) container.setAttribute('popover', 'manual');
     container.style.cssText = `
         position: fixed;
+        inset: auto;
         inset-block-start: calc(20px + env(safe-area-inset-top, 0px));
         inset-inline-end: calc(20px + env(safe-area-inset-right, 0px));
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        overflow: visible;
+        width: auto;
+        height: auto;
+        max-width: calc(100vw - 40px);
         z-index: 10000;
         display: flex;
         flex-direction: column;
         gap: 10px;
+        pointer-events: none;
     `;
     document.body.appendChild(container);
     return container;
 }
 
-// createLoadingOverlay is now handled by LoadingManager
-
 /**
- * State Update Handler
+ * The container, shown and on TOP of the top layer. Elements in the top layer
+ * stack in the order they were shown, so re-showing it puts it above any
+ * dialog opened since.
  */
-function updateFromDiff(diff) {
-    console.log('🔄 Updating UI from state diff:', Object.keys(diff));
-    
-    // Update specific components based on diff
-    if (diff.players) {
-        renderPlayerList(window.SurvivorGame.fullGameState);
-        renderLivesTracker(window.SurvivorGame.fullGameState);
-        // A player object changing may mean somebody walked off — redraw places
-        renderPlacesPanel(window.SurvivorGame.fullGameState);
+function raiseToastContainer() {
+    if (!toastContainer || !toastContainer.isConnected) {
+        toastContainer = createToastContainer();
     }
-
-    // The camp opening up or being called together
-    if (diff.placePolicy !== undefined) {
-        renderPlacesPanel(window.SurvivorGame.fullGameState);
+    if (SUPPORTS_POPOVER) {
+        try {
+            if (toastContainer.matches(':popover-open')) toastContainer.hidePopover();
+            toastContainer.showPopover();
+        } catch (e) { /* not fatal — falls back to z-index */ }
     }
-
-    if (diff.phase) {
-        updatePhaseIndicator(window.SurvivorGame.fullGameState);
-    }
-
-    if (diff.currentVote) {
-        updateVotingInfo(window.SurvivorGame.fullGameState);
-    }
-
-    if (diff.challenge !== undefined) {
-        renderChallengePanel(window.SurvivorGame.fullGameState);
-    }
-
-    if (diff.necklaceHolder !== undefined) {
-        renderPlayerList(window.SurvivorGame.fullGameState);
-        renderLivesTracker(window.SurvivorGame.fullGameState);
-    }
-
-    // Reactive theft window opening/closing arrives as a pending_theft diff
-    if (diff.pending_theft !== undefined) {
-        renderReactiveTheft(window.SurvivorGame.fullGameState);
-    }
-
-    // An idol awaiting its answer arrives as a pending_nullifier diff
-    if (diff.pending_nullifier !== undefined) {
-        renderNullifierWindow(window.SurvivorGame.fullGameState);
-    }
-
-    // A blocked raid leaves raiders owing a chosen discard
-    if (diff.pending_discards !== undefined) {
-        renderPendingDiscards(window.SurvivorGame.fullGameState);
-    }
-
-    // Reward Challenge interaction state changes
-    if (diff.interaction !== undefined) {
-        renderInteraction(window.SurvivorGame.fullGameState);
-    }
-
-    // Additional diff-based updates could be added here
+    return toastContainer;
 }
+
+// createLoadingOverlay is now handled by LoadingManager
 
 /**
  * Phase Guidance System
@@ -2627,7 +2604,7 @@ function renderPhaseGuidance(gameState) {
     let actionText = guidance.action;
     if (gameState.phase === 'playing' && !isMyTurn) {
         const currentPlayer = gameState.players?.[currentTurnId];
-        actionText = `The torch is with ${currentPlayer?.name || 'another player'}.`;
+        actionText = `The torch is with ${escapeHtml(currentPlayer?.name || 'another player')}.`;
     }
 
     guidanceEl.innerHTML = `
@@ -2881,7 +2858,7 @@ function renderFinalTribal(gameState) {
 
     // Jury vote + tie-break taps
     container.querySelectorAll('.final-vote-target').forEach(el => {
-        el.addEventListener('click', async () => {
+        onActivate(el, async () => {
             const finalistId = el.dataset.finalistId;
             hapticFeedback('heavy');
             await window.SurvivorGame?.safeApiCall('/final/vote', {
@@ -2891,7 +2868,7 @@ function renderFinalTribal(gameState) {
         });
     });
     container.querySelectorAll('.final-tiebreak-target').forEach(el => {
-        el.addEventListener('click', async () => {
+        onActivate(el, async () => {
             const finalistId = el.dataset.finalistId;
             await window.SurvivorGame?.safeApiCall('/final/tie_break', {
                 gameId: window.SurvivorGame.localGameState.gameId,
@@ -2982,11 +2959,11 @@ function updateCurrentScreen(gameState) {
             break;
         case 'playingScreen':
             renderTurnInfo(gameState);
-            updatePhaseIndicator(gameState);
             renderLivesTracker(gameState);
             renderPlacesPanel(gameState);
             renderPlayerHand(gameState);
             renderChallengePanel(gameState);
+            updateDrawButton(gameState);
             break;
         case 'tribalAnnouncementScreen':
         case 'tribalAdvantageScreen':
@@ -3029,6 +3006,9 @@ function updateCurrentScreen(gameState) {
 //   · everyone else sees nothing
 
 let reactiveTheftKey = null;
+// The window key this player has already answered — the dialog is closed on
+// the tap, and must not pop back up while the server catches up.
+let reactiveTheftAnswered = null;
 
 function renderReactiveTheft(gameState) {
     const pending = gameState?.pending_theft;
@@ -3036,7 +3016,15 @@ function renderReactiveTheft(gameState) {
     const me = window.SurvivorGame?.localGameState?.playerId;
     const key = open ? `${pending.thiefId}:${pending.targetId}` : null;
 
-    if (key === reactiveTheftKey) return;   // no change
+    if (key === reactiveTheftKey) {
+        // Still the same window: if the defender's dialog went away without an
+        // answer (the page re-rendered, a dialog replaced it), put it back.
+        if (open && me === pending.targetId && reactiveTheftAnswered !== key
+                && !modalShowing('.raid-dialog')) {
+            showRaidDialog(gameState, pending, raidThiefName(gameState, pending));
+        }
+        return;
+    }
 
     // Window closed (or changed): clear whatever we showed for the old one
     if (reactiveTheftKey !== null) {
@@ -3048,16 +3036,19 @@ function renderReactiveTheft(gameState) {
     if (!open) return;
 
     const thiefIds = pending.thiefIds || [pending.thiefId];
-    const thiefNames = thiefIds
-        .map(id => gameState.players?.[id]?.name || 'Someone');
-    const thiefName = thiefNames.join(' and ');
     const targetName = gameState.players?.[pending.targetId]?.name || 'them';
 
     if (me === pending.targetId) {
-        showRaidDialog(gameState, pending, thiefName);
+        showRaidDialog(gameState, pending, raidThiefName(gameState, pending));
     } else if (thiefIds.includes(me)) {
         showReactiveWaitBanner(targetName);
     }
+}
+
+function raidThiefName(gameState, pending) {
+    return (pending.thiefIds || [pending.thiefId])
+        .map(id => gameState.players?.[id]?.name || 'Someone')
+        .join(' and ');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3077,6 +3068,7 @@ function renderReactiveTheft(gameState) {
 // client can learn who else is holding one.
 
 let nullifierWindowKey = null;
+let nullifierAnswered = null;
 
 function renderNullifierWindow(gameState) {
     const pending = gameState?.pending_nullifier;
@@ -3084,7 +3076,16 @@ function renderNullifierWindow(gameState) {
     const me = window.SurvivorGame?.localGameState?.playerId;
     const key = open ? `${pending.idolPlayerId}:${pending.targetId}` : null;
 
-    if (key === nullifierWindowKey) return;   // no change
+    if (key === nullifierWindowKey) {
+        // Same window, dialog gone without an answer — bring it back
+        if (open && nullifierAnswered !== key && !modalShowing('.nullifier-dialog')
+                && nullifierPromptsMe(gameState, pending, me)) {
+            const idolName = gameState.players?.[pending.idolPlayerId]?.name || 'Someone';
+            const shieldedName = gameState.players?.[pending.targetId]?.name || idolName;
+            showNullifierDialog(pending, idolName, shieldedName);
+        }
+        return;
+    }
 
     if (nullifierWindowKey !== null) {
         removeReactiveWaitBanner();
@@ -3093,17 +3094,20 @@ function renderNullifierWindow(gameState) {
     nullifierWindowKey = key;
     if (!open) return;
 
-    const hand = gameState.players?.[me]?.hand || [];
-    const holdsNullifier = hand.some(c => c.type === 'idol_nullifier');
     const idolName = gameState.players?.[pending.idolPlayerId]?.name || 'Someone';
     const shieldedName = gameState.players?.[pending.targetId]?.name || idolName;
 
-    if (holdsNullifier && me !== pending.idolPlayerId
-        && !gameState.players?.[me]?.isEliminated) {
+    if (nullifierPromptsMe(gameState, pending, me)) {
         showNullifierDialog(pending, idolName, shieldedName);
     } else if (me === pending.idolPlayerId) {
         showReactiveWaitBanner(shieldedName);
     }
+}
+
+function nullifierPromptsMe(gameState, pending, me) {
+    const hand = gameState.players?.[me]?.hand || [];
+    return hand.some(c => c.type === 'idol_nullifier') && me !== pending.idolPlayerId
+        && !gameState.players?.[me]?.isEliminated;
 }
 
 function showNullifierDialog(pending, idolName, shieldedName) {
@@ -3135,18 +3139,23 @@ function showNullifierDialog(pending, idolName, shieldedName) {
     setTimeout(() => {
         const gameId = window.SurvivorGame?.localGameState?.gameId;
         const me = window.SurvivorGame?.localGameState?.playerId;
+        const answeredKey = `${pending.idolPlayerId}:${pending.targetId}`;
         document.querySelector('[data-nullifier="play"]')?.addEventListener('click', async () => {
+            nullifierAnswered = answeredKey;
             hideModal();
             // Through /immunity/block, NOT the generic play_card path. Only
             // this route closes the window, and until now the web played the
             // card the other way — which skipped the check that the target
             // actually holds protection, so a nullifier could be burned on
             // somebody holding nothing at all.
-            await window.SurvivorNetwork.GameAPI.blockImmunity(gameId, pending.targetId);
+            await window.SurvivorNetwork.GameAPI.blockImmunity(gameId, pending.targetId)
+                .catch(() => { nullifierAnswered = null; });   // refused: still undecided
         }, { once: true });
         document.querySelector('[data-nullifier="allow"]')?.addEventListener('click', async () => {
+            nullifierAnswered = answeredKey;
             hideModal();
-            await window.SurvivorNetwork.GameAPI.declineNullifier(gameId, me);
+            await window.SurvivorNetwork.GameAPI.declineNullifier(gameId, me)
+                .catch(() => { nullifierAnswered = null; });
         }, { once: true });
     }, 0);
 }
@@ -3187,22 +3196,32 @@ function showRaidDialog(gameState, pending, thiefName) {
         const gameId = window.SurvivorGame?.localGameState?.gameId;
         const myId = window.SurvivorGame?.localGameState?.playerId;
 
+        const answeredKey = `${pending.thiefId}:${pending.targetId}`;
+
         if (playBtn) playBtn.addEventListener('click', async () => {
             const hand = window.SurvivorGame?.fullGameState?.players?.[myId]?.hand || [];
             const cardIdx = hand.findIndex(c => c.type === 'sorry_for_you');
+            reactiveTheftAnswered = answeredKey;
             hideModal();
             if (cardIdx < 0) { showToast('Sorry For You is no longer in your hand', 'error'); return; }
             try {
                 await window.SurvivorNetwork?.GameAPI.playReactiveCard(gameId, myId, cardIdx);
                 Haptics.trigger('success');
-            } catch (e) { showToast(e.message || 'Could not play Sorry For You', 'error'); }
+            } catch (e) {
+                reactiveTheftAnswered = null;   // refused — the question is still open
+                showToast(e.message || 'Could not play Sorry For You', 'error');
+            }
         });
 
         if (allowBtn) allowBtn.addEventListener('click', async () => {
+            reactiveTheftAnswered = answeredKey;
             hideModal();
             try {
                 await window.SurvivorNetwork?.GameAPI.completeTheft(gameId, myId);
-            } catch (e) { showToast(e.message || 'Could not resolve the raid', 'error'); }
+            } catch (e) {
+                reactiveTheftAnswered = null;
+                showToast(e.message || 'Could not resolve the raid', 'error');
+            }
         });
     }, 0);
 }
@@ -3217,6 +3236,7 @@ function showRaidDialog(gameState, pending, thiefName) {
 // they're waiting on, then reveals the picks.
 
 let interactionKey = null;
+let interactionAnswered = null;
 
 function renderInteraction(gameState) {
     const it = gameState?.interaction;
@@ -3227,15 +3247,41 @@ function renderInteraction(gameState) {
         ? `${it.type}:${it.phase}:${it.round}:${awaitingMe}:${(it.awaiting || []).length}`
         : null;
 
-    if (key === interactionKey) return;
+    if (key === interactionKey) {
+        // Same step, and it is this player's move, but the dialog is gone
+        // without an answer — show it again.
+        if (active && interactionAnswered !== key && interactionWantsDialog(it, me, awaitingMe)
+                && !modalShowing('.interaction-ui')) {
+            showInteractionStep(gameState, it, me, awaitingMe);
+        }
+        return;
+    }
 
-    // Clear whatever the previous interaction state showed
+    // Clear whatever the previous interaction state showed. Only OUR dialogs —
+    // the Sorry For You penalty picker can be up at the same time.
     if (interactionKey !== null) {
         removeInteractionBanner();
-        if (document.querySelector('.interaction-ui')) hideModal();
+        if (modalShowing('.interaction-ui')) hideModal();
     }
     interactionKey = key;
+    interactionAnswered = null;
     if (!active) return;
+    showInteractionStep(gameState, it, me, awaitingMe);
+}
+
+/** Does this step put a dialog in front of THIS player (vs. a waiting banner)? */
+function interactionWantsDialog(it, me, awaitingMe) {
+    return (it.phase === 'picking' && awaitingMe)
+        || (it.phase === 'give' && awaitingMe)
+        || (it.phase === 'choose_victim' && it.winnerId === me)
+        || it.phase === 'complete';
+}
+
+function markInteractionAnswered() {
+    interactionAnswered = interactionKey;
+}
+
+function showInteractionStep(gameState, it, me, awaitingMe) {
 
     if (it.phase === 'picking' && awaitingMe) {
         showInteractionPickModal(gameState, it);
@@ -3256,7 +3302,7 @@ function showInteractionPickModal(gameState, it) {
     const me = window.SurvivorGame?.localGameState?.playerId;
     const act = (action, value) => window.SurvivorNetwork?.GameAPI
         .interactionAct(gameId, me, action, value)
-        .catch(e => showToast(e.message || 'That did not land', 'error'));
+        .catch(e => { interactionAnswered = null; showToast(e.message || 'That did not land', 'error'); });
 
     if (it.type === 'do_or_die') {
         const opponent = (it.participants || []).find(p => p !== me);
@@ -3297,6 +3343,7 @@ function showInteractionPickModal(gameState, it) {
     setTimeout(() => {
         document.querySelectorAll('[data-pick]').forEach(btn => {
             btn.addEventListener('click', () => {
+                markInteractionAnswered();
                 hideModal();
                 Haptics.trigger('select');
                 act('pick', btn.dataset.pick);
@@ -3339,10 +3386,11 @@ function showInteractionGiveModal(gameState, it) {
     setTimeout(() => {
         document.querySelectorAll('[data-give-index]').forEach(btn => {
             btn.addEventListener('click', () => {
+                markInteractionAnswered();
                 hideModal();
                 window.SurvivorNetwork?.GameAPI
                     .interactionAct(gameId, me, 'give', parseInt(btn.dataset.giveIndex))
-                    .catch(e => showToast(e.message || 'That did not land', 'error'));
+                    .catch(e => { interactionAnswered = null; showToast(e.message || 'That did not land', 'error'); });
             });
         });
     }, 0);
@@ -3362,6 +3410,7 @@ function showInteractionGiveModal(gameState, it) {
 // decision, and the server resolves it without opening a window at all.
 
 let pendingDiscardKey = null;
+let pendingDiscardAnswered = null;
 
 function renderPendingDiscards(gameState) {
     const window_ = gameState?.pending_discards;
@@ -3369,7 +3418,13 @@ function renderPendingDiscards(gameState) {
     const me = window.SurvivorGame?.localGameState?.playerId;
     const key = awaiting.length ? awaiting.join(',') : null;
 
-    if (key === pendingDiscardKey) return;   // no change
+    if (key === pendingDiscardKey) {
+        if (key && awaiting.includes(me) && pendingDiscardAnswered !== key
+                && !modalShowing('.penalty-discard')) {
+            showPenaltyDiscardModal(gameState);
+        }
+        return;
+    }
 
     if (pendingDiscardKey !== null) {
         removeReactiveWaitBanner();
@@ -3398,7 +3453,7 @@ function showPenaltyDiscardModal(gameState) {
         .filter(({ card }) => card.type !== 'vote');
 
     const content = `
-        <div class="interaction-ui cardname-selection penalty-discard">
+        <div class="cardname-selection penalty-discard">
             <p class="picker-hint">Your raid was blocked — choose the card you give up.</p>
             <div class="cardname-grid">
                 ${offerable.map(({ card, index }) => {
@@ -3418,10 +3473,11 @@ function showPenaltyDiscardModal(gameState) {
     setTimeout(() => {
         document.querySelectorAll('[data-penalty-index]').forEach(btn => {
             btn.addEventListener('click', () => {
+                pendingDiscardAnswered = pendingDiscardKey;
                 hideModal();
                 window.SurvivorNetwork?.GameAPI.choosePenaltyDiscard(
                     gameId, me, parseInt(btn.dataset.penaltyIndex))
-                    .catch(e => showToast(e.message || 'That did not land', 'error'));
+                    .catch(e => { pendingDiscardAnswered = null; showToast(e.message || 'That did not land', 'error'); });
             }, { once: true });
         });
     }, 0);
@@ -3434,12 +3490,15 @@ function showInteractionVictimPicker(gameState, it) {
     showPlayerPicker({
         title: "It's A Numbers Game",
         hint: 'Your number stood alone — steal 2 random cards from any player.',
-        onPick: (victimId) => window.SurvivorNetwork?.GameAPI
-            .interactionAct(gameId, me, 'steal_from', victimId)
-            .catch(e => showToast(e.message || 'That did not land', 'error'))
+        blocking: true,
+        extraClass: 'interaction-ui',
+        onPick: (victimId) => {
+            markInteractionAnswered();
+            return window.SurvivorNetwork?.GameAPI
+                .interactionAct(gameId, me, 'steal_from', victimId)
+                .catch(e => { interactionAnswered = null; showToast(e.message || 'That did not land', 'error'); });
+        }
     });
-    // Mark the modal so renderInteraction can manage it
-    setTimeout(() => document.querySelector('.target-selection')?.classList.add('interaction-ui'), 0);
 }
 
 /** The reveal: everyone's picks plus what happened, then back to the turn. */
@@ -3473,6 +3532,7 @@ function showInteractionReveal(gameState, it) {
 
     setTimeout(() => {
         document.querySelector('[data-interaction-dismiss]')?.addEventListener('click', () => {
+            markInteractionAnswered();
             hideModal();
             window.SurvivorNetwork?.GameAPI.interactionAct(gameId, me, 'dismiss')
                 .catch(() => {});   // already dismissed elsewhere is fine
@@ -3529,25 +3589,51 @@ function removeReactiveWaitBanner() {
  * The Story So Far — a slide-over reading of the server's event log, so a
  * player who was disconnected (or just distracted) can catch up.
  */
+let storyDrawerBound = false;
+let storyReturnFocus = null;
+
+/** Listeners for the drawer, bound once — openStory used to add a fresh
+ *  {once:true} pair on every open, and the unfired ones piled up. */
+function bindStoryDrawer(drawer, overlay) {
+    if (storyDrawerBound) return;
+    storyDrawerBound = true;
+    overlay.addEventListener('click', closeStory);
+    drawer.querySelector('[data-action="closeStory"]')?.addEventListener('click', closeStory);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && drawer.classList.contains('open')
+                && !document.querySelector('dialog[open]')) {
+            e.preventDefault();
+            closeStory();
+        }
+    });
+}
+
 function openStory() {
     const drawer = document.getElementById('storyDrawer');
     const overlay = document.getElementById('storyOverlay');
     if (!drawer || !overlay) return;
+    bindStoryDrawer(drawer, overlay);
     renderStoryList(window.SurvivorGame?.fullGameState);
+    storyReturnFocus = document.activeElement;
+    drawer.inert = false;
+    drawer.scrollTop = 0;   // the drawer itself scrolls — open at the top
     drawer.classList.add('open');
     overlay.classList.add('open');
     drawer.setAttribute('aria-hidden', 'false');
-    overlay.addEventListener('click', closeStory, { once: true });
-    drawer.querySelector('[data-action="closeStory"]')
-        ?.addEventListener('click', closeStory, { once: true });
+    drawer.querySelector('[data-action="closeStory"]')?.focus();
 }
 
 function closeStory() {
     const drawer = document.getElementById('storyDrawer');
     const overlay = document.getElementById('storyOverlay');
-    drawer?.classList.remove('open');
+    if (!drawer?.classList.contains('open')) return;
+    drawer.classList.remove('open');
     overlay?.classList.remove('open');
-    drawer?.setAttribute('aria-hidden', 'true');
+    drawer.setAttribute('aria-hidden', 'true');
+    // Closed = out of the tab order and the accessibility tree
+    drawer.inert = true;
+    if (storyReturnFocus?.isConnected) storyReturnFocus.focus();
+    storyReturnFocus = null;
 }
 
 function renderStoryList(gameState) {
@@ -3964,10 +4050,15 @@ function renderSettingsRow(row) {
     const S = window.SurvivorSettings;
     const value = S.get(row.key);
     const sub = row.sub ? `<span class="row-sub">${escapeHtml(row.sub)}</span>` : '';
+    // Every visible label is tied to its control: `for` on a single input,
+    // aria-labelledby on a button group.
+    const controlId = `set-${row.key}`;
+    const labelId = `${controlId}-label`;
     let control = '';
+    let labelFor = '';
 
     if (row.type === 'seg') {
-        control = `<div class="seg-group" role="group" aria-label="${escapeHtml(row.label)}">` +
+        control = `<div class="seg-group" role="group" aria-labelledby="${labelId}">` +
             row.options.map(([v, label]) =>
                 `<button class="seg-btn touch-target" data-set-key="${row.key}" data-set-value="${v}"
                          aria-pressed="${String(value) === v}">${escapeHtml(label)}</button>`).join('') +
@@ -3975,14 +4066,16 @@ function renderSettingsRow(row) {
     } else if (row.type === 'toggle') {
         // .checkbox-row styles a bare checkbox as the app's pill switch
         control = `<label class="checkbox-row" style="min-height:0">
-            <input type="checkbox" data-set-key="${row.key}" data-set-toggle="1" ${value ? 'checked' : ''}>
+            <input type="checkbox" id="${controlId}" data-set-key="${row.key}" data-set-toggle="1" ${value ? 'checked' : ''}>
         </label>`;
+        labelFor = controlId;
     } else if (row.type === 'text') {
-        control = `<input type="text" class="form-input" data-set-key="${row.key}" data-set-text="1"
+        control = `<input type="text" class="form-input" id="${controlId}" data-set-key="${row.key}" data-set-text="1"
                           value="${escapeHtml(value || '')}" autocomplete="off"
                           placeholder="${escapeHtml(row.placeholder || '')}">`;
+        labelFor = controlId;
     } else if (row.type === 'colors') {
-        control = `<div class="seg-group">` + PLAYER_COLORS.map(([hex, name]) =>
+        control = `<div class="seg-group" role="group" aria-labelledby="${labelId}">` + PLAYER_COLORS.map(([hex, name]) =>
             `<button class="color-btn touch-target" data-set-key="${row.key}" data-set-value="${hex}"
                      style="background:${hex}" role="radio" aria-label="${name}"
                      aria-checked="${value === hex}"></button>`).join('') +
@@ -3990,7 +4083,7 @@ function renderSettingsRow(row) {
                      aria-pressed="${!value}">Any</button></div>`;
     }
 
-    return `<div class="settings-row"><label>${escapeHtml(row.label)}${sub}</label>${control}</div>`;
+    return `<div class="settings-row"><label id="${labelId}"${labelFor ? ` for="${labelFor}"` : ''}>${escapeHtml(row.label)}${sub}</label>${control}</div>`;
 }
 
 function renderSettingsScreen() {
@@ -4027,9 +4120,15 @@ function bindSettingsControls(body) {
     body.querySelectorAll('[data-set-value]').forEach(btn => {
         btn.addEventListener('click', () => {
             const key = btn.dataset.setKey;
-            S.set(key, btn.dataset.setValue);
-            findSettingsRowOnChange(key)?.(btn.dataset.setValue);
+            const value = btn.dataset.setValue;
+            S.set(key, value);
+            findSettingsRowOnChange(key)?.(value);
             renderSettingsScreen();
+            // The re-render replaced the button that had focus — hand focus to
+            // its replacement so keyboard and screen-reader users stay put.
+            document.getElementById('settingsBody')
+                ?.querySelector(`[data-set-key="${CSS.escape(key)}"][data-set-value="${CSS.escape(value)}"]`)
+                ?.focus();
         });
     });
 
@@ -4061,10 +4160,16 @@ function bindSettingsControls(body) {
     });
     body.querySelector('[data-housekeeping="forget"]')?.addEventListener('click', () => {
         showConfirm('Forget this island? The code and any saved game on this device are cleared.',
-            () => {
+            async () => {
                 window.SurvivorGame?.wipeLocalGame?.();
                 try { localStorage.removeItem('survivorState'); } catch (e) {}
-                document.cookie = 'survivor_access=; Max-Age=0; path=/';
+                // The access cookie is HttpOnly — script can't delete it, only
+                // the server can. Wait for it before reloading, or the reload
+                // walks straight back onto the island.
+                try {
+                    await fetch('/api/access/forget', { method: 'POST', cache: 'no-store' });
+                } catch (e) { /* offline — the reload shows whatever the server says */ }
+                document.cookie = 'survivor_access=; Max-Age=0; path=/';   // pre-HttpOnly cookies
                 location.reload();
             });
     });
@@ -4115,7 +4220,7 @@ async function handleTurnNotificationsToggle(on) {
             if (sub) await sub.unsubscribe();
         } catch (e) { /* local unsubscribe is best-effort */ }
         if (gameId && playerId) {
-            window.SurvivorNetwork?.GameAPI.pushUnsubscribe(gameId, playerId);
+            window.SurvivorNetwork?.GameAPI.pushUnsubscribe(gameId, playerId)?.catch(() => {});
         }
         return;
     }
@@ -4274,23 +4379,9 @@ async function shareGame() {
  * Provide haptic feedback for interactions
  * @param {string} type - Type of feedback: 'light', 'medium', 'heavy', 'success', 'error'
  */
+/** Every buzz goes through Haptics, which honours the Vibration setting. */
 function hapticFeedback(type = 'light') {
-    if (!('vibrate' in navigator)) return;
-
-    const patterns = {
-        light: [10],
-        medium: [30],
-        heavy: [50],
-        success: [10, 50, 10],
-        error: [100, 50, 100],
-        warning: [50, 30, 50]
-    };
-
-    try {
-        navigator.vibrate(patterns[type] || patterns.light);
-    } catch (error) {
-        // Silently fail - vibration not critical
-    }
+    Haptics.trigger(type);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4331,10 +4422,10 @@ const NetworkStatusManager = {
     },
 
     setStatus(isOnline, message = null) {
+        const wasOnline = this.isOnline;
         this.isOnline = isOnline;
         if (!this.indicator) return;
 
-        const dot = this.indicator.querySelector('.network-status-dot');
         const text = this.indicator.querySelector('.network-status-text');
 
         if (isOnline) {
@@ -4343,7 +4434,8 @@ const NetworkStatusManager = {
         } else {
             this.indicator.className = 'network-status status-offline';
             if (text) text.textContent = message || 'Offline';
-            hapticFeedback('warning');
+            // One buzz when the line drops — not one per failed retry
+            if (wasOnline) hapticFeedback('warning');
         }
     },
 
@@ -4379,7 +4471,8 @@ function showReconnecting(attempt = 0) {
 function handleDeepLink() {
     const pathMatch = window.location.pathname.match(/^\/join\/([A-Za-z0-9]+)$/i);
     if (pathMatch) {
-        const gameCode = pathMatch[1].toUpperCase();
+        // Game ids are lowercase and the server matches them exactly
+        const gameCode = pathMatch[1].toLowerCase();
         console.log(`🔗 Deep link detected: ${gameCode}`);
 
         // Pre-fill the game code input
@@ -4457,6 +4550,8 @@ window.SurvivorUI = {
     hideModal,
     showConfirm,
     showToast,
+    showStatus,
+    clearStatus,
 
     // Loading states
     showLoading,
@@ -4468,7 +4563,6 @@ window.SurvivorUI = {
     castVote,
 
     // State updates
-    updateFromDiff,
     updateCurrentScreen,
 
     // Screen setup
@@ -4516,7 +4610,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         // ESC to close modals
-        if (e.key === 'Escape' && modalOverlay && modalOverlay.style.display === 'flex') {
+        if (e.key === 'Escape' && modalOverlay && modalOverlay.style.display === 'flex'
+                && modalOverlay.dataset.blocking !== '1') {
             hideModal();
         }
     });

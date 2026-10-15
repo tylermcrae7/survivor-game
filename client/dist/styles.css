@@ -1907,57 +1907,6 @@
   .target-grid { flex-direction: column; }
   .target-grid .btn { justify-content: flex-start; }
 
-  /* ── Card tooltip ── */
-  .card-tooltip {
-    position: fixed;
-    z-index: 10001;
-    /* Purely informational — it must never swallow the tap aimed at the card
-       beneath it (pointerenter shows it right before the tap lands). */
-    pointer-events: none;
-    width: min(300px, 88vw);
-    background: var(--bg-deep);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-xl);
-    padding: 0.8rem 0.9rem;
-    color: var(--text);
-    inset: unset;
-  }
-  .card-tooltip:not(:popover-open):not(.visible) { display: none; }
-  .card-tooltip-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 0.5rem;
-    margin-bottom: 0.35rem;
-  }
-  .card-tooltip-name { font-family: var(--font-display); font-weight: 700; color: var(--parchment); }
-  .card-tooltip-category {
-    font-family: var(--font-label);
-    font-size: 0.62rem;
-    letter-spacing: var(--track-label);
-    color: var(--torch);
-  }
-  .card-tooltip-description { font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.45; }
-  .card-tooltip-timing {
-    margin-top: 0.5rem;
-    font-family: var(--font-label);
-    font-size: 0.62rem;
-    letter-spacing: var(--track-label);
-    color: var(--text-faint);
-  }
-  .card-tooltip-phases { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
-  .card-tooltip-phase {
-    font-family: var(--font-label);
-    font-size: 0.62rem;
-    letter-spacing: 0.08em;
-    padding: 0.14rem 0.5rem;
-    border: 1px solid oklch(0.70 0.165 60 / 0.4);
-    border-radius: var(--radius-full);
-    color: var(--torch);
-  }
-  .card-tooltip-arrow { display: none; }
-
   /* ── Loading: a torch being lit ── */
   .loading-overlay {
     position: fixed;

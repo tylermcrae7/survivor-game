@@ -187,10 +187,18 @@ const NARRATOR_TEMPLATES = {
 // SOUND MANAGER
 // ─────────────────────────────────────────────────────────────────────────────
 
+function readSoundMuted() {
+    // Storage can throw (Safari private mode, blocked site data) — and this
+    // runs while the script loads, where a throw kills the whole narrator.
+    try { return localStorage.getItem('survivorSoundMuted') === 'true'; }
+    catch (e) { return false; }
+}
+
 const SoundManager = {
-    muted: localStorage.getItem('survivorSoundMuted') === 'true',
+    muted: readSoundMuted(),
     sounds: {},
     audioContext: null,
+    unlockBound: false,
 
     init() {
         // Use Web Audio API to generate sounds (no external files needed)
@@ -199,11 +207,37 @@ const SoundManager = {
         } catch (e) {
             console.warn('Web Audio API not supported');
         }
+        this.bindUnlock();
+    },
+
+    /**
+     * Browsers (iOS Safari above all) create an AudioContext 'suspended' until
+     * a user gesture resumes it, and suspend it again when the page is
+     * backgrounded. Nothing ever resumed it, so no sound ever played. Resume
+     * on the first touch/key (capture phase, so no handler can swallow it)
+     * and whenever the page comes back to the front.
+     */
+    bindUnlock() {
+        if (this.unlockBound || !this.audioContext) return;
+        this.unlockBound = true;
+        const resume = () => this.resume();
+        ['pointerdown', 'touchend', 'keydown'].forEach(type =>
+            document.addEventListener(type, resume, { capture: true, passive: true }));
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') resume();
+        });
+    },
+
+    resume() {
+        const ctx = this.audioContext;
+        if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') {
+            ctx.resume().catch(() => { /* needs a gesture — the next one will do */ });
+        }
     },
 
     toggle() {
         this.muted = !this.muted;
-        localStorage.setItem('survivorSoundMuted', this.muted);
+        try { localStorage.setItem('survivorSoundMuted', this.muted); } catch (e) { /* private mode */ }
         return !this.muted;
     },
 
@@ -216,6 +250,8 @@ const SoundManager = {
         // The narrator's own mute stays subordinate to the device master switch
         if (window.SurvivorSettings && !window.SurvivorSettings.soundOn()) return;
         if (this.muted || !this.audioContext) return;
+        // Still locked (no gesture yet) — try, and skip this one sound.
+        if (this.audioContext.state !== 'running') { this.resume(); return; }
 
         try {
             const ctx = this.audioContext;
@@ -505,8 +541,9 @@ class GameNarrator {
                 <span class="narrator-avatar"><svg class="icon" aria-hidden="true"><use href="#i-torch"></use></svg></span>
                 <span class="narrator-title">Survivor Narrator</span>
                 <button id="narratorSoundToggle" class="narrator-sound-toggle" title="Toggle sound"
-                        aria-label="Toggle narrator sound">${SoundManager.isMuted() ? 'muted' : 'sound'}</button>
-                <button id="narratorToggle" class="narrator-toggle" title="Minimize" aria-label="Minimize narrator">–</button>
+                        aria-label="Narrator sound" aria-pressed="${!SoundManager.isMuted()}">${SoundManager.isMuted() ? 'muted' : 'sound'}</button>
+                <button id="narratorToggle" class="narrator-toggle" title="Minimize" aria-label="Minimize narrator"
+                        aria-expanded="true">–</button>
             </div>
             <div class="narrator-content">
                 <div class="narrator-text">
@@ -529,14 +566,19 @@ class GameNarrator {
         // Sound toggle button
         document.getElementById('narratorSoundToggle').addEventListener('click', () => {
             const isOn = SoundManager.toggle();
-            document.getElementById('narratorSoundToggle').textContent = isOn ? 'sound' : 'muted';
+            const btn = document.getElementById('narratorSoundToggle');
+            btn.textContent = isOn ? 'sound' : 'muted';
+            btn.setAttribute('aria-pressed', String(isOn));
         });
 
         // Minimize toggle
         document.getElementById('narratorToggle').addEventListener('click', () => {
             panel.classList.toggle('minimized');
-            document.getElementById('narratorToggle').textContent =
-                panel.classList.contains('minimized') ? '+' : '–';
+            const minimized = panel.classList.contains('minimized');
+            const btn = document.getElementById('narratorToggle');
+            btn.textContent = minimized ? '+' : '–';
+            btn.setAttribute('aria-expanded', String(!minimized));
+            btn.setAttribute('aria-label', minimized ? 'Expand narrator' : 'Minimize narrator');
         });
     }
 
@@ -962,9 +1004,9 @@ class GameNarrator {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (text === null || text === undefined) return '';
+        return String(text).replace(/[&<>"']/g, ch =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
     }
 
     formatTime(timestamp) {
