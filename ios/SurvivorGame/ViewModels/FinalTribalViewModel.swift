@@ -23,12 +23,34 @@ final class FinalTribalViewModel {
     var isFinalist: Bool { gameClient.isFinalist }
     var isCouncilLeader: Bool { gameClient.isCouncilLeader }
 
+    /// Whether this phone runs the Final Tribal ceremony. The server names its
+    /// own leader for it (`finalTribal.leader` — the last juror seated), and
+    /// only that player may break a final tie (`break_final_tie`).
+    /// `isCouncilLeader` reads the last ordinary council's leader, which is
+    /// stale here: gating on it handed the controls to the wrong phone and
+    /// left the real leader with none. Servers that predate the field fall
+    /// back to the council-leader flag.
+    var isFinalLeader: Bool {
+        guard let leaderId = finalTribal?.leader else { return gameClient.isCouncilLeader }
+        return leaderId == myPlayerId
+    }
+
+    /// The leader's name, for "X leads the final council" copy.
+    var finalLeaderName: String? {
+        guard let leaderId = finalTribal?.leader else { return nil }
+        return gameState?.players[leaderId]?.name
+    }
+
+    /// The official Final Tribal questions, in order — empty on servers that
+    /// don't send them.
+    var questions: [String] { finalTribal?.questions ?? [] }
+
     var finalists: [PlayerState] {
         (finalTribal?.finalists ?? []).compactMap { gameState?.players[$0] }
     }
 
     var juryMembers: [PlayerState] {
-        (gameState?.jury ?? []).compactMap { gameState?.players[$0] }
+        (finalTribal?.jury ?? gameState?.jury ?? []).compactMap { gameState?.players[$0] }
     }
 
     var juryReady: Set<String> {

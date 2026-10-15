@@ -107,8 +107,9 @@ private struct FinalTribalContent: View {
                 .padding()
             }
 
-            // Council leader phase advance
-            if viewModel.isCouncilLeader {
+            // Final Tribal Leader phase advance — the ceremony's own leader
+            // (finalTribal.leader), not the last council's.
+            if viewModel.isFinalLeader {
                 hairline
                 FinalLeaderBar(viewModel: viewModel)
             }
@@ -181,6 +182,15 @@ private struct QuestionsPhase: View {
                 .foregroundStyle(Torch.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
+            FinalQuestionsList(questions: viewModel.questions)
+
+            if !viewModel.isFinalLeader, let leaderName = viewModel.finalLeaderName {
+                Text("\(leaderName) leads the final council…")
+                    .font(Torch.Font.body(Torch.TextSize.xs))
+                    .foregroundStyle(Torch.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
             // No "Ready to Vote" here — the server refuses a signal raised
             // before deliberation opens ("The finalists are still making
             // their cases — deliberation opens the vote"), so the finger only
@@ -211,6 +221,8 @@ private struct DeliberationPhase: View {
                 .font(Torch.Font.body(Torch.TextSize.sm))
                 .foregroundStyle(Torch.Color.textSecondary)
 
+            FinalQuestionsList(questions: viewModel.questions)
+
             if viewModel.isJuryMember && !viewModel.isReady {
                 Button("Ready to Vote") {
                     Task { await viewModel.signalReady() }
@@ -222,6 +234,35 @@ private struct DeliberationPhase: View {
             JuryReadyList(
                 juryMembers: viewModel.juryMembers,
                 readySet: viewModel.juryReady
+            )
+        }
+    }
+}
+
+/// The official Final Tribal questions (web parity: ui.js
+/// `renderFinalTribal`). Renders nothing when the server sends none.
+private struct FinalQuestionsList: View {
+    let questions: [String]
+
+    var body: some View {
+        if !questions.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
+                    Text("\(index + 1). \(question)")
+                        .font(Torch.Font.body(Torch.TextSize.sm))
+                        .foregroundStyle(Torch.Color.parchment)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                    .fill(FinalPalette.surfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Torch.Radius.md, style: .continuous)
+                    .strokeBorder(FinalPalette.line, lineWidth: 1)
             )
         }
     }
@@ -274,7 +315,9 @@ private struct FinalTieBreakView: View {
                 .font(Torch.Font.body(Torch.TextSize.sm))
                 .foregroundStyle(Torch.Color.textSecondary)
 
-            if viewModel.isCouncilLeader {
+            // The server only accepts the tie-break from finalTribal.leader
+            // (`break_final_tie`) — never the last ordinary council's leader.
+            if viewModel.isFinalLeader {
                 ForEach(viewModel.tiedFinalists) { player in
                     Button {
                         Task { await viewModel.breakTie(chosenWinner: player.id) }

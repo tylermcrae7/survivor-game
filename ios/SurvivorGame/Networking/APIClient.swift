@@ -595,4 +595,16 @@ enum APIError: LocalizedError {
         if case .serverError(statusCode: 401, _) = self { return true }
         return false
     }
+
+    /// The server's own answer that a game id doesn't exist
+    /// (`api_game_state` → 404 `{"message": "Game not found"}`). Matched on
+    /// the wording as well as the status: an unknown route answers
+    /// "404 Not Found" and a proxy's 404 has no JSON body at all ("Request
+    /// failed"), and neither proves the game is gone.
+    var isGameNotFound: Bool {
+        if case .serverError(let statusCode, let message) = self {
+            return statusCode == 404 && message.localizedCaseInsensitiveContains("game not found")
+        }
+        return false
+    }
 }

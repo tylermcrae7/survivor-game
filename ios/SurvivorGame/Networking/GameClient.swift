@@ -197,7 +197,11 @@ final class GameClient {
         guard response.success else {
             throw GameClientError.operationFailed("Failed to create game")
         }
-        self.gameId = response.gameId
+        // Deliberately NOT stored in `self.gameId`: creating a game doesn't
+        // seat you in it. Storing it here let the poll navigate into the new
+        // lobby with no playerId while the join was still in flight — and if
+        // the join then failed (a refused name), the phone was stranded in a
+        // lobby it could never leave. `joinGame` sets it once there's a seat.
         return response.gameId
     }
 
@@ -711,6 +715,17 @@ final class GameClient {
             if let apiError = error as? APIError, apiError.requiresIslandAccess {
                 accessState = .requiresCode
                 disconnect()
+            } else if let apiError = error as? APIError, apiError.isGameNotFound,
+                      self.gameId == gameId {
+                // The server no longer has this game (deleted, or garbage-
+                // collected while we were away). Polling a dead id forever
+                // left the phone frozen on the last state it saw; treat it
+                // exactly like the server's own `game_wiped`. The id check
+                // keeps a slow 404 for a game we already left from tearing
+                // down whatever we joined since.
+                print("[GameClient] Game \(gameId) is gone — leaving it")
+                handleEvent(.wiped)
+                return
             }
             print("[GameClient] Sync failed: \(error)")
         }
@@ -763,14 +778,22 @@ final class GameClient {
 
     func handleEvent(_ event: GameEvent) {
         switch event {
-        case .reset:
+        case .reset(let resetGameId):
+            // Only OUR game's reset counts. A reset naming another game is
+            // someone else's table; nil is a server that predates sending the
+            // id, which only ever emitted this to the game's own room.
+            if let resetGameId, resetGameId != gameId { return }
             // Nothing from the finished game should still be narrating itself
             // over the lobby.
             narration.reset()
             allianceAlert = nil
             clearRobberies()
-            gameState?.phase = .lobby
-            updateNavigationState()
+            // Re-read the real state instead of fabricating `phase = .lobby`:
+            // `reset_game` lands in the lobby, but `record_winner` emits this
+            // too and leaves the game `finished` — the fetched state navigates
+            // to whichever is true. A game that is gone 404s and is handled
+            // as wiped by `syncState`.
+            Task { await syncState() }
         case .wiped:
             narration.reset()
             allianceAlert = nil

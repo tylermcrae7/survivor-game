@@ -77,7 +77,10 @@ final class StartViewModel {
 
     func joinGame() async {
         let normalizedCode = Self.normalizedGameCode(joinCode)
-        guard validateInputs(), !normalizedCode.isEmpty else {
+        // Two guards, not one: a combined guard overwrote validateInputs'
+        // specific name error with "Please enter a game code".
+        guard validateInputs() else { return }
+        guard !normalizedCode.isEmpty else {
             error = .gameError("Please enter a game code")
             return
         }
@@ -155,6 +158,17 @@ final class StartViewModel {
         let name = playerName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else {
             error = .gameError("Please enter your name")
+            return false
+        }
+        // Mirrors survivor_server.validate_player_name (2...30, checked before
+        // the character rule there too). Refusing here costs no round trip
+        // and never creates a game the join is then going to fail.
+        guard name.count >= 2 else {
+            error = .gameError("Player name must be at least 2 characters.")
+            return false
+        }
+        guard name.count <= 30 else {
+            error = .gameError("Player name must be 30 characters or less.")
             return false
         }
         guard name.range(of: "^[a-zA-Z0-9_\\-\\. ]+$", options: .regularExpression) != nil else {

@@ -58,6 +58,17 @@ struct NetworkingTests {
         #expect(gated.requiresIslandAccess)
         #expect(!missing.requiresIslandAccess)
     }
+
+    /// Only the server's own "Game not found" proves a game is gone — an
+    /// unknown route ("404 Not Found") or a proxy's bodiless 404 ("Request
+    /// failed") must never wipe a player's seat.
+    @Test func onlyTheServersGameNotFoundCountsAsAGoneGame() {
+        #expect(APIError.serverError(statusCode: 404, message: "Game not found").isGameNotFound)
+        #expect(!APIError.serverError(statusCode: 404, message: "404 Not Found").isGameNotFound)
+        #expect(!APIError.serverError(statusCode: 404, message: "Request failed").isGameNotFound)
+        #expect(!APIError.serverError(statusCode: 400, message: "Game not found").isGameNotFound)
+        #expect(!APIError.invalidResponse.isGameNotFound)
+    }
     
     @Test func gameClientErrorHasLocalizedDescription() {
         let error = GameClientError.noGame
@@ -89,6 +100,25 @@ struct NetworkingTests {
     @Test @MainActor func joinCodeIsNormalizedForTheServer() {
         #expect(StartViewModel.normalizedGameCode("  ABCD1234\n") == "abcd1234")
         #expect(PlayerColor.allCases.count == 8)
+    }
+
+    /// The server refuses names outside 2...30 (`validate_player_name`). The
+    /// phone says so itself, with the server's wording, before any round
+    /// trip — and the specific reason is no longer masked by "Please enter a
+    /// game code".
+    @Test @MainActor func nameLengthMirrorsTheServerRule() async {
+        let client = GameClient(baseURL: URL(string: "https://survivor-name-test.invalid")!)
+        let viewModel = StartViewModel(gameClient: client)
+        viewModel.joinCode = "abcd1234"
+
+        viewModel.playerName = "T"
+        await viewModel.joinGame()
+        #expect(viewModel.error?.message == "Player name must be at least 2 characters.")
+
+        viewModel.playerName = String(repeating: "a", count: 31)
+        await viewModel.joinGame()
+        #expect(viewModel.error?.message == "Player name must be 30 characters or less.")
+        #expect(client.gameId == nil)
     }
 
     // MARK: - Locked Island Session
@@ -150,13 +180,13 @@ struct NetworkingTests {
     // MARK: - Game Event Types
     
     @Test func gameEventTypes() {
-        let resetEvent = GameEvent.reset
+        let resetEvent = GameEvent.reset(gameId: "abc12345")
         let wipedEvent = GameEvent.wiped
         let errorEvent = GameEvent.error("Something went wrong")
         let customEvent = GameEvent.custom(type: "player_joined", data: ["playerId": "p1"])
         
-        if case .reset = resetEvent {
-            // Success
+        if case .reset(let gameId) = resetEvent {
+            #expect(gameId == "abc12345")
         } else {
             Issue.record("Expected reset event")
         }
@@ -254,8 +284,28 @@ struct NetworkingTests {
         client.playerId = "p1"
         client.handleEvent(.custom(type: "alliance", data: allianceEventData()))
         #expect(client.allianceAlert != nil)
-        client.handleEvent(.reset)
+        client.handleEvent(.reset(gameId: nil))
         #expect(client.allianceAlert == nil)
+    }
+
+    /// `game_reset` names its game. A reset for some other table must leave
+    /// this phone alone — the old `global_reset` path bounced every iOS
+    /// player in every game whenever anyone reset or recorded a winner.
+    @Test @MainActor func aResetForAnotherGameIsIgnored() {
+        let client = GameClient(baseURL: URL(string: "https://survivor-reset-test.invalid")!)
+        client.gameId = "test123"
+        client.playerId = "p1"
+        client.applyState(MockGameClient.sampleGameState())
+        client.handleEvent(.custom(type: "alliance", data: allianceEventData()))
+        #expect(client.allianceAlert != nil)
+
+        client.handleEvent(.reset(gameId: "someOtherGame"))
+        #expect(client.allianceAlert != nil, "another game's reset must not touch this one")
+        #expect(client.gameState?.phase == .playing)
+        #expect(client.navigationState == .playing)
+
+        client.handleEvent(.reset(gameId: "test123"))
+        #expect(client.allianceAlert == nil, "our own game's reset still clears the stage")
     }
 
     // MARK: - Robbery queue (alliance raids)
@@ -312,7 +362,7 @@ struct NetworkingTests {
             thief: "Ana", thiefId: "p1", card: "Hidden Immunity Idol")))
         client.handleEvent(.custom(type: "robbed", data: robbedEventData(
             thief: "Ben", thiefId: "p2", card: "Sorry For You")))
-        client.handleEvent(.reset)
+        client.handleEvent(.reset(gameId: nil))
         #expect(client.robberyAlert == nil)
         client.dismissRobberyAlert()
         #expect(client.robberyAlert == nil, "nothing queued may survive the reset")
@@ -383,7 +433,7 @@ struct NetworkingTests {
         client.playerId = "p2"
         client.handleEvent(.custom(type: "robbed", data: robbedEventData()))
         #expect(client.robberyAlert != nil)
-        client.handleEvent(.reset)
+        client.handleEvent(.reset(gameId: nil))
         #expect(client.robberyAlert == nil)
     }
 

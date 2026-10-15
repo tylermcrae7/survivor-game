@@ -105,6 +105,10 @@ struct NullifierWindowOverlay: View {
             .padding(24)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 18))
+            // A blocking dialog: VoiceOver must stay inside the card,
+            // not wander onto the dimmed screen behind the scrim.
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
             .padding(28)
             .errorAlert($error)
         }

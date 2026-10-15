@@ -78,6 +78,54 @@ struct TribalViewModelTests {
         #expect(rows.first?.isImmune == false)
     }
 
+    @Test("Tied rows break by name, so every phone reveals them in the same order")
+    func tiedRowsBreakByName() {
+        let viewModel = makeViewModel(currentVote: TribalVoteState(
+            phase: .reveal,
+            voteResults: ["p3": 2, "p2": 1, "p1": 2]
+        ))
+        let ids = viewModel.voteResults.map { $0.player.id }
+        // p1 Alice and p3 Charlie tie on 2 — alphabetical; p2 Bob trails.
+        #expect(ids == ["p1", "p3", "p2"])
+    }
+
+    // MARK: - Final Tribal leader (P0: the ceremony's controls)
+
+    /// p1 led the last ordinary council (`currentVote.councilLeaderId` in the
+    /// sample state); the Final Tribal Leader is p3, the last juror.
+    private func makeFinalViewModel(me: String, leader: String?) -> FinalTribalViewModel {
+        let gameClient = GameClient(baseURL: URL(string: "http://localhost:3000")!)
+        gameClient.gameId = "test123"
+        gameClient.playerId = me
+        var state = MockGameClient.sampleGameState()
+        state.phase = .finalTribal
+        state.jury = ["p3"]
+        state.finalTribal = FinalTribalState(
+            phase: .questions, finalists: ["p1", "p2"],
+            leader: leader, jury: ["p3"],
+            questions: ["What was your strategy coming into the game?"])
+        gameClient.applyState(state)
+        return FinalTribalViewModel(gameClient: gameClient)
+    }
+
+    @Test("The Final Tribal Leader gets the controls, not the last council's leader")
+    func finalLeaderComesFromFinalTribal() {
+        let leader = makeFinalViewModel(me: "p3", leader: "p3")
+        #expect(leader.isFinalLeader == true)
+        #expect(leader.isCouncilLeader == false, "the stale flag would have locked them out")
+        #expect(leader.questions.count == 1)
+
+        let staleCouncilLeader = makeFinalViewModel(me: "p1", leader: "p3")
+        #expect(staleCouncilLeader.isCouncilLeader == true)
+        #expect(staleCouncilLeader.isFinalLeader == false)
+    }
+
+    @Test("A server that predates finalTribal.leader falls back to the council-leader flag")
+    func finalLeaderFallsBackOnAnOlderServer() {
+        #expect(makeFinalViewModel(me: "p1", leader: nil).isFinalLeader == true)
+        #expect(makeFinalViewModel(me: "p3", leader: nil).isFinalLeader == false)
+    }
+
     // MARK: - isVoteBanned (I3: the ballot's quiet notice)
 
     /// Steal A Vote / Block A Vote never touch the eventLog or the narrator

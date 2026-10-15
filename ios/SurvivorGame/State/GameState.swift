@@ -32,6 +32,11 @@ struct GameState: Codable, Equatable {
     /// one. Absent on servers that predate places — the Places UI hides itself.
     var placePolicy: PlacePolicy?
 
+    /// The dict form of `winner` — only the id is kept.
+    private struct WinnerRecord: Decodable {
+        let playerId: String?
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, phase, players, turnOrder, currentTurnIndex, deck, gameHistory
         case currentVote, jury, finalTribal, winner, createdAt, lastActivity
@@ -57,7 +62,14 @@ struct GameState: Codable, Equatable {
         currentVote = try? c.decodeIfPresent(TribalVoteState.self, forKey: .currentVote)
         jury = try? c.decodeIfPresent([String].self, forKey: .jury)
         finalTribal = try? c.decodeIfPresent(FinalTribalState.self, forKey: .finalTribal)
-        winner = try? c.decodeIfPresent(String.self, forKey: .winner)
+        // A bare player id on the ordinary path; a `{playerId, playerName}`
+        // record on the last-player-standing path and after `record_winner`.
+        // Callers only ever need the id.
+        if let winnerId = try? c.decodeIfPresent(String.self, forKey: .winner) {
+            winner = winnerId
+        } else {
+            winner = (try? c.decodeIfPresent(WinnerRecord.self, forKey: .winner))?.playerId
+        }
         createdAt = try? c.decodeIfPresent(Double.self, forKey: .createdAt)
         lastActivity = try? c.decodeIfPresent(Double.self, forKey: .lastActivity)
         deckMode = try? c.decodeIfPresent(String.self, forKey: .deckMode)

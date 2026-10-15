@@ -427,11 +427,19 @@ private struct SplitBallotBuilder: View {
                                 .font(Torch.Font.body(Torch.TextSize.base, weight: .bold))
                                 .foregroundStyle(Torch.Color.parchment)
                             Spacer()
+                            // 44pt targets (HIG minimum) with a full-frame
+                            // content shape — the bare glyphs were ~22pt —
+                            // and labels that say whose pile they change.
                             Button {
                                 if allocations[player.id, default: 0] > 0 {
                                     allocations[player.id, default: 0] -= 1
                                 }
-                            } label: { Image(systemName: "minus.circle") }
+                            } label: {
+                                Image(systemName: "minus.circle")
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("Remove a vote from \(player.name)")
                             Text("\(allocations[player.id, default: 0])")
                                 .font(.title3.monospacedDigit())
                                 .foregroundStyle(Torch.Color.text)
@@ -440,7 +448,12 @@ private struct SplitBallotBuilder: View {
                                 if total < maxTotal {
                                     allocations[player.id, default: 0] += 1
                                 }
-                            } label: { Image(systemName: "plus.circle") }
+                            } label: {
+                                Image(systemName: "plus.circle")
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("Add a vote for \(player.name)")
                         }
                         .padding(10)
                         .background(

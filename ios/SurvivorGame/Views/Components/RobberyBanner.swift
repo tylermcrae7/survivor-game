@@ -53,7 +53,19 @@ struct RobberyBanner: View {
                         .onTapGesture { gameClient.dismissRobberyAlert() }
                         .task {
                             HapticEngine.notification(.warning)
-                            try? await Task.sleep(for: Self.dismissAfter)
+                            let staged = gameClient.robberySequence
+                            do {
+                                try await Task.sleep(for: Self.dismissAfter)
+                            } catch {
+                                // Cancelled: a tap already advanced the queue
+                                // (new `.id`, so this task was torn down).
+                                // `try?` fell through to the dismiss below and
+                                // ate the NEXT banner the moment it arrived.
+                                return
+                            }
+                            // Belt and braces: only time out the banner this
+                            // clock was started for.
+                            guard gameClient.robberySequence == staged else { return }
                             gameClient.dismissRobberyAlert()
                         }
                 }

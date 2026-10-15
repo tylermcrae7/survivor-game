@@ -95,7 +95,14 @@ final class TribalViewModel {
                   let player = gameState?.players[playerId] else { continue }
             rows.append((player, votes, true))
         }
-        return rows.sorted { $0.votes > $1.votes }
+        // Ties break by name (then id), so tied rows land in the same order
+        // on every phone and every refresh — `voteResults` is a dictionary,
+        // and its iteration order is not something two decodes agree on.
+        return rows.sorted { lhs, rhs in
+            if lhs.votes != rhs.votes { return lhs.votes > rhs.votes }
+            if lhs.player.name != rhs.player.name { return lhs.player.name < rhs.player.name }
+            return lhs.player.id < rhs.player.id
+        }
     }
 
     var protectedPlayers: [String] { voteState?.protectedPlayers ?? [] }

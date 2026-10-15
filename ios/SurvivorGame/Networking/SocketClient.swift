@@ -225,15 +225,16 @@ final class SocketClient {
             }
         }
 
-        socket.on("game_reset") { [weak self] _, _ in
+        // `game_reset` carries `{gameId}`. The id is pulled out here, on the
+        // socket's queue, so only a Sendable String crosses to the main actor;
+        // GameClient ignores a reset naming any game but its own. There is no
+        // `global_reset` handler: that broadcast went to EVERY connected phone
+        // and was read as "my game was reset", bouncing every iOS player in
+        // every game to the lobby whenever anyone reset or recorded a winner.
+        socket.on("game_reset") { [weak self] data, _ in
+            let resetGameId = (data.first as? [String: Any])?["gameId"] as? String
             Task { @MainActor in
-                self?.gameEventContinuation?.yield(.reset)
-            }
-        }
-
-        socket.on("global_reset") { [weak self] _, _ in
-            Task { @MainActor in
-                self?.gameEventContinuation?.yield(.reset)
+                self?.gameEventContinuation?.yield(.reset(gameId: resetGameId))
             }
         }
 
@@ -279,7 +280,9 @@ final class SocketClient {
 
 enum GameEvent: @unchecked Sendable {
     case custom(type: String, data: [String: Any])
-    case reset
+    /// The game named here went back to the lobby (or was finished and
+    /// recorded). `gameId` is nil only from a server that predates sending it.
+    case reset(gameId: String?)
     case wiped
     case error(String)
 }

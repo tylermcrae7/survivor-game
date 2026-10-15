@@ -69,6 +69,7 @@ private struct PlayingContent: View {
     @State private var showSettings = false
     @State private var showHallOfFame = false
     @State private var confirmBurn = false
+    @State private var confirmLeave = false
     @State private var pendingStealTarget: String?
     @State private var turnPulseTrigger = 0
     @AppStorage("confirmSteals") private var confirmSteals = false
@@ -124,8 +125,11 @@ private struct PlayingContent: View {
                             Label("Hall of Fame", systemImage: "crown")
                         }
                         Divider()
+                        // Gated like "Burn it down": leaving forgets this
+                        // phone's rejoin seat, so a stray tap mid-game used
+                        // to strand the player outside a game still running.
                         Button {
-                            gameClient.leaveGame()
+                            confirmLeave = true
                         } label: {
                             Label("Leave this game", systemImage: "figure.walk.departure")
                         }
@@ -246,6 +250,17 @@ private struct PlayingContent: View {
             }
         } message: {
             Text("Every player is sent back to the start screen and the game is gone for good.")
+        }
+        .confirmationDialog(
+            "Leave this game?",
+            isPresented: $confirmLeave, titleVisibility: .visible
+        ) {
+            Button("Leave Game", role: .destructive) {
+                gameClient.leaveGame()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The game carries on without you, and this phone forgets your seat — you won't be able to rejoin from here.")
         }
         .sheet(isPresented: $viewModel.showStealPicker) {
             StealTargetPicker(targets: viewModel.stealTargets) { targetId in

@@ -206,8 +206,11 @@ private struct LobbyContent: View {
                     Button {
                         Task { await viewModel.removeBot(bot.id) }
                     } label: {
+                        // 44pt target (HIG minimum); the bare glyph was ~20pt.
                         Image(systemName: "minus.circle")
                             .foregroundStyle(Torch.Color.textSecondary)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Remove \(bot.name)")
                 }

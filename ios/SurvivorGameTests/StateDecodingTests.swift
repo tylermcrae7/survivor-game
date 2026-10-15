@@ -273,6 +273,84 @@ struct StateDecodingTests {
         #expect(ft.voteCounts?["p1"] == 1)
     }
 
+    /// The real `_start_final_tribal_council` shape. `leader` (the last juror)
+    /// is what gates the advance bar and the tie-break — the stale council
+    /// leader is not.
+    @Test func decodesFinalTribalLeaderJuryAndQuestions() throws {
+        let json = """
+        {
+            "phase": "questions",
+            "finalists": ["p1", "p2"],
+            "jury": ["p3", "p4"],
+            "leader": "p4",
+            "votes": {},
+            "juryReady": [],
+            "questions": [
+                "What was your strategy coming into the game?",
+                "What was your best move in the game?",
+                "How did you outplay your opponent?"
+            ],
+            "voteCounts": {},
+            "tieBreakNeeded": false
+        }
+        """
+        let ft = try JSONDecoder().decode(FinalTribalState.self, from: Data(json.utf8))
+        #expect(ft.phase == .questions)
+        #expect(ft.leader == "p4")
+        #expect(ft.jury == ["p3", "p4"])
+        #expect(ft.questions?.count == 3)
+        #expect(ft.questions?.first == "What was your strategy coming into the game?")
+    }
+
+    /// The pre-ceremony placeholder carries almost nothing, and an
+    /// unfamiliar field shape must degrade rather than throw — a throw here
+    /// used to cost the whole finalTribal block.
+    @Test func finalTribalStateDecodesLeniently() throws {
+        let json = """
+        {"phase": "waiting", "voteCounts": {}, "tieBreakerLeader": null, "questions": "not a list"}
+        """
+        let ft = try JSONDecoder().decode(FinalTribalState.self, from: Data(json.utf8))
+        #expect(ft.phase == .waiting)
+        #expect(ft.finalists.isEmpty)
+        #expect(ft.tieBreakNeeded == false)
+        #expect(ft.leader == nil)
+        #expect(ft.questions == nil)
+    }
+
+    // MARK: - Winner (two wire shapes)
+
+    private func finishedState(winnerJSON: String) throws -> GameState {
+        let json = """
+        {
+            "id": "fin12345",
+            "phase": "finished",
+            "players": {},
+            "winner": \(winnerJSON)
+        }
+        """
+        return try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
+    }
+
+    @Test func decodesWinnerAsABarePlayerId() throws {
+        let state = try finishedState(winnerJSON: #""p2""#)
+        #expect(state.winner == "p2")
+    }
+
+    /// `record_winner` and the last-player-standing path write a record, not
+    /// an id. Decoding it as a String used to drop the winner entirely.
+    @Test func decodesWinnerFromTheRecordForm() throws {
+        let state = try finishedState(
+            winnerJSON: #"{"playerId": "p2", "playerName": "Bob", "date": "2026-10-15"}"#)
+        #expect(state.winner == "p2")
+        #expect(state.phase == .finished)
+    }
+
+    @Test func anUnfamiliarWinnerShapeDegradesToNil() throws {
+        let state = try finishedState(winnerJSON: "42")
+        #expect(state.winner == nil)
+        #expect(state.id == "fin12345")
+    }
+
     // MARK: - API Responses
 
     @Test func decodesCreateGameResponse() throws {
