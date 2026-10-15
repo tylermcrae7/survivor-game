@@ -54,6 +54,10 @@ _ALIASES = {
     "#DDA0DD": "red",     # plum; nothing closer is free in spirit
     "RED": "red", "TEAL": "teal", "BLUE": "blue",
     "ORANGE": "orange", "GREEN": "green", "YELLOW": "yellow",
+    # The two extension seats, spelled the same way. Without these, "Purple"
+    # or "PINK" was no request at all and quietly fell through to auto-assign
+    # — the one seat a player named was the one they didn't get.
+    "PURPLE": "purple", "PINK": "pink",
 }
 
 

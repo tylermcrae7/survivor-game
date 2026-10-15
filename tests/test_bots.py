@@ -9,6 +9,7 @@ three bots and one scripted human play to a finished winner in both deck modes.
 That soak test exercises every mechanic in the box end to end.
 """
 
+import json
 import os
 import random
 import shutil
@@ -113,8 +114,17 @@ def test_bot_games_never_reach_hall_of_fame():
         gs.add_player(gid2, "Ben", "blue")
         gs.add_player(gid2, "Cam", "green")
         gs.start_full_game(gid2)
+        # Only a FINISHED game's real winner is recorded (it used to accept
+        # anyone mid-game and end the game)...
+        assert gs.record_winner(gid2, winnerId=h1)["success"] is False
+        gs.games[gid2]["phase"] = "finished"
+        gs.games[gid2]["winner"] = h1
         assert gs.record_winner(gid2, winnerId=h1)["success"] is True
         assert os.path.exists(GameState._WINNERS_FILE)
+        # ...and only once, however many times a phone asks.
+        assert gs.record_winner(gid2, winnerId=h1)["success"] is True
+        with open(GameState._WINNERS_FILE) as f:
+            assert len(json.load(f)) == 1
 
         print("✅ Hall of Fame guard tests passed!\n")
     finally:
@@ -339,7 +349,9 @@ def _human_move(gs, gid, human, rng):
 
     ch = game.get("challenge")
     if ch:
-        if ch.get("phase") == "complete" and ch.get("winnerId") == human:
+        # The result is the turn owner's to clear (bots now wait for their
+        # own); a winner tapping Continue is still a legal move.
+        if ch.get("phase") == "complete" and human in (ch.get("winnerId"), ch.get("starterId")):
             gs.challenge_action(gid, playerId=human, action="dismiss")
             return True
         if ch.get("phase") != "complete" and ch.get("currentPlayerId") == human:
@@ -1023,12 +1035,18 @@ def test_bot_gives_a_drawn_goodwill_at_council():
         gs._trigger_tribal_council(game, "single")
         gs.advance_tribal_phase(gid, "advantage_play")
 
+        # The deal is random: a second drawn goodwill elsewhere at the table
+        # would be its own legitimate give and muddy every check below.
+        for pid, pl in game["players"].items():
+            pl["hand"] = [c for c in pl.get("hand") or []
+                          if c.get("type") != "goodwill_gamble"]
         game["players"][bot_id]["hand"] = [{"type": "vote"},
                                            {"type": "goodwill_gamble"}]
         plan = bots._tribal_action(game, lambda k: 0.0, random.Random(3))
         assert plan is not None, "the bot should give its drawn goodwill"
         assert plan["method"] == "play_tribal_advantage", plan
         assert plan["kwargs"]["advantageType"] == "goodwill_gamble"
+        assert plan["kwargs"]["playerId"] == bot_id, plan
         target = plan["kwargs"]["targetId"]
         assert target != bot_id and target in game["players"]
 
@@ -1064,6 +1082,428 @@ def test_jury_vote_empty_ledger_falls_back_to_hand_size():
     print("✅ a ledger-less game falls back without raising!\n")
 
 
+# ──────────────────────── code review fixes (2026-10-15) ──────────────────────
+
+class _windows:
+    """Give the ceremony real windows for one block. The suite runs with
+    SURVIVOR_BOT_DELAY=0, which collapses every window to zero — and a wait
+    that is zero long can't be shown to be waited."""
+
+    def __init__(self, **seconds):
+        self.seconds = seconds
+
+    def __enter__(self):
+        self.orig = bots.windows_for
+        bots.windows_for = lambda game: dict(self.orig(game), **self.seconds)
+
+    def __exit__(self, *exc):
+        bots.windows_for = self.orig
+
+
+def _started_game(gs, humans=("Tyler",), n_bots=3, **create):
+    gid = gs.create_game(**create)
+    colours = ["red", "blue", "green"]
+    human_ids = [gs.add_player(gid, name, colours[i]) for i, name in enumerate(humans)]
+    for _ in range(n_bots):
+        assert gs.add_bot(gid)["success"]
+    gs.start_full_game(gid)
+    game = gs.games[gid]
+    bot_ids = [p for p in game["turnOrder"] if game["players"][p].get("isBot")]
+    return gid, game, human_ids, bot_ids
+
+
+def _sealed_ballot_box(gs, gid, leader, hands):
+    """A council led by `leader` with every ballot in, hands scripted as
+    {pid: [card types]} (anyone unnamed holds a lone Vote Card)."""
+    from rules_engine import new_card
+    game = gs.games[gid]
+    gs._trigger_tribal_council(game, "single", drawer_id=leader)
+    gs.start_voting(gid, "elimination")
+    for pid in game["turnOrder"]:
+        game["players"][pid]["hand"] = [new_card(t) for t in hands.get(pid, ["vote"])]
+    gs.rules_engine.sync_vote_counters(game)
+    order = game["turnOrder"]
+    for pid in order:
+        target = next(p for p in order if p != pid)
+        r = gs.cast_vote(gid, voterId=pid, votesData=[{"targetId": target, "votes": 1}])
+        assert r["success"], r.get("message")
+    assert game["currentVote"]["councilLeaderId"] == leader
+    return game
+
+
+def test_bot_leader_calls_time_on_a_silent_human_nullifier():
+    """Nothing else times the Idol Nullifier window out. A bot Council Leader
+    used to wait on a human holder forever, so one human who never answered
+    froze the council for the whole table."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing a bot Leader calls time on the nullifier window ===")
+        gid, game, (human,), (b1, b2, b3) = _started_game(gs, deckMode="extended")
+        _sealed_ballot_box(gs, gid, b1, {b2: ["vote", "immunity_idol"],
+                                         human: ["vote", "idol_nullifier"]})
+        runner = BotRunner(gs, rng=random.Random(1))
+        assert runner.step(gid) is True
+        assert game["currentVote"]["phase"] == "immunity"
+        r = gs.play_immunity(gid, playerId=b2, targetId=b2)
+        assert r["success"] and r["nullifierWindowOpen"], r
+
+        # The beat comes first: inside the window the Leader stays quiet...
+        with _windows(immunity=12.0):
+            assert bots._tribal_action(game, lambda k: 0.0, random.Random(1)) is None
+            plan = bots._tribal_action(game, lambda k: 12.5, random.Random(1))
+        # ...and once it has passed, the Leader calls time.
+        assert plan == bots._act("decline_nullifier", playerId=b1), plan
+
+        # Through the real runner: the human never answers, the ceremony
+        # still reaches the tally.
+        for _ in range(5):
+            if game["currentVote"]["phase"] == "reveal":
+                break
+            assert runner.step(gid) is True
+        assert not game.get("pending_nullifier")
+        assert game["currentVote"]["phase"] == "reveal", game["currentVote"]["phase"]
+        print("✅ a silent nullifier holder can't freeze a bot-led council!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_bot_leader_holding_a_nullifier_leaves_the_window_open():
+    """The Leader's decline closes the window for everyone, so a bot Leader
+    that declined on its first tick gave every human holder ~2s to answer.
+    Other bots still answer at once; only the Leader waits out the beat."""
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        print("=== Testing a bot Leader's own decline waits for the table ===")
+        gid, game, (h_idol, h_null), (b1, b2, b3) = _started_game(
+            gs, humans=("Tyler", "Trace"), deckMode="extended")
+        _sealed_ballot_box(gs, gid, b1, {
+            b1: ["vote", "idol_nullifier"],
+            # b2 holds the biggest hand, so it is every bot's real threat and
+            # nobody spends a nullifier on the human's idol.
+            b2: ["vote", "camp_raid", "camp_raid", "camp_raid", "camp_raid"],
+            b3: ["vote", "idol_nullifier"],
+            h_idol: ["vote", "immunity_idol"],
+            h_null: ["vote", "idol_nullifier"],
+        })
+        gs.advance_tribal_phase(gid, "immunity")
+        assert game["currentVote"]["phase"] == "immunity"
+        r = gs.play_immunity(gid, playerId=h_idol, targetId=h_idol)
+        assert r["success"] and r["nullifierWindowOpen"], r
+
+        with _windows(immunity=12.0):
+            early = lambda k: 0.0
+            plan = bots._tribal_action(game, early, random.Random(1))
+            assert plan == bots._act("decline_nullifier", playerId=b3), plan
+            assert gs.decline_nullifier(gid, playerId=b3)["windowClosed"] is False
+
+            # The old first-tick decline from the Leader: gone.
+            assert bots._tribal_action(game, early, random.Random(1)) is None
+            assert game.get("pending_nullifier"), "the human's window must stay open"
+
+            late = bots._tribal_action(game, lambda k: 12.5, random.Random(1))
+            assert late == bots._act("decline_nullifier", playerId=b1), late
+
+        # In the meantime the human holder really can answer.
+        r = gs.block_immunity(gid, playerId=h_null, targetId=h_idol)
+        assert r["success"], r.get("message")
+        print("✅ a bot Leader's nullifier no longer slams the window shut!\n")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _tie_game(hands, leader, tied, needed=1, eliminated=(), council=0):
+    """Minimal fixture for the reveal-phase tie-break: hands is {pid: count};
+    'human' is the human seat, everyone else a bot."""
+    return {
+        "id": "tieg",
+        "phase": "tribal_council",
+        "turnOrder": list(hands),
+        "necklaceHolder": None,
+        "settings": {"botStyle": "normal"},
+        "_ledger": {"councilIndex": council, "players": {}},
+        "players": {pid: {"hand": [{"type": "vote"}] * n, "isBot": pid != "human",
+                          "isEliminated": False}
+                    for pid, n in hands.items()},
+        "currentVote": {"phase": "reveal", "type": "double" if needed == 2 else "single",
+                        "councilLeaderId": leader, "tieBreakNeeded": True,
+                        "tiedPlayers": list(tied), "eliminationsNeeded": needed,
+                        "eliminated": list(eliminated)},
+    }
+
+
+def test_bot_leader_never_breaks_a_tie_on_itself():
+    """The old pick was the biggest hand among the tied — so a Leader holding
+    the biggest hand voted ITSELF out (60 of 200 fuzzed games)."""
+    print("=== Testing a bot Leader's tie-break never picks itself ===")
+    for council in range(20):   # every jitter the hash can deal
+        game = _tie_game({"leader": 9, "human": 1, "b2": 1}, "leader",
+                         tied=["leader", "human"], council=council)
+        plan = bots._tribal_action(game, lambda k: 0.0, random.Random(council))
+        assert plan == bots._act("tie_break", leaderId="leader", chosenId="human"), plan
+
+        # A Double owing two picks takes both from the others first.
+        game = _tie_game({"leader": 9, "human": 1, "b2": 2, "b3": 1}, "leader",
+                         tied=["leader", "human", "b2"], needed=2, council=council)
+        plan = bots._tribal_action(game, lambda k: 0.0, random.Random(council))
+        assert plan["method"] == "tie_break", plan
+        assert sorted(plan["kwargs"]["chosenIds"]) == ["b2", "human"], plan
+
+        # One pick already made: only one more is owed.
+        game = _tie_game({"leader": 9, "human": 1, "b2": 2, "b3": 1}, "leader",
+                         tied=["leader", "b2"], needed=2, eliminated=["human"],
+                         council=council)
+        plan = bots._tribal_action(game, lambda k: 0.0, random.Random(council))
+        assert plan == bots._act("tie_break", leaderId="leader", chosenId="b2"), plan
+
+    # With nobody else left tied, the Leader is the only legal pick.
+    game = _tie_game({"leader": 9, "human": 1}, "leader", tied=["leader"])
+    plan = bots._tribal_action(game, lambda k: 0.0, random.Random(0))
+    assert plan == bots._act("tie_break", leaderId="leader", chosenId="leader"), plan
+
+    # And through the real server: a 2-2 split between the Leader and the human.
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        from rules_engine import new_card
+        gid, game, (human,), (b1, b2, b3) = _started_game(gs)
+        gs._trigger_tribal_council(game, "single", drawer_id=b1)
+        gs.start_voting(gid, "elimination")
+        for pid in game["turnOrder"]:
+            game["players"][pid]["hand"] = [new_card("vote")]
+        game["players"][b1]["hand"] += [new_card("camp_raid") for _ in range(4)]
+        gs.rules_engine.sync_vote_counters(game)
+        for voter, target in ((human, b1), (b2, b1), (b1, human), (b3, human)):
+            assert gs.cast_vote(gid, voterId=voter,
+                                votesData=[{"targetId": target, "votes": 1}])["success"]
+        runner = BotRunner(gs, rng=random.Random(1))
+        for _ in range(10):
+            if (game.get("currentVote") or {}).get("tieBreakResolvedBy"):
+                break
+            runner.step(gid)
+        assert game["currentVote"]["eliminated"] == [human], game["currentVote"]["eliminated"]
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("✅ the Leader sends someone else home!\n")
+
+
+def _finished_challenge(starter, winner):
+    return {
+        "phase": "playing",
+        "settings": {},
+        "players": {"human": {"name": "Tyler", "isBot": False},
+                    "bot": {"name": "Coconut", "isBot": True},
+                    "bot2": {"name": "Mango", "isBot": True}},
+        "turnOrder": ["human", "bot", "bot2"],
+        "currentTurnIndex": ["human", "bot", "bot2"].index(starter),
+        "challenge": {"type": "pull_or_steal", "phase": "complete",
+                      "starterId": starter, "winnerId": winner,
+                      "currentPlayerId": None, "actions": []},
+    }
+
+
+def test_the_challenge_owner_clears_the_result_after_the_reveal():
+    """The finished Rocks Challenge is the turn owner's to clear — the
+    Reward Challenge rule. It used to be the winner's: a bot's own turn sat
+    on a human's Continue, and a bot that won a human's Challenge cleared it
+    on its next tick, before the human had read the result."""
+    print("=== Testing who dismisses a finished Challenge ===")
+    dismiss = lambda pid: bots._act("challenge_action", playerId=pid,
+                                    action="dismiss", value=None)
+    # A bot's own Challenge, won by the human: the bot clears it...
+    game = _finished_challenge("bot", "human")
+    assert next_action(game, turn_memory={}) == dismiss("bot")
+    # ...once the result has been on screen for the reveal beat.
+    with _windows(reveal=4.0):
+        assert next_action(game, phase_age=lambda k: 1.0, turn_memory={}) is None
+        assert next_action(game, phase_age=lambda k: 4.5, turn_memory={}) == dismiss("bot")
+
+    # The human's Challenge, won by a bot: the human taps Continue.
+    game = _finished_challenge("human", "bot")
+    assert next_action(game, turn_memory={}) is None
+
+    # No winner at all: still the starter's (the old fallback read fields
+    # that don't exist, so this never fired).
+    game = _finished_challenge("bot2", None)
+    assert next_action(game, turn_memory={}) == dismiss("bot2")
+
+    # And through the real server: the bot's turn goes on without a human.
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        from rules_engine import new_card
+        gid, game, (human,), (b1, b2, b3) = _started_game(
+            gs, deckMode="extended", expansion=True)
+        game["currentTurnIndex"] = game["turnOrder"].index(b1)
+        game["players"][b1]["hasStolen"] = True
+        game["players"][b1]["hand"] = [new_card("challenge_pull_or_steal"), new_card("vote")]
+        assert gs.play_card(gid, playerId=b1, cardIdx=0, params={})["success"]
+        ch = game["challenge"]
+        ch.update(phase="complete", winnerId=human, actions=[], currentPlayerId=None)
+        runner = BotRunner(gs, rng=random.Random(2))
+        assert runner.step(gid) is True
+        assert game["challenge"] is None, "the bot clears its own finished Challenge"
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("✅ the turn owner clears the result, after it has been read!\n")
+
+
+def test_spy_shack_only_takes_what_can_be_taken():
+    """The bot ranked the Vote Card by CARD_VALUE, not by the rules — and the
+    server now refuses that take and keeps the Spy Shack in hand, so the bot
+    would offer the same refused play every tick."""
+    print("=== Testing a bot Spy Shack never reaches for a Vote Card ===")
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        from rules_engine import new_card
+        gid, game, (human,), (b1, b2, b3) = _started_game(gs)
+        for pid in game["turnOrder"]:
+            game["players"][pid]["hand"] = [new_card("vote")]
+        game["players"][b1]["hand"] = [new_card("the_spy_shack"), new_card("vote")]
+        # The biggest hand at the table, and nothing in it a take may move.
+        game["players"][human]["hand"] = [new_card("vote"), new_card("vote")]
+        gs.rules_engine.sync_vote_counters(game)
+        assert bots._choose_card_play(game, b1, random.Random(0)) is None, \
+            "no takeable card, no Spy Shack"
+
+        game["players"][human]["hand"] = [new_card("vote"), new_card("camp_raid"),
+                                          new_card("vote")]
+        idx, params = bots._choose_card_play(game, b1, random.Random(0))
+        assert params == {"targetId": human, "takeIndex": 1}, params
+        game["currentTurnIndex"] = game["turnOrder"].index(b1)
+        game["players"][b1]["hasStolen"] = True
+        r = gs.play_card(gid, playerId=b1, cardIdx=idx, params=params)
+        assert r["success"], r.get("message")
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("✅ Spy Shack takes a real card or stays in hand!\n")
+
+
+def test_bot_leader_waits_out_an_open_theft_window():
+    """While a Sorry For You answer is pending, the server refuses every
+    tribal transition. A bot Leader that kept asking would rack up refusal
+    strikes into the breaker's cooldown, so it simply waits."""
+    print("=== Testing a bot Leader holds the ceremony for a theft window ===")
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        gid, game, (human,), (b1, b2, b3) = _started_game(gs)
+        gs._trigger_tribal_council(game, "single", drawer_id=b1)
+        for vph in ("announcement", "advantage_play", "discussion", "voting", "immunity"):
+            game["currentVote"]["phase"] = vph
+            game["pending_theft"] = {"reactive_window_open": True, "targetId": human}
+            assert next_action(game, turn_memory={}) is None, vph
+            # A bot victim answers the raid; the Leader still doesn't move.
+            game["pending_theft"] = {"reactive_window_open": True, "targetId": b2}
+            game["players"][b2]["hand"] = [{"type": "vote"}]
+            plan = next_action(game, turn_memory={})
+            assert plan == bots._act("complete_pending_theft"), (vph, plan)
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("✅ no tribal transition is attempted while a raid awaits its answer!\n")
+
+
+def test_crashes_are_strikes_and_only_successes_broadcast():
+    """An exception used to retry every 2s forever with a traceback each
+    time; it now counts toward the breaker. The broadcast hook carries the
+    narrator contract, and a refusal (which changed nothing) isn't sent."""
+    print("=== Testing crash strikes and the broadcast contract ===")
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        gid, game, (human,), (b1, b2, b3) = _started_game(gs)
+        sent = []
+        runner = BotRunner(gs, broadcast=lambda *args: sent.append(args),
+                           rng=random.Random(7))
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("planning blew up")
+
+        orig = bots.next_action
+        try:
+            bots.next_action = boom
+            for _ in range(bots.REFUSAL_BREAKER_STRIKES):
+                assert runner.step(gid) is False
+            assert runner._cooldown.get(gid, 0) > time.time(), \
+                "a crashing planner must trip the breaker"
+
+            runner.forget(gid)
+            # A plan whose GameState call raises (no cardIdx) — same treatment.
+            bots.next_action = lambda *a, **k: {
+                "method": "handle_reactive_card_play", "kwargs": {"playerId": b1}}
+            for _ in range(bots.REFUSAL_BREAKER_STRIKES):
+                assert runner.step(gid) is False
+            assert runner._cooldown.get(gid, 0) > time.time(), \
+                "a crashing action must trip the breaker"
+
+            runner.forget(gid)
+            bots.next_action = lambda *a, **k: {
+                "method": "challenge_action",
+                "kwargs": {"playerId": b1, "action": "pull", "value": 1}}
+            assert runner.step(gid) is False   # refused: no Challenge running
+            assert sent == [], "crashes and refusals are never broadcast"
+        finally:
+            bots.next_action = orig
+
+        runner.forget(gid)
+        game["currentTurnIndex"] = game["turnOrder"].index(b1)
+        game["players"][b1]["hasStolen"] = False
+        assert runner.step(gid) is True
+        assert len(sent) == 1, sent
+        sent_gid, method, kwargs, result, before = sent[0]
+        assert (sent_gid, method) == (gid, "steal_card")
+        assert kwargs["thiefId"] == b1 and kwargs["targetId"] != b1
+        assert result["success"] is True
+        assert before == {"phase": "playing", "eliminated": set()}, before
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("✅ crashes count, and only real moves reach the room!\n")
+
+
+def test_heartbeat_skips_idle_games_and_forgets_deleted_ones():
+    print("=== Testing heartbeat scope and per-game cleanup ===")
+    gs, original_cwd, tmp = fresh_state()
+    try:
+        lobby = gs.create_game()
+        gs.add_player(lobby, "Tyler", "red")
+        gs.add_bot(lobby)
+        live, _, _, _ = _started_game(gs)
+        done, done_game, _, _ = _started_game(gs)
+        done_game["phase"] = "finished"
+
+        runner = BotRunner(gs, rng=random.Random(7))
+        poked = []
+        runner.attach(lambda delay, fn, gid: poked.append(gid))
+        runner.heartbeat()
+        assert poked == [live], poked
+
+        # Everything the runner keeps per game, for a game that then vanishes.
+        for gid in (live, "ghost"):
+            runner._turn_mem[gid] = {}
+            runner._refusals[gid] = 3
+            runner._cooldown[gid] = 0
+            runner._phase_seen[(gid, ("tribal", "voting"))] = 0
+        runner.heartbeat()
+        assert "ghost" not in runner._turn_mem and "ghost" not in runner._refusals
+        assert "ghost" not in runner._cooldown
+        assert not any(k[0] == "ghost" for k in runner._phase_seen)
+        assert live in runner._refusals, "a live game keeps its state"
+
+        # forget() is the reset/delete hook: one game cleared, others intact.
+        runner._refusals[done] = 1
+        runner.forget(live)
+        assert live not in runner._turn_mem and live not in runner._refusals
+        assert live not in runner._scheduled
+        assert not any(k[0] == live for k in runner._phase_seen)
+        assert runner._refusals.get(done) == 1
+    finally:
+        os.chdir(original_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("✅ the heartbeat only wakes games that can move!\n")
+
+
 if __name__ == "__main__":
     print("🧪 Testing Computer Players")
     print("=" * 50)
@@ -1091,6 +1531,14 @@ if __name__ == "__main__":
         test_bot_gives_a_drawn_goodwill_at_council()
         test_jury_can_split()
         test_jury_vote_empty_ledger_falls_back_to_hand_size()
+        test_bot_leader_calls_time_on_a_silent_human_nullifier()
+        test_bot_leader_holding_a_nullifier_leaves_the_window_open()
+        test_bot_leader_never_breaks_a_tie_on_itself()
+        test_the_challenge_owner_clears_the_result_after_the_reveal()
+        test_spy_shack_only_takes_what_can_be_taken()
+        test_bot_leader_waits_out_an_open_theft_window()
+        test_crashes_are_strikes_and_only_successes_broadcast()
+        test_heartbeat_skips_idle_games_and_forgets_deleted_ones()
         print("🎉 All computer player tests passed!")
     except AssertionError as e:
         print(f"❌ Test failed: {e}")

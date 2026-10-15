@@ -85,6 +85,14 @@ class SeatRosterTest(unittest.TestCase):
         self.assertEqual(seats.resolve_request("#45B7D1"), ("blue", True))
         self.assertEqual(seats.resolve_request("#45b7d1"), ("blue", True))
 
+    def test_every_seat_name_is_understood_in_any_case(self):
+        """The upper-case aliases covered the printed six and missed the two
+        extension seats, so "Purple" fell through to auto-assign."""
+        for seat in seats.SEATS:
+            for spelling in (seat["key"], seat["label"], seat["key"].upper()):
+                self.assertEqual(seats.resolve_request(spelling), (seat["key"], True),
+                                 spelling)
+
     def test_a_colour_we_used_to_offer_still_means_something(self):
         """An installed phone keeps sending last version's palette."""
         self.assertEqual(seats.resolve_request("#96CEB4"), ("green", True))

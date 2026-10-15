@@ -25,6 +25,7 @@ import random
 import time
 
 import ledger
+from rules_engine import takeable_indices
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ CARD_VALUE = {
     # advice about an Inheritance for a colour that isn't in the game.
     "inheritance_red": 3, "inheritance_teal": 3, "inheritance_blue": 3,
     "inheritance_orange": 3, "inheritance_green": 3, "inheritance_yellow": 3,
+    "inheritance_purple": 3, "inheritance_pink": 3,
     "reward_challenge_do_or_die": 4, "reward_challenge_power_pair": 4,
     "reward_challenge_its_a_numbers_game": 4,
     "vote": 2,
@@ -229,7 +231,15 @@ def _vote_target(game, bot_id):
         return None
     if len(candidates) == 1:
         return candidates[0]
+    scores = _vote_scores(game, bot_id, candidates)
+    # max() keeps the first of equal scores — the old strict-greater loop.
+    return max(candidates, key=lambda cand: scores[cand])
 
+
+def _vote_scores(game, bot_id, candidates):
+    """{candidate: score} — how much ``bot_id`` wants each one gone. The
+    scoring behind _vote_target, shared with the Leader's tie-break so the
+    choice of who goes home reads the same game the ballot did."""
     weights = STYLE_VOTE_WEIGHTS.get(_setting(game, "botStyle"), STYLE_VOTE_WEIGHTS["normal"])
     gid = game.get("id", "")
     council_idx = ledger.next_council_index(game)
@@ -245,7 +255,7 @@ def _vote_target(game, bot_id):
 
     max_hand = max((_hand_count(game, p) for p in candidates), default=0) or 1
 
-    best, best_score = None, None
+    scores = {}
     for cand in candidates:
         hand_score = _hand_count(game, cand) / max_hand
 
@@ -262,16 +272,30 @@ def _vote_target(game, bot_id):
 
         jitter = ledger.tiebreak_score(gid, council_idx, bot_id, cand) * _JITTER_SCALE
 
-        score = (weights["hand"] * hand_score
-                 + weights["grudge"] * grudge
-                 + weights["threat"] * threat
-                 - weights["loyalty"] * loyalty
-                 + jitter)
+        scores[cand] = (weights["hand"] * hand_score
+                        + weights["grudge"] * grudge
+                        + weights["threat"] * threat
+                        - weights["loyalty"] * loyalty
+                        + jitter)
 
-        if best_score is None or score > best_score:
-            best, best_score = cand, score
+    return scores
 
-    return best
+
+def _tie_break_picks(game, leader, tied, needed):
+    """Which tied players a bot Council Leader sends home, best first.
+
+    Never itself while anyone else is tied: the old pick was simply the
+    biggest hand, and a Leader holding the biggest hand voted ITSELF out
+    (it happened in 60 of 200 fuzzed games). The others are ranked by the
+    same scoring the bot's own ballot uses; the Leader goes last, and only
+    when the picks owed outnumber everyone else tied.
+    """
+    others = [p for p in tied if p != leader]
+    scores = _vote_scores(game, leader, others) if others else {}
+    ranked = sorted(others, key=lambda p: -scores[p])
+    if leader in tied:
+        ranked.append(leader)
+    return ranked[:max(1, needed)]
 
 
 def _find_card(game, pid, card_type):
@@ -372,11 +396,18 @@ def _choose_card_play(game, bot_id, rng):
 
         elif card_type == "the_spy_shack":
             target = _biggest_threat(game, bot_id)
-            if target and _hand_count(game, target) >= 1:
+            if target:
+                # Only what a take may actually move. The Vote Card is out of
+                # reach, and the server now refuses a takeIndex that points at
+                # one and keeps the Spy Shack in hand — so a bot that picked
+                # the Vote Card (CARD_VALUE ranks it, not the rules) would
+                # re-offer the same refused play every tick. A hand with
+                # nothing takeable is no Spy Shack target at all.
                 victim_hand = _hand(game, target)
-                take = max(range(len(victim_hand)),
-                           key=lambda i: _card_value(victim_hand[i]))
-                return idx, {"targetId": target, "takeIndex": take}
+                reachable = takeable_indices(victim_hand)
+                if reachable:
+                    take = max(reachable, key=lambda i: _card_value(victim_hand[i]))
+                    return idx, {"targetId": target, "takeIndex": take}
 
         elif card_type == "knowledge_is_power":
             target = _biggest_threat(game, bot_id)
@@ -521,17 +552,28 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
     ch = game.get("challenge")
     if ch:
         if ch.get("phase") == "complete":
-            winner = ch.get("winnerId")
-            if winner and is_bot(game, winner):
-                return _act("challenge_action", playerId=winner,
+            # The result screen belongs to whoever's turn it is — the player
+            # who laid the Challenge Card (challenges.py `starterId`) — the
+            # same rule a finished Reward Challenge follows with its
+            # initiator. It used to be the WINNER's to clear: a bot's own turn
+            # then sat on a human's Continue tap, and a bot that won a human's
+            # Challenge snatched the result away on its next ~2s tick. A bot
+            # owner now leaves it up for the reveal beat first; a human owner
+            # taps Continue themselves (the clients offer it to everyone).
+            owner = ch.get("starterId")
+            if owner not in game.get("players", {}):
+                owner = _turn_owner(game)
+            # Keyed per Challenge object so an earlier Challenge's result
+            # can't leave a stale first-seen time that skips this one's beat.
+            seen = age(("challenge", ("complete", id(ch))))
+            if owner and is_bot(game, owner) \
+                    and seen >= windows_for(game)["reveal"]:
+                return _act("challenge_action", playerId=owner,
                             action="dismiss", value=None)
-            if not winner:
-                # No winner recorded (edge case) — the card player clears it
-                cp = ch.get("playedBy") or ch.get("initiatorId")
-                if cp and is_bot(game, cp):
-                    return _act("challenge_action", playerId=cp,
-                                action="dismiss", value=None)
             return None
+        # Seen while running: replaces any finished Challenge's entry under
+        # the same prefix, so a reused object id can't inherit its clock.
+        age(("challenge", ("live", id(ch))))
         cp = ch.get("currentPlayerId")
         if not cp or not is_bot(game, cp):
             return None
@@ -582,11 +624,17 @@ def next_action(game, phase_age=None, turn_memory=None, rng=None):
     return None
 
 
-def _turn_action(game, mem, rng):
+def _turn_owner(game):
     order = game.get("turnOrder") or []
     if not order:
         return None
-    current = order[game.get("currentTurnIndex", 0) % len(order)]
+    return order[game.get("currentTurnIndex", 0) % len(order)]
+
+
+def _turn_action(game, mem, rng):
+    current = _turn_owner(game)
+    if current is None:
+        return None
     if not is_bot(game, current):
         return None
     player = game["players"][current]
@@ -694,6 +742,12 @@ def _tribal_action(game, age, rng):
         if window and window.get("reactive_window_open"):
             answered = set(window.get("_answered") or [])
             protected = window.get("targetId")
+            # The window's own clock, read every tick it is open so the first
+            # sighting is stamped. Keyed by council and idol, because this
+            # phase can open more than one window and a later council can
+            # repeat the same idol-player/target pair.
+            window_age = age(("nullifier", (ledger.next_council_index(game),
+                                            window.get("idolPlayerId"), protected)))
             for pid in window.get("_responderIds") or []:
                 if pid in answered or not is_bot(game, pid):
                     continue
@@ -704,11 +758,21 @@ def _tribal_action(game, age, rng):
                 if protected and protected != pid \
                         and protected == _biggest_threat(game, pid):
                     return _act("block_immunity", playerId=pid, targetId=protected)
+                if pid == leader:
+                    # The Leader's decline is not one voice among several: the
+                    # server reads it as calling time and shuts the window for
+                    # the whole table. Declining on the first tick handed every
+                    # human holder a window ~2s long. Its silence waits below.
+                    continue
                 return _act("decline_nullifier", playerId=pid)
-            # Every bot has spoken; a human still owes an answer.
-            if any(pid not in answered and not is_bot(game, pid)
-                   for pid in (window.get("_responderIds") or [])):
-                return None
+            # Every other bot has spoken; a human (or the Leader itself) still
+            # owes an answer. Nothing else in the game times this window out,
+            # so a bot Leader that only waited froze the council for good
+            # whenever a human holder never answered. It calls time — once
+            # the same beat a human gets for the idol itself has passed.
+            if leader_is_bot and window_age >= w["immunity"]:
+                return _act("decline_nullifier", playerId=leader)
+            return None
 
         # The idol window is open — threatened bots respond
         hand_leader = _biggest_threat(game, "")   # the table's card leader
@@ -729,10 +793,15 @@ def _tribal_action(game, age, rng):
 
     # reveal / results: tie-break, then close the ceremony
     if cv.get("tieBreakNeeded") and leader_is_bot:
-        tied = cv.get("tiedPlayers") or []
+        tied = [p for p in cv.get("tiedPlayers") or [] if p in game["players"]]
         if tied:
-            pick = sorted(tied, key=lambda p: (-_hand_count(game, p), p))[0]
-            return _act("tie_break", leaderId=leader, chosenId=pick)
+            needed = (cv.get("eliminationsNeeded",
+                             2 if cv.get("type") == "double" else 1)
+                      - len(cv.get("eliminated") or []))
+            picks = _tie_break_picks(game, leader, tied, needed)
+            if len(picks) == 1:
+                return _act("tie_break", leaderId=leader, chosenId=picks[0])
+            return _act("tie_break", leaderId=leader, chosenIds=picks)
     if leader_is_bot and age(("tribal", vph)) >= w["reveal"]:
         return _act("complete_tribal")
     return None
@@ -1006,7 +1075,13 @@ class BotRunner:
 
     def __init__(self, game_state, broadcast=None, rng=None):
         self.gs = game_state
-        self.broadcast = broadcast or (lambda gid, action: None)
+        # Called after every action that succeeded as
+        # broadcast(gid, method, kwargs, result, narrator_before) — kwargs is
+        # what the GameState method was called with (an HTTP body minus
+        # gameId), narrator_before the phase and eliminated set from BEFORE
+        # the action, so the server can narrate a bot's move the way it
+        # narrates a human's. The default tolerates any arity.
+        self.broadcast = broadcast or (lambda gid, action, *a, **k: None)
         self.rng = rng or random
         self._spawn_later = None
         self._scheduled = {}   # gid -> when the pending timer should have fired
@@ -1045,9 +1120,40 @@ class BotRunner:
 
     def heartbeat(self):
         """Catch-all: look at every bot game. Called on a timer by the server."""
-        for gid, game in list(self.gs.games.items()):
+        games = self.gs.games
+        # A game deleted out from under the runner leaves nothing to look at,
+        # but its timers, turn memory and refusal counts would otherwise sit
+        # in these dicts for the life of the process.
+        for gid in self._tracked_gids() - set(games):
+            self.forget(gid)
+        for gid, game in list(games.items()):
+            # Bots never act in a lobby or after the winner is crowned, so
+            # don't wake a step every 2s just to have it say so.
+            if game.get("phase") in ("lobby", "finished"):
+                continue
             if game_has_bot(game) and has_human(game):
                 self.poke(gid)
+
+    def _tracked_gids(self):
+        gids = set(self._scheduled) | set(self._turn_mem) \
+            | set(self._refusals) | set(self._cooldown)
+        gids.update(k[0] for k in self._phase_seen)
+        return gids
+
+    def forget(self, gid):
+        """Drop everything the runner remembers about one game.
+
+        For a game that is deleted, or reset to its lobby: the phase clocks,
+        turn memory, refusal strikes and cooldown all describe a game that no
+        longer exists, and a stale phase clock would hand the next council's
+        first window an age it never earned.
+        """
+        self._scheduled.pop(gid, None)
+        self._turn_mem.pop(gid, None)
+        self._refusals.pop(gid, None)
+        self._cooldown.pop(gid, None)
+        for key in [k for k in self._phase_seen if k[0] == gid]:
+            self._phase_seen.pop(key, None)
 
     def _tick(self, gid):
         self._scheduled.pop(gid, None)
@@ -1080,7 +1186,7 @@ class BotRunner:
         """Execute at most one bot action. Returns True if something happened."""
         game = self.gs.games.get(gid)
         if not game:
-            self._turn_mem.pop(gid, None)
+            self.forget(gid)
             return False
 
         # Circuit breaker: a bot whose action is refused over and over is stuck
@@ -1090,17 +1196,30 @@ class BotRunner:
         if self._cooldown.get(gid, 0) > time.time():
             return False
 
-        plan = next_action(
-            game,
-            phase_age=self._phase_age(gid),
-            turn_memory=self._turn_mem.setdefault(gid, {}),
-            rng=self.rng,
-        )
+        # A crash is a refusal that also prints a traceback: the state that
+        # raised is still there on the next tick, so it counts toward the
+        # breaker like any other strike instead of retrying every 2s forever.
+        try:
+            plan = next_action(
+                game,
+                phase_age=self._phase_age(gid),
+                turn_memory=self._turn_mem.setdefault(gid, {}),
+                rng=self.rng,
+            )
+        except Exception:
+            logger.exception(f"Bot planning crashed in {gid}")
+            self._strike(gid)
+            return False
         if not plan:
             return False
 
         method = plan["method"]
         kwargs = plan["kwargs"]
+        narrator_before = {
+            "phase": game.get("phase"),
+            "eliminated": {pid for pid, p in game.get("players", {}).items()
+                           if p.get("isEliminated")},
+        }
         try:
             if method == "handle_reactive_card_play":
                 result = self.gs.handle_reactive_card_play(
@@ -1109,6 +1228,7 @@ class BotRunner:
                 result = getattr(self.gs, method)(gid, **kwargs)
         except Exception:
             logger.exception(f"Bot action {method}({kwargs}) crashed in {gid}")
+            self._strike(gid)
             return False
 
         ok = result.get("success", True) if isinstance(result, dict) else bool(result)
@@ -1118,23 +1238,28 @@ class BotRunner:
             log_msg = result.get("log_message") or result["message"]
             log_list.append({"t": time.time(), "msg": str(log_msg)[:200]})
             del log_list[:-120]
-        if ok:
-            self._refusals.pop(gid, None)
-        else:
+        if not ok:
             message = result.get("message") if isinstance(result, dict) else result
             logger.warning(f"Bot action {method}({kwargs}) refused in {gid}: {message}")
-            strikes = self._refusals.get(gid, 0) + 1
-            self._refusals[gid] = strikes
-            if strikes >= REFUSAL_BREAKER_STRIKES:
-                self._refusals[gid] = 0
-                self._cooldown[gid] = time.time() + REFUSAL_BREAKER_COOLDOWN
-                logger.warning(
-                    f"Bots in {gid} refused {strikes} times in a row — "
-                    f"cooling down for {REFUSAL_BREAKER_COOLDOWN}s")
+            self._strike(gid)
+            # A refusal changed nothing — nothing to broadcast, and returning
+            # False stops the re-poke loop and leaves retries to the heartbeat.
+            return False
+
+        self._refusals.pop(gid, None)
         try:
-            self.broadcast(gid, method)
+            self.broadcast(gid, method, kwargs, result, narrator_before)
         except Exception:
             logger.exception(f"Bot broadcast failed for {gid}")
-        # A refusal changed nothing — returning False stops the re-poke loop
-        # and leaves retries to the heartbeat.
-        return ok
+        return True
+
+    def _strike(self, gid):
+        """One more consecutive failure; trip the breaker at the limit."""
+        strikes = self._refusals.get(gid, 0) + 1
+        self._refusals[gid] = strikes
+        if strikes >= REFUSAL_BREAKER_STRIKES:
+            self._refusals[gid] = 0
+            self._cooldown[gid] = time.time() + REFUSAL_BREAKER_COOLDOWN
+            logger.warning(
+                f"Bots in {gid} refused {strikes} times in a row — "
+                f"cooling down for {REFUSAL_BREAKER_COOLDOWN}s")
