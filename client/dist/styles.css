@@ -22,6 +22,22 @@
   img, svg { display: block; max-width: 100%; }
   button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
   input, select, textarea { font: inherit; color: inherit; }
+
+  /* The hidden attribute must always win. Without this, any component rule
+     that sets display (e.g. `.game-info .chip-btn { display: inline-flex }`)
+     sits in a later layer than the UA's [hidden] and silently un-hides the
+     element — the Story button showed before any game existed. An !important
+     in the FIRST layer outranks every later layer's normal and !important
+     declarations alike. */
+  [hidden] { display: none !important; }
+
+  /* iOS Safari zooms the page when a focused field's font is under 16px.
+     Body text is fluid (≈15.4px at 390px wide), so every text field states
+     its own floor. :where() keeps this at zero specificity, so a component
+     that wants a LARGER field (.access-input) still wins. */
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea) {
+    font-size: max(16px, 1rem);
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -51,7 +67,11 @@
     /* ── Text ── */
     --text:           oklch(0.93 0.02 85);
     --text-secondary: oklch(0.67 0.03 80);
-    --text-faint:     oklch(0.50 0.025 80);
+    /* L 0.62 clears 4.5:1 on every ground in every mode: ≥5.0:1 on the
+       night surfaces (bg 5.6, surface 5.3, surface-raised 5.0, sunken 5.5),
+       ≥5.1:1 on council/final raised, 4.9:1 on victory raised. At L 0.50 it
+       was 3.0–3.4:1 — too dim for the 0.54–0.72rem text it carries. */
+    --text-faint:     oklch(0.62 0.025 80);
     --text-dark:      var(--ink);
 
     /* ── Lines & glass (legacy alias kept for old class names) ── */
@@ -312,12 +332,22 @@
   }
 
   /* ── Header: one slim ritual bar ── */
+  /* The bar must hold torch + wordmark + three 44px buttons at 320px wide.
+     Only the info chips may give way (they shrink, ellipsize, then hide on
+     narrow phones); the buttons never shrink and never leave the screen. */
   .header {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.65rem 1rem 0.6rem;
+    padding: 0.2rem 1rem 0.15rem;
     border-bottom: 1px solid var(--line);
+  }
+  @media (max-width: 399px) {
+    .header { gap: 0.45rem; padding-inline: 0.7rem 0.55rem; }
+    /* The wordmark is a logo, not reading text: under the Large / Extra
+       large text settings it stops growing here, so the three buttons keep
+       their room at 320px. */
+    .header .badge { font-size: min(1.05rem, 17.5px); }
   }
 
   .header .torch {
@@ -332,26 +362,33 @@
   .header .torch.right { display: none; }
 
   .badge {
+    flex: none;
     font-family: var(--font-display);
     font-weight: 800;
     font-size: 1.05rem;
     letter-spacing: 0.05em;
     color: var(--parchment);
+    white-space: nowrap;
   }
   .badge .subline { display: none; }
 
   .game-info {
     margin-left: auto;
+    /* Take exactly the space left after the wordmark — never more — so an
+       over-long chip squeezes instead of shoving the buttons off-screen
+       (html/body clip overflow-x, so off-screen meant unreachable). */
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: flex-end;
+    gap: 0.3rem;
     font-family: var(--font-label);
     font-size: var(--font-size-xs);
     letter-spacing: var(--track-label);
     color: var(--text-secondary);
   }
-
-  .game-info .chip[hidden] { display: none; }
+  .game-info > * { flex: none; }
 
   .game-info .chip {
     padding: 0.2rem 0.55rem;
@@ -363,7 +400,48 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Info chips (not the buttons) are the only things allowed to give way —
+     and your name gives way before the fire code does */
+  .game-info .chip:not(.chip-btn) { flex: 0 1 auto; min-width: 0; }
+  @media (min-width: 480px) {
+    /* While the name chip is there to give way, the code never truncates */
+    .game-info #gameChip { flex-shrink: 0; }
+  }
   .game-info .chip strong { color: var(--torch); font-weight: 700; }
+
+  /* Narrower screens: drop the FIRE label (code only), then — phones —
+     the player chip (your name is on the tribe panel, "you"), then at
+     320px the code chip too. The code stays in the lobby hero and the
+     Camp menu. */
+  @media (max-width: 479px) {
+    #playerChip { display: none; }
+  }
+  @media (max-width: 599px) {
+    /* Code only: "FIRE " collapses to zero width; the code itself is the
+       flex item that ellipsizes, so a squeezed code shows "…" instead of
+       being silently cut (the chip's own ellipsis would render at 0px). */
+    #gameChip {
+      display: inline-flex;
+      font-size: 0;
+      letter-spacing: 0;   /* inherited tracking is absolute px — it would keep "FIRE " ~7px wide */
+      padding-inline: 0.45rem;
+    }
+    #gameChip strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: var(--font-size-xs);
+      letter-spacing: 0.06em;
+      line-height: 1.5;
+    }
+  }
+  @media (max-width: 399px) {
+    /* The buttons' transparent 5px rims already space the rings apart */
+    .game-info { gap: 0; }
+  }
+  @media (max-width: 359px) {
+    #gameChip { display: none; }
+  }
 
   /* ── Main & screens ── */
   .main {
@@ -460,7 +538,6 @@
     vertical-align: -0.18em;
     flex: 0 0 auto;
   }
-  .icon-lg { width: 1.6em; height: 1.6em; }
 
   /* ── Buttons: carved, warm-lit ── */
   .btn {
@@ -484,7 +561,6 @@
   }
   .btn:hover { filter: brightness(1.06); }
   .btn:active { transform: translateY(1px) scale(0.99); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.2), var(--shadow-sm); }
-  .btn:disabled { opacity: 0.45; filter: saturate(0.5); cursor: not-allowed; box-shadow: none; }
   .btn:focus-visible { outline: 2px solid var(--flame-hot); outline-offset: 2px; }
 
   .btn-secondary {
@@ -531,6 +607,26 @@
     box-shadow: none;
   }
 
+  /* Disabled — the torch is out. Every variant goes unlit the same way
+     (no fill, no glow, dashed rim, greyed label), so it reads as off on its
+     own, without leaning on opacity alone (which inline styles can clobber).
+     Declared after the variants so their :hover rules cannot re-light it,
+     and matched on aria-disabled too for controls that must stay focusable. */
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    color: var(--text-faint);
+    background: var(--surface-sunken);
+    /* fainter than the ghost button's own dashed rim, so even a ghost reads off */
+    border: 1px dashed var(--line);
+    box-shadow: none;
+    filter: grayscale(1);
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn:disabled:hover,
+  .btn[aria-disabled="true"]:hover { filter: grayscale(1); border-color: var(--line); }
+
   /* ── Forms: expedition equipment ── */
   label {
     font-family: var(--font-label);
@@ -552,6 +648,8 @@
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-md);
     color: var(--text);
+    /* ≥16px or iOS zooms the whole page on focus (see the reset layer) */
+    font-size: max(16px, 1rem);
     caret-color: var(--torch);
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
@@ -914,6 +1012,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
+    white-space: nowrap;   /* the card count wrapped under its icon at 320px */
     font-family: var(--font-label);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
@@ -1052,13 +1151,45 @@
 
   /* Forced together (Tribal Council) — dimmed shut, nothing to tap */
   .place-row.is-locked {
-    opacity: 0.5;
     cursor: default;
     border-style: dashed;
+    background: transparent;
   }
-  .place-row.is-locked .place-name { color: var(--text-secondary); }
+  /* Dimmed by ink rather than opacity, so names stay readable */
+  .place-row.is-locked .place-name,
+  .place-row.is-locked .place-chip-name { color: var(--text-secondary); }
+  .place-row.is-locked .place-chip { background: transparent; }
 
   .places-hint { margin: 0.5rem 0 0; }
+
+  /* An empty place is one line, not two: THE BEACH · Nobody ··· GO THERE.
+     The head's two children join the row's own grid (display:contents) so
+     "Nobody" can sit between the name and the tag. */
+  .place-row:has(.place-empty) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 0.65rem;
+  }
+  .place-row:has(.place-empty) .place-head { display: contents; }
+  .place-row:has(.place-empty) .place-name { grid-area: 1 / 1; }
+  .place-row:has(.place-empty) .place-people { grid-area: 1 / 2; }
+  .place-row:has(.place-empty) .place-tag { grid-area: 1 / 3; margin-left: 0; }
+
+  /* Phones: the hand is what you act on — bring it up under the tribe, and
+     let the places panel follow it. The DOM still reads tribe → places →
+     hand (that move belongs in index-optimized.html; once made, these order
+     rules are inert). The action bar stays last. Tighter place rows, too. */
+  @media (max-width: 599px) {
+    #playingScreen #placesPanel { order: 1; }
+    #playingScreen #gameActions { order: 2; }
+    /* The hand's sticky-bar clearance moves to whatever is now last */
+    #playingScreen .hand-grid { padding-bottom: 0.4rem; }
+    #playingScreen #placesPanel { padding-bottom: 0.75rem; }
+
+    .places-strip { gap: 0.4rem; margin-top: 0.65rem; }
+    .place-row { padding: 0.55rem 0.75rem; gap: 0.4rem; }
+  }
 
   /* ── Turn ribbon: STEAL → PLAY → DRAW ── */
   .turn-ribbon { text-align: center; }
@@ -1097,22 +1228,10 @@
   }
   .turn-steps .sep { opacity: 0.5; }
 
-  /* ── Hand: a rail of real cards ── */
+  /* ── Hand: the card face shared by the hand grid's minis (see HAND GRID) ── */
   .hand-zone { margin-top: var(--spacing-md); }
-  .hand-rail {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(148px, 46%);
-    gap: 0.7rem;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    padding: 0.85rem 0.25rem 1rem;
-    scrollbar-width: none;
-  }
-  .hand-rail::-webkit-scrollbar { display: none; }
 
   .card-button {
-    scroll-snap-align: center;
     position: relative;
     aspect-ratio: 3 / 4.1;
     display: flex;
@@ -1159,29 +1278,6 @@
     color: var(--parchment);
     text-wrap: balance;
   }
-  .card-description {
-    font-size: 0.7rem;
-    line-height: 1.35;
-    color: var(--text-secondary);
-    margin-top: 0.45rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .card-target-indicator {
-    margin-top: auto;
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-family: var(--font-label);
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: var(--track-label);
-    color: var(--torch);
-  }
-  .card-target-indicator .icon { width: 0.9rem; height: 0.9rem; }
 
   .card-button.playable {
     border-color: oklch(0.70 0.165 60 / 0.55);
@@ -1189,29 +1285,19 @@
     transform: translateY(-4px);
   }
   .card-button.playable:hover { transform: translateY(-7px); }
+  /* Not playable right now — the card sits back in the shadow, but its words
+     stay readable (whole-card opacity took the category label to 1.5:1).
+     It goes flat and unlit: sunken ground, dashed rim, dimmed category rule,
+     name in secondary ink, plus a lock mark (see .card-mini-badges below). */
   .card-button.locked {
-    opacity: 0.45;
-    filter: saturate(0.35);
     cursor: default;
+    background: var(--surface-sunken);
+    border-style: dashed;
+    border-color: var(--line-strong);
+    box-shadow: none;
   }
-  .card-button.pressing { transform: translateY(-2px) scale(0.97); }
-
-  .card-info-btn {
-    position: absolute;
-    top: 8px; right: 8px;
-    width: 26px; height: 26px;
-    border-radius: 50%;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    background: oklch(0 0 0 / 0.3);
-    border: 1px solid var(--line);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2;
-  }
+  .card-button.locked::before { opacity: 0.35; filter: saturate(0.4); }
+  .card-button.locked .card-name { color: var(--text-secondary); }
 
   .empty-hand {
     color: var(--text-faint);
@@ -1364,14 +1450,6 @@
   }
 
   /* ── Results: the ballots are read ── */
-  .vote-results-title {
-    font-family: var(--font-display);
-    font-weight: 800;
-    font-size: var(--display-sm);
-    color: var(--parchment);
-    text-align: center;
-    margin-bottom: var(--spacing-md);
-  }
   .vote-results-grid {
     display: flex;
     flex-direction: column;
@@ -1694,7 +1772,9 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.45rem 1rem;
+    /* 44px toggles set the bar's height; the right inset is trimmed so the
+       "–" keeps its old optical position against the edge. */
+    padding: 0.1rem 0.45rem 0.1rem 1rem;
   }
   .narrator-avatar { font-size: 0.9rem; filter: saturate(0.8); }
   .narrator-title {
@@ -1705,8 +1785,9 @@
     color: var(--text-secondary);
   }
   .narrator-sound-toggle, .narrator-toggle {
-    min-width: 34px;
-    min-height: 34px;
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0.35rem;
     margin-left: auto;
     border-radius: var(--radius-sm);
     color: var(--text-faint);
@@ -1731,14 +1812,6 @@
   .narrator-text:has(.narrator-message:empty) { min-height: 0; }
   .narrator-panel.minimized .narrator-content { display: none; }
   .narrator-history { display: none; }
-  .narrator-panel.show-history .narrator-history {
-    display: block;
-    max-height: 130px;
-    overflow-y: auto;
-    margin-top: 0.4rem;
-    font-size: var(--font-size-xs);
-    color: var(--text-faint);
-  }
   .narrator-history-entry { padding: 0.15rem 0; }
   .history-time { color: var(--text-faint); margin-right: 0.4rem; font-family: var(--font-label); }
   .history-message { color: var(--text-secondary); }
@@ -1821,6 +1894,9 @@
     align-items: center;
     justify-content: center;
   }
+  /* 34px disc, 44px tap area (insets measure from the padding box, inside
+     the 1px border: 32 + 2×6 = 44) */
+  .modal-close::before { content: ""; position: absolute; inset: -6px; }
   .confirm-actions, .target-grid {
     display: flex;
     flex-wrap: wrap;
@@ -1929,7 +2005,9 @@
   .status-offline .network-status-dot { background: var(--danger); box-shadow: 0 0 6px oklch(0.58 0.19 28 / 0.8); }
   .status-reconnecting .network-status-dot { background: var(--warning); animation: stepGlow 0.8s ease-in-out infinite; }
   .network-status-text { display: none; }
-  @media (min-width: 480px) { .network-status-text { display: inline; } }
+  /* The word only where the header has room to spare — below this the dot
+     says it, and the FIRE / player chips get the space instead */
+  @media (min-width: 640px) { .network-status-text { display: inline; } }
 
   /* ── Narrator effects preserved ── */
   .confetti-container { position: fixed; inset: 0; pointer-events: none; z-index: 9998; overflow: hidden; }
@@ -2031,16 +2109,61 @@
 
   .touch-target { min-width: var(--touch-target-min); min-height: var(--touch-target-min); }
 
+  /* ── Reduced motion — ONE place for every rule, two ways in ──
+     1. html.reduce-motion (settings.js: "On", or "Match device" when the OS
+        asks) forces it, always.
+     2. The OS preference applies on its own too (before settings.js has run,
+        or if the OS setting flips mid-session) — UNLESS the app explicitly
+        says "Off", which settings.js marks with html.motion-full.
+     The two blocks below are identical apart from that gate; keep them in
+     step. Near-zero durations rather than `none` for the general case so
+     animationend / transitionend handlers (toast removal, screen changes)
+     still fire; `none` only for infinite flicker loops and view
+     transitions. Component sections must not add their own
+     prefers-reduced-motion blocks — add selectors here instead. */
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
+    html:not(.motion-full) *,
+    html:not(.motion-full) *::before,
+    html:not(.motion-full) *::after {
+      animation-duration: 0.001s !important;
       animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
+      transition-duration: 0.001s !important;
+      scroll-behavior: auto !important;
     }
-    .torch-lit, .header .torch, .wordmark .icon-torch-big,
-    .ceremony .icon-ceremony, .torch-spent { animation: none !important; }
-    .confetti-piece { display: none; }
+    html:not(.motion-full) :is(.torch-lit, .header .torch, .wordmark .icon-torch-big,
+      .ceremony .icon-ceremony, .torch-spent, .turn-steps .step.now, .narrator-cursor,
+      .reactive-banner, .reactive-banner-flame .icon, .robbed-banner, .reveal-row) {
+      animation: none !important;
+    }
+    html:not(.motion-full) :is(.rps-option, .finger-option):hover { transform: none; }
+    html:not(.motion-full) .confetti-piece { display: none; }
   }
+  @media (prefers-reduced-motion: reduce) {
+    html:not(.motion-full)::view-transition-group(*),
+    html:not(.motion-full)::view-transition-old(*),
+    html:not(.motion-full)::view-transition-new(*) { animation: none !important; }
+  }
+
+  html.reduce-motion *,
+  html.reduce-motion *::before,
+  html.reduce-motion *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+    scroll-behavior: auto !important;
+  }
+  html.reduce-motion :is(.torch-lit, .header .torch, .wordmark .icon-torch-big,
+    .ceremony .icon-ceremony, .torch-spent, .turn-steps .step.now, .narrator-cursor,
+    .reactive-banner, .reactive-banner-flame .icon, .robbed-banner, .reveal-row) {
+    animation: none !important;
+  }
+  html.reduce-motion :is(.rps-option, .finger-option):hover { transform: none; }
+  html.reduce-motion .confetti-piece { display: none; }
+  /* Kept in their own rule: an engine without view transitions drops the
+     whole rule, and must not take the lines above down with it. */
+  html.reduce-motion::view-transition-group(*),
+  html.reduce-motion::view-transition-old(*),
+  html.reduce-motion::view-transition-new(*) { animation: none !important; }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2057,7 +2180,6 @@
     border: 0;
   }
   .text-center { text-align: center; }
-  .mt-md { margin-top: var(--spacing-md); }
   .hidden { display: none !important; }
 }
 
@@ -2144,14 +2266,18 @@
 
   /* A card you can see but cannot take (the Vote Card, under The Spy Shack) */
   .cardname-option.is-locked {
-    opacity: 0.45;
     cursor: not-allowed;
+    border-style: dashed;
+    background: transparent;
   }
+  /* Dimmed by ink, not opacity, so the labels keep ≥4.5:1 */
+  .cardname-option.is-locked .cardname-name { color: var(--text-secondary); }
+  .cardname-option.is-locked .cardname-cat { color: var(--text-faint); }
 
   .cardname-option.is-locked:hover,
   .cardname-option.is-locked:focus-visible {
     border-color: oklch(1 0 0 / 0.09);
-    background: oklch(1 0 0 / 0.03);
+    background: transparent;
   }
 
   .cardname-locked {
@@ -2266,7 +2392,7 @@
     color: var(--parchment-dim);
     font-size: var(--font-size-sm);
     line-height: 1.35;
-    box-shadow: var(--shadow-lg), var(--shadow-glow-torch);
+    box-shadow: var(--shadow-lg), var(--glow-torch);
     z-index: 950;
     animation: fadeIn 0.3s ease;
   }
@@ -2280,12 +2406,7 @@
     color: var(--torch);
     animation: torchFlicker 2.4s ease-in-out infinite;
   }
-
-  @media (prefers-reduced-motion: reduce) {
-    .reactive-banner { animation: none; }
-    .reactive-banner-flame .icon { animation: none; }
-    .rps-option:hover { transform: none; }
-  }
+  /* Reduced motion for the banner lives with the rest, in @layer states */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2330,10 +2451,6 @@
     font-size: var(--font-size-lg);
     line-height: 1.35;
     color: var(--parchment);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .robbed-banner { animation: none; }
   }
 }
 
@@ -2427,11 +2544,6 @@
   }
 
   .reveal-ui > .btn { width: 100%; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .reveal-row { animation: none; }
-    .finger-option:hover { transform: none; }
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2460,24 +2572,48 @@
    CAMP MENU + HALL OF FAME
    ═══════════════════════════════════════════════════════════════════════════ */
 @layer components {
-  /* Header menu trigger — a chip that behaves like a button */
-  .game-info .chip-btn {
+  /* Header (and Story drawer) icon buttons — a 34px lit ring inside a 44px
+     tap box. The 5px transparent border is the extra hit area: the fill is
+     clipped to the padding box and the ring is an inset shadow, so the
+     visual stays chip-sized while the target meets 44×44. */
+  .game-info .chip-btn,
+  .story-head .chip-btn {
+    flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.25rem 0.45rem;
+    width: 44px;
+    height: 44px;
     max-width: none;
+    padding: 0;
+    border: 5px solid transparent;
+    border-radius: var(--radius-full);
+    background: var(--surface-sunken) padding-box;
+    box-shadow: inset 0 0 0 1px var(--line);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: color 160ms ease, border-color 160ms ease;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 160ms ease, box-shadow 160ms ease;
   }
-  .game-info .chip-btn .icon { width: 1.05rem; height: 1.05rem; }
-  .game-info .chip-btn:hover,
-  .game-info .chip-btn:focus-visible {
+  .game-info .chip-btn .icon,
+  .story-head .chip-btn .icon { width: 1.05rem; height: 1.05rem; }
+  /* Hover only where hover is real — on a phone it stuck after the tap */
+  @media (hover: hover) {
+    .game-info .chip-btn:hover,
+    .story-head .chip-btn:hover {
+      color: var(--torch);
+      box-shadow: inset 0 0 0 1px var(--torch);
+    }
+  }
+  .game-info .chip-btn:focus-visible,
+  .story-head .chip-btn:focus-visible {
     color: var(--torch);
-    border-color: var(--torch);
+    box-shadow: inset 0 0 0 1px var(--torch);
   }
-  .game-info .chip-btn:active { transform: scale(0.94); }
+  .game-info .chip-btn:focus-visible,
+  .story-head .chip-btn:focus-visible { outline: 2px solid var(--flame-hot); outline-offset: -3px; }
+  .game-info .chip-btn:active,
+  .story-head .chip-btn:active { transform: scale(0.94); }
 
   /* The menu itself */
   .camp-menu {
@@ -2640,7 +2776,8 @@
 @layer components {
   /* The oversized title overlapping the panel works when the panel opens with
      padding — here the list starts immediately, so the title sat on the names. */
-  #leaderboardScreen .screen-title {
+  #leaderboardScreen .screen-title,
+  #settingsScreen .screen-title {
     margin-bottom: 0.45rem;
   }
 
@@ -2698,6 +2835,20 @@
   .player-name .rename-btn .icon { width: 0.95rem; height: 0.95rem; }
   .player-name .rename-btn:hover,
   .player-name .rename-btn:focus-visible { color: var(--torch); }
+
+  /* 44×44 tap area around the 22px pencil / remove-bot ×. The name line
+     clips (overflow:hidden for the ellipsis), so a hit area drawn inside it
+     would be cut back to the line height. This one is absolutely positioned
+     with NO insets: it keeps its static position — centred on the button,
+     since an abspos child of a centring flex container is placed as its sole
+     item — while its containing block sits OUTSIDE .player-name (the button
+     itself stays position:static), so the name line's clip does not apply. */
+  .player-name .rename-btn::before {
+    content: "";
+    position: absolute;
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2723,7 +2874,7 @@
     border-radius: 11px;
   }
   .hand-grid .card-mini .card-category {
-    font-size: 0.54rem;
+    font-size: 0.58rem;
     margin-bottom: 0.2rem;
     white-space: nowrap;
     overflow: hidden;
@@ -2749,6 +2900,18 @@
     color: var(--text-faint);
   }
   .card-mini-badge .icon { width: 0.8rem; height: 0.8rem; }
+  /* Lock mark on a card that can't be played now — pure CSS, so the hand's
+     markup needs nothing new. Same glyph as the sprite's #i-lock. */
+  .card-mini.locked .card-mini-badges::after {
+    content: "";
+    margin-left: auto;
+    width: 0.8rem;
+    height: 0.8rem;
+    flex: none;
+    background: var(--text-faint);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4.8' y='10.2' width='14.4' height='10.3' rx='2' stroke='black' stroke-width='1.8' fill='none'/%3E%3Cpath d='M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6' stroke='black' stroke-width='1.8' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='12' cy='15.3' r='1.3' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4.8' y='10.2' width='14.4' height='10.3' rx='2' stroke='black' stroke-width='1.8' fill='none'/%3E%3Cpath d='M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6' stroke='black' stroke-width='1.8' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='12' cy='15.3' r='1.3' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   .card-mini-now {
     font-family: var(--font-label);
     font-size: 0.56rem;
@@ -2873,6 +3036,9 @@
     z-index: 61;
     display: flex;
     flex-direction: column;
+    /* The DRAWER scrolls, not the list (see .story-list) */
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--bg-deep);
     border-left: 1px solid var(--line);
     box-shadow: -18px 0 40px oklch(0 0 0 / 0.45);
@@ -2882,21 +3048,35 @@
   .story-drawer.open { transform: translateX(0); }
   .story-overlay.open { opacity: 1; pointer-events: auto; }
   .story-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex: none;
+    background: var(--bg-deep);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.9rem 1rem calc(0.7rem);
-    padding-top: calc(0.9rem + env(safe-area-inset-top));
+    /* The close button is a 44px tap box with a 5px invisible rim — trim
+       the padding so the bar keeps its slim height. */
+    padding: 0.45rem 0.6rem 0.35rem 1rem;
+    padding-top: calc(0.45rem + env(safe-area-inset-top));
     border-bottom: 1px solid var(--line);
   }
   .story-head h3 { margin: 0; font-size: 1.05rem; }
+  /* Newest at the top of the reader's eye: events arrive oldest-first in the
+     DOM and column-reverse stacks them bottom-up. But a column-reverse box
+     that SCROLLS starts at its main-start — the bottom — so a long log
+     opened on the oldest events with the newest scrolled out of sight above.
+     So the list never scrolls: it grows to its content (flex: 1 0 auto) and
+     the drawer scrolls instead, from the top, under a sticky head.
+     justify-content: flex-end packs a short list against the top, too. */
   .story-list {
-    flex: 1;
-    overflow-y: auto;
+    flex: 1 0 auto;
     padding: 0.6rem 1rem calc(1rem + env(safe-area-inset-bottom));
     display: flex;
-    flex-direction: column-reverse; /* newest at the top of the reader's eye */
+    flex-direction: column-reverse;
+    justify-content: flex-end;
     gap: 0.45rem;
   }
   .story-item {
@@ -2915,7 +3095,20 @@
     margin-bottom: 0.15rem;
     font-variant-numeric: tabular-nums;
   }
-  .story-empty { text-align: center; color: var(--text-faint); padding: 2rem 0.5rem; }
+  /* column-reverse puts main-start at the BOTTOM, so a lone child (the
+     empty state) sank to the foot of the drawer. An auto margin on the
+     main-start side soaks up the free space and floats it to the top. */
+  .story-empty {
+    margin-bottom: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    text-align: center;
+    color: var(--text-faint);
+    padding: 2rem 0.5rem;
+  }
+  .story-empty .icon { width: 1.4rem; height: 1.4rem; }
 }
 
 /* ══════════════ Device settings ══════════════ */
@@ -2926,19 +3119,12 @@
 html.text-large { font-size: 110%; }
 html.text-xl    { font-size: 122%; }
 
-/* Reduce motion: near-zero durations rather than `none` so animation-end
-   handlers (fade-out removal, screen transitions) still fire. */
-html.reduce-motion *,
-html.reduce-motion *::before,
-html.reduce-motion *::after {
-  animation-duration: 0.001s !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.001s !important;
-  scroll-behavior: auto !important;
-}
+/* Reduce motion (html.reduce-motion / html.motion-full) lives in
+   @layer states, beside the OS media query, so the two can't disagree. */
 
 /* ── Settings screen ── */
 .settings-section { margin: 1.1rem 0 0.4rem; }
+.settings-section:first-child { margin-top: 0.25rem; }
 .settings-section > h3 {
   font-size: var(--font-size-sm);
   text-transform: uppercase;
@@ -2950,19 +3136,40 @@ html.reduce-motion *::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.4rem 0.75rem;
   flex-wrap: wrap;
   padding: 0.55rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .settings-row:last-child { border-bottom: none; }
-.settings-row > label { flex: 1 1 12rem; }
+/* The row's text label grows; its control keeps its own width and sits on
+   the same line when it fits (a segmented group wraps under it when not). */
+.settings-row > label { flex: 1 1 12rem; margin-bottom: 0; }
 .settings-row .row-sub {
   display: block;
+  /* the explanation reads as a sentence, not as signage */
+  font-family: var(--font-body);
+  font-weight: 400;
+  letter-spacing: 0;
   font-size: var(--font-size-xs);
+  line-height: 1.4;
   color: var(--text-faint);
   margin-top: 0.15rem;
 }
+/* A toggle row's switch is wrapped in its own <label class="checkbox-row">.
+   That label must NOT take the text label's flex-grow (it became a detached,
+   empty full-width pill on its own line) nor the checkbox-row card chrome —
+   here it is just the switch plus a 44px-tall tap area. */
+.settings-row > label.checkbox-row {
+  flex: none;
+  min-width: 64px;
+  padding: 9px 0 9px 18px;
+  border: 0;
+  background: none;
+  margin: 0;
+  justify-content: flex-end;
+}
+.settings-row > label.checkbox-row input[type="checkbox"] { margin-left: 0; }
 .seg-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .seg-btn {
   padding: 0.42rem 0.7rem;
