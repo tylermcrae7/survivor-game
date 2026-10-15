@@ -84,10 +84,11 @@ class GateEnabledTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # Reload ungated before leaving: every later suite in the same pytest
+        # process imports this module object, and it was left code-locked.
+        make_app(None)
         os.chdir(cls.cwd)
         shutil.rmtree(cls.tmp, ignore_errors=True)
-        os.environ.pop('SURVIVOR_ACCESS_CODE', None)
-        os.environ.pop('SURVIVOR_REVIEW_ACCESS_CODE', None)
 
     def setUp(self):
         self.client = self.server.app.test_client()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test Runner for Survivor iOS App
+Test Runner for the Survivor game server suites
 Runs all available test suites and provides a summary report
 """
 
@@ -220,6 +220,18 @@ def main():
         {
             'file': 'tests/test_game_archive.py',
             'description': 'The archive — swept games leave a record, wins linger a day, live ceremonies are never swept'
+        },
+        {
+            'file': 'tests/test_tribal_advantages.py',
+            'description': 'Tribal advantages — Control The Vote, Goodwill, I\'m The Leader Now at council'
+        },
+        {
+            'file': 'tests/test_council_integrity.py',
+            'description': 'Council integrity — the ceremony runs once, ballots are whole, the Hall of Fame records itself'
+        },
+        {
+            'file': 'tests/test_http_hardening.py',
+            'description': 'HTTP hardening — stamped service worker, trusted client IPs, link-claim budget, clean 500s'
         }
     ]
     

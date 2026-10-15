@@ -9,7 +9,7 @@ Runs as a mobile-first PWA against a small Flask + Socket.IO server. One househo
 ## Quick Start (For Players)
 
 1. **One player creates the game** — pick a deck, optionally add the *Let's Go To Rocks* Challenges — and receives a fire code
-2. **Share the code** (2–6 players total)
+2. **Share the code** (3–8 players total)
 3. Everyone opens the game URL, taps **Join a Tribe**, and enters the code, a name, and a buff color
 4. You can **change your name** any time in the lobby (pencil next to your name) — names lock when the game starts
 5. The leader taps **Begin the Game**
@@ -196,7 +196,7 @@ survivor-game/
 ├── survivor_cards.json      # Card registry (single source of truth)
 ├── client/dist/             # The whole frontend (HTML/CSS/JS/PWA, no build step)
 ├── deploy/                  # Production setup + redeploy scripts, LaunchAgent templates
-├── tests/                   # 19 suites, ~200 tests + live end-to-end harnesses
+├── tests/                   # 43 suites, ~840 tests + live end-to-end harnesses
 ├── ios/                     # Native SwiftUI companion app (Xcode project)
 └── docs/                    # Rules reference, design docs, progress log, screenshots
 ```
@@ -206,8 +206,11 @@ survivor-game/
 ## Testing
 
 ```bash
-.venv/bin/python run_all_tests.py          # 19 suites, ~200 tests
+.venv/bin/python -m pytest                 # every Python suite (~840 tests, ~15s)
+.venv/bin/python run_all_tests.py          # the same suites, one process each
 ```
+
+CI (`.github/workflows/ci.yml`) runs the suites and a pyflakes lint on every push.
 
 End-to-end harnesses drive a real running server through complete games (turns, thefts, Tribals, ties, Challenges, Final Tribal):
 

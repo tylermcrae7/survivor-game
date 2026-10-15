@@ -15,22 +15,35 @@ else
     echo "cloudflared already installed: $(cloudflared --version)"
 fi
 
-# 2. Install Python dependencies
+# 2. Python dependencies, in the venv the LaunchAgent actually runs.
+#    The server runs from ~/srv/survivor-game, never from this checkout: macOS
+#    TCC blocks launchd from ~/Documents (Python hangs opening the venv), and
+#    redeploy.sh only ever updates ~/srv. A LaunchAgent pointed at the checkout
+#    is a server no deploy ever reaches.
 echo ""
 echo "Installing Python dependencies..."
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-pip3 install -r "$REPO_DIR/requirements.txt"
+DEPLOY_DIR="$HOME/srv/survivor-game"
+mkdir -p "$DEPLOY_DIR"
+if [ ! -x "$DEPLOY_DIR/.venv/bin/python" ]; then
+    python3 -m venv "$DEPLOY_DIR/.venv"
+fi
+"$DEPLOY_DIR/.venv/bin/pip" install -r "$REPO_DIR/requirements.txt"
 
 # 3. Login to Cloudflare (opens browser)
 echo ""
 echo "Logging in to Cloudflare (browser will open)..."
 cloudflared tunnel login
 
-# 4. Create the tunnel
+# 4. Create the tunnel (once — re-running setup must not fail here)
 echo ""
-echo "Creating 'survivor-game' tunnel..."
-cloudflared tunnel create survivor-game
+if cloudflared tunnel info survivor-game >/dev/null 2>&1; then
+    echo "Tunnel 'survivor-game' already exists"
+else
+    echo "Creating 'survivor-game' tunnel..."
+    cloudflared tunnel create survivor-game
+fi
 
 # 5. Get tunnel ID
 TUNNEL_ID=$(cloudflared tunnel list | grep survivor-game | awk '{print $1}')
@@ -74,13 +87,18 @@ fi
 echo ""
 echo "Installing launchd services..."
 
-# Server plist (repo path + access code + public origin substituted in)
-sed -e "s|{{REPO_DIR}}|$REPO_DIR|g" \
-    -e "s|{{ACCESS_CODE}}|$SURVIVOR_ACCESS_CODE|g" \
-    -e "s|{{REVIEW_ACCESS_CODE}}|${SURVIVOR_REVIEW_ACCESS_CODE:-}|g" \
-    -e "s|{{PUBLIC_ORIGIN}}|https://$HOSTNAME|g" \
+# Server plist (deploy path + access code + public origin substituted in).
+# Values are escaped for sed — a code containing & or | used to corrupt the
+# plist — and the result is private to this user: it holds the island code.
+sed_escape() { printf '%s' "$1" | sed -e 's/[\\/&|]/\\&/g'; }
+SERVER_PLIST="$HOME/Library/LaunchAgents/com.survivor-game.server.plist"
+sed -e "s|{{REPO_DIR}}|$(sed_escape "$DEPLOY_DIR")|g" \
+    -e "s|{{ACCESS_CODE}}|$(sed_escape "$SURVIVOR_ACCESS_CODE")|g" \
+    -e "s|{{REVIEW_ACCESS_CODE}}|$(sed_escape "${SURVIVOR_REVIEW_ACCESS_CODE:-}")|g" \
+    -e "s|{{PUBLIC_ORIGIN}}|$(sed_escape "https://$HOSTNAME")|g" \
     "$SCRIPT_DIR/com.survivor-game.server.plist" \
-    > "$HOME/Library/LaunchAgents/com.survivor-game.server.plist"
+    > "$SERVER_PLIST"
+chmod 600 "$SERVER_PLIST"
 
 # Tunnel plist
 cp "$SCRIPT_DIR/com.survivor-game.tunnel.plist" \
@@ -89,12 +107,10 @@ cp "$SCRIPT_DIR/com.survivor-game.tunnel.plist" \
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "To start the game server:  launchctl load ~/Library/LaunchAgents/com.survivor-game.server.plist"
+echo "Copy the code into place and start the server (and every later deploy):"
+echo "  bash $REPO_DIR/deploy/redeploy.sh"
 echo "To start the tunnel:       launchctl load ~/Library/LaunchAgents/com.survivor-game.tunnel.plist"
-echo ""
-echo "Or start both manually:"
-echo "  python3 $REPO_DIR/survivor_server.py"
-echo "  cloudflared tunnel run survivor-game"
+echo "The Discord bot's LaunchAgent is installed by hand — see docs/voice/DISCORD-OPERATIONS.md"
 echo ""
 echo "Quick tunnel (no custom domain, temporary URL):"
 echo "  cloudflared tunnel --url http://localhost:8080"
