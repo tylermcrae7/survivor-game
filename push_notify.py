@@ -11,7 +11,9 @@ so the game never depends on the push stack being healthy.
 """
 import json
 import logging
+import os
 import threading
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,61 @@ except ImportError:            # dependency not installed — feature stays dark
 KEYS_FILE = "push_keys.json"
 SUBS_FILE = "push_subs.json"
 _lock = threading.Lock()
+
+# A subscription's endpoint is a URL the server will POST to on every turn.
+# Accepting any URL let a phone point the Mac at its own LAN (SSRF), so only
+# the browsers' real push services are reachable.
+PUSH_HOST_SUFFIXES = (
+    "fcm.googleapis.com", "android.googleapis.com",      # Chrome / Android
+    "push.apple.com",                                     # Safari, iOS home-screen apps
+    "push.services.mozilla.com",                          # Firefox
+    "notify.windows.com",                                 # Edge
+)
+MAX_SUBSCRIPTION_BYTES = 2048
+
+
+def _atomic_write_json(path, data):
+    """Write-then-rename, so a crash mid-write never leaves a torn file — a
+    torn push_keys.json used to mint new VAPID keys and silently break every
+    existing subscription."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def allowed_endpoint(endpoint):
+    """True for an https URL on one of the real push services."""
+    try:
+        url = urlparse(endpoint)
+    except (TypeError, ValueError):
+        return False
+    host = (url.hostname or "").lower()
+    return url.scheme == "https" and any(
+        host == suffix or host.endswith("." + suffix) for suffix in PUSH_HOST_SUFFIXES)
+
+
+def clean_subscription(sub):
+    """The parts of a PushSubscription the server needs, or None if unusable.
+
+    Only `endpoint` and `keys` are kept (a client could otherwise park
+    arbitrary data in push_subs.json), and the whole thing is size-capped.
+    """
+    if not isinstance(sub, dict):
+        return None
+    endpoint = sub.get("endpoint")
+    keys = sub.get("keys")
+    if not isinstance(endpoint, str) or not allowed_endpoint(endpoint):
+        return None
+    if not isinstance(keys, dict) or not all(
+            isinstance(keys.get(k), str) and keys.get(k) for k in ("p256dh", "auth")):
+        return None
+    cleaned = {"endpoint": endpoint, "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]}}
+    if len(json.dumps(cleaned)) > MAX_SUBSCRIPTION_BYTES:
+        return None
+    return cleaned
 
 
 def _load_json(path, fallback):
@@ -54,8 +111,7 @@ def get_keys():
     raw = vapid.public_key.public_bytes(
         serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
     keys = {"private": private, "public": b64urlencode(raw)}
-    with open(KEYS_FILE, "w") as f:
-        json.dump(keys, f)
+    _atomic_write_json(KEYS_FILE, keys)
     logger.info("Generated new VAPID keys for turn notifications")
     return keys
 
@@ -70,8 +126,7 @@ def _subs():
 
 
 def _write_subs(subs):
-    with open(SUBS_FILE, "w") as f:
-        json.dump(subs, f)
+    _atomic_write_json(SUBS_FILE, subs)
 
 
 def subscribe(gid, player_id, subscription):
@@ -88,9 +143,37 @@ def unsubscribe(gid, player_id):
             _write_subs(subs)
 
 
+def prune(live_game_ids):
+    """Forget subscriptions for games that no longer exist (the collector
+    calls this; nothing removed them before, so the file only ever grew)."""
+    live = set(live_game_ids)
+    with _lock:
+        subs = _subs()
+        kept = {k: v for k, v in subs.items() if k.split(":", 1)[0] in live}
+        if len(kept) != len(subs):
+            _write_subs(kept)
+        return len(subs) - len(kept)
+
+
+def _vapid_key(private):
+    """What pywebpush can sign with.
+
+    get_keys() stores the private key as PEM, but pywebpush only parses a
+    raw/DER base64 *string* — handed the PEM, every send raised "Could not
+    deserialize key data", notify_player logged a warning, and no turn
+    notification was ever delivered. A Vapid object is accepted as-is.
+    """
+    if isinstance(private, str) and private.lstrip().startswith("-----BEGIN"):
+        return Vapid02.from_pem(private.encode())
+    return private
+
+
 def _webpush(subscription, payload, keys):      # test seam
+    if not allowed_endpoint(subscription.get("endpoint")):
+        # A subscription stored before endpoints were checked
+        raise ValueError("push endpoint is not a known push service")
     webpush(subscription_info=subscription, data=payload,
-            vapid_private_key=keys["private"],
+            vapid_private_key=_vapid_key(keys["private"]),
             vapid_claims={"sub": "mailto:tylermcrae7@gmail.com"},
             timeout=4)
 

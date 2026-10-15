@@ -360,7 +360,7 @@ class TestOptimizationFixes(unittest.TestCase):
         # Phase 1: Thief initiates steal. The Spy Shack is "look and take one",
         # so the chosen card index rides along with the play.
         result_steal = self.gs.play_card(
-            self.game_id, thief_id, 0, {"targetId": victim_id, "takeIndex": 0}
+            self.game_id, thief_id, 0, {"targetId": victim_id, "takeIndex": 1}
         )
         self.assertTrue(result_steal["success"], result_steal.get("message"))
         

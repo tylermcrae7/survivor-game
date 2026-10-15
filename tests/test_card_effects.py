@@ -489,6 +489,7 @@ class TestTribalCouncilCards(CardEffectTestBase):
     def test_immunity_idol_negates_votes(self):
         protected = self.player_ids[0]
         self.gs._trigger_tribal_council(self.game, "single")
+        self.game["currentVote"]["phase"] = "immunity"  # the idol window
         self.give(protected, "immunity_idol")
 
         result = self.gs.play_immunity(self.game_id, playerId=protected)
@@ -499,6 +500,7 @@ class TestTribalCouncilCards(CardEffectTestBase):
     def test_immunity_idol_can_protect_another_player(self):
         player, ally = self.player_ids[0], self.player_ids[1]
         self.gs._trigger_tribal_council(self.game, "single")
+        self.game["currentVote"]["phase"] = "immunity"  # the idol window
         self.give(player, "immunity_idol")
 
         result = self.gs.play_immunity(self.game_id, playerId=player, targetId=ally)
@@ -738,9 +740,12 @@ class TestVoteCardIsNotStealable(CardEffectTestBase):
         self.hand(spy)[:] = [{"type": "the_spy_shack"}]
         self.hand(victim)[:] = [{"type": "vote"}, {"type": "camp_raid"}]
 
+        # Naming the Vote Card is refused while the Spy Shack is still in
+        # hand, like Knowledge Is Power's illegal demand — it used to spend
+        # the card and then find nothing it could take.
         result = self.play(spy, "the_spy_shack", targetId=victim, takeIndex=0)
-        self.assertTrue(result["success"], result.get("message"))
-        self.assertNotIn("vote", self.hand_types(spy))
+        self.assertFalse(result["success"])
+        self.assertEqual(self.hand_types(spy), ["the_spy_shack"])
         self.assertIn("vote", self.hand_types(victim))
 
     def test_knowledge_is_power_cannot_demand_the_vote_card(self):

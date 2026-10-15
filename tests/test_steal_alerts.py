@@ -137,17 +137,77 @@ class TurnStealRecordsAlertsTest(unittest.TestCase):
                          [{"name": "Hidden Immunity Idol", "type": "immunity_idol"}])
         self.assertIn("Hidden Immunity Idol", priv["data"]["message"])
 
-    def test_camp_raid_extra_card_joins_the_same_private_alert(self):
-        """The public HTTP response keeps its synthetic '(+type from Camp
-        Raid)' string unchanged (see execute_theft); the private alert
-        names the same card for real, like any other."""
+    def test_a_steal_does_not_spring_a_camp_raid(self):
+        """Camp Raid takes the victim's next DRAWN card. The old extra card
+        on a turn steal was a different mechanic, and it spent the trap."""
         engine = SurvivorRulesEngine()
         game = _game({"a": [], "b": ["extra_vote", "camp_raid", "the_spy_shack"]})
         game["players"]["b"]["campRaidedBy"] = "a"
         result = engine.execute_theft(game, "a", "b")
 
-        self.assertTrue(any("Camp Raid" in c for c in result["stolen_cards"]),
-                        "the public HTTP shape is untouched")
+        self.assertEqual(len(result["stolen_cards"]), 1)
+        self.assertEqual(game["players"]["b"]["campRaidedBy"], "a")
+        priv = _private(game["_pending_alerts"])[0]
+        self.assertEqual(priv["data"]["count"], 1)
+
+    def test_a_bot_victim_gets_no_private_alert(self):
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid"]}, bots=("b",))
+        execute_take_spec(game, {"victimId": "b", "kind": "random_each",
+                                 "takes": [{"thiefId": "a", "count": 2}]})
+        alerts = game["_pending_alerts"]
+        self.assertEqual(len(_public(alerts)), 1, "the table still hears it")
+        self.assertEqual(_private(alerts), [],
+                         "nobody is holding a bot's phone")
+
+    def test_two_cards_read_an_oxford_free_and_join(self):
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid"]})
+        execute_take_spec(game, {"victimId": "b", "kind": "random_each",
+                                 "takes": [{"thiefId": "a", "count": 2}]})
+        priv = _private(game["_pending_alerts"])[0]
+        names = [c["name"] for c in priv["data"]["cards"]]
+        self.assertEqual(len(names), 2)
+        self.assertEqual(priv["data"]["message"],
+                         f"A took 2 of your cards — {names[0]} and {names[1]}")
+        self.assertNotIn(", and", priv["data"]["message"])
+
+
+class TurnStealRecordsAlertsTest(unittest.TestCase):
+    def test_execute_theft_records_and_names_the_thief(self):
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid"]})
+        engine.execute_theft(game, "a", "b")
+        alert = _public(game["_pending_alerts"])[0]
+        self.assertTrue(alert["data"]["message"].startswith("A stole"),
+                        alert["data"]["message"])
+
+    def test_execute_theft_private_alert_names_the_card(self):
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["immunity_idol"]})
+        engine.execute_theft(game, "a", "b")
+        priv = _private(game["_pending_alerts"])[0]
+        self.assertEqual(priv["private_to"], "b")
+        self.assertEqual(priv["data"]["cards"],
+                         [{"name": "Hidden Immunity Idol", "type": "immunity_idol"}])
+        self.assertIn("Hidden Immunity Idol", priv["data"]["message"])
+
+    def test_a_steal_does_not_spring_a_camp_raid(self):
+        """Camp Raid takes the victim's next DRAWN card. The old extra card
+        on a turn steal was a different mechanic, and it spent the trap."""
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid", "the_spy_shack"]})
+        game["players"]["b"]["campRaidedBy"] = "a"
+        result = engine.execute_theft(game, "a", "b")
+
+        self.assertEqual(len(result["stolen_cards"]), 1)
+        self.assertEqual(game["players"]["b"]["campRaidedBy"], "a")
+        priv = _private(game["_pending_alerts"])[0]
+        self.assertEqual(priv["data"]["count"], 1)
+
+    def _retired_camp_raid_extra_card_alert(self):
+        engine = SurvivorRulesEngine()
+        game = _game({"a": [], "b": ["extra_vote", "camp_raid", "the_spy_shack"]})
+        game["players"]["b"]["campRaidedBy"] = "a"
+        result = engine.execute_theft(game, "a", "b")
 
         priv = _private(game["_pending_alerts"])[0]
         self.assertEqual(priv["data"]["count"], 2)

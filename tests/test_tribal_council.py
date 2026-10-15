@@ -408,6 +408,7 @@ class TestTribalCouncilFlow(unittest.TestCase):
         player_id = self.player_ids[0]
 
         self.gs._trigger_tribal_council(game, "single")
+        game["currentVote"]["phase"] = "immunity"  # the idol window
 
         immunity_card = {"type": "immunity_idol"}
         game["players"][player_id]["hand"].append(immunity_card)
@@ -449,16 +450,12 @@ class TestTribalCouncilFlow(unittest.TestCase):
         }
         game["players"][player_id]["hand"].append(nullifier_card)
         
-        # Play idol nullifier on target 
+        # A nullifier answers an idol through /api/immunity/block, not this
+        # route. It used to be discarded here first and refused second.
         result = self.gs.play_tribal_advantage(self.game_id, player_id, "idol_nullifier", target_id)
-        # The method actually works and returns True
-        self.assertTrue(result)
-        
-        # Since nullifier succeeded, target should still be immune (nullifier doesn't remove immunity immediately)
+        self.assertFalse(result["success"])
         self.assertTrue(game["players"][target_id]["immune"])
-        
-        # Since the advantage succeeded, card should be removed from hand
-        self.assertNotIn(nullifier_card, game["players"][player_id]["hand"])
+        self.assertIn(nullifier_card, game["players"][player_id]["hand"])
         
     def test_tribal_advantage_invalid_phase(self):
         """Test that tribal advantages can't be played during wrong phases"""

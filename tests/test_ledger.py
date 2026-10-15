@@ -346,6 +346,7 @@ class CardPlayWritesLedgerTest(unittest.TestCase):
 
     def test_play_immunity_increments_idols_played(self):
         self.gs._trigger_tribal_council(self.game, "single", drawer_id=self.a)
+        self.game["currentVote"]["phase"] = "immunity"  # the idol window
         self.game["players"][self.a]["hand"] = [{"type": "immunity_idol"}]
 
         result = self.gs.play_immunity(self.gid, playerId=self.a, targetId=self.a)
@@ -359,6 +360,7 @@ class CardPlayWritesLedgerTest(unittest.TestCase):
 
     def test_play_immunity_on_someone_else_marks_cards_played_on(self):
         self.gs._trigger_tribal_council(self.game, "single", drawer_id=self.a)
+        self.game["currentVote"]["phase"] = "immunity"  # the idol window
         self.game["players"][self.a]["hand"] = [{"type": "immunity_idol"}]
 
         result = self.gs.play_immunity(self.gid, playerId=self.a, targetId=self.b)

@@ -57,8 +57,16 @@ def start_game_api(game_id):
 
 
 def get_game_state(game_id):
-    """Get current game state via API."""
-    return api_get(f"/game/{game_id}/state")
+    """Get current game state via API.
+
+    The public state sends the Draw Pile face down; a server started with
+    SURVIVOR_TEST_HOOKS=1 shows it face up for the composition checks.
+    """
+    state = api_get(f"/game/{game_id}/state")
+    r = requests.get(f"{API}/test/deck/{game_id}", timeout=10)
+    if r.status_code == 200 and isinstance(state, dict):
+        state["deck"] = r.json().get("deck", state.get("deck"))
+    return state
 
 
 # ── Playwright fixtures ──────────────────────────────────────────

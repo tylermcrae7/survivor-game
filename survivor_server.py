@@ -2,15 +2,14 @@
 # Survivor Voting App – Flask & Socket.IO
 # (Pythonista-friendly; persistence, extra-vote cards, leader swap, reset)
 
-import uuid, time, os, json, socket, re, sys, threading, random, hmac, hashlib
+import uuid, time, os, json, socket, re, sys, random, hmac, hashlib
 import logging
-from pathlib import Path
 from functools import wraps
-from rules_engine import (SurvivorRulesEngine, TribalPhase, takeable_indices,
+from rules_engine import (SurvivorRulesEngine, takeable_indices, penalty_discardable_indices,
                           new_card, ensure_card_uids, ensure_seat_bound_inheritance,
                           ensure_no_grant_immunity,
                           tribal_elimination_type, is_vote_blocked, VOTE_CARD_TYPES)
-from challenges import challenge_engine, CHALLENGE_DEFINITIONS, MAX_CHALLENGE_ACTIONS
+from challenges import challenge_engine, MAX_CHALLENGE_ACTIONS
 import seats
 import places
 from link_codes import LinkCodes, CODE_TTL_SECONDS as LINK_CODE_TTL
@@ -80,9 +79,15 @@ PENALTY_DISCARD_SECONDS = 45.0
 # phone can't freeze the table. Bots answer in seconds and never see it.
 THEFT_WINDOW_SECONDS = 60.0
 
+# How long an Immunity Idol waits for an Idol Nullifier before it stands. The
+# Leader can still call time sooner; this is for the table whose Leader is a
+# bot, or a human who has wandered off.
+NULLIFIER_WINDOW_SECONDS = 45.0
+
 ACCESS_COOKIE = 'survivor_access'
 ACCESS_COOKIE_MAX_AGE = 90 * 24 * 3600  # one season
-_ACCESS_EXEMPT_PATHS = ('/api/access', '/api/access/check', '/api/ping')
+_ACCESS_EXEMPT_PATHS = ('/api/access', '/api/access/check', '/api/access/forget',
+                        '/api/ping')
 
 # Brute-force throttle: attempts per client IP within the window
 _ACCESS_ATTEMPT_LIMIT = 10
@@ -125,10 +130,37 @@ def _has_valid_access_cookie(cookies):
 
 
 def _client_ip():
-    """Real client IP — behind the Cloudflare tunnel it's in CF-Connecting-IP."""
-    return (request.headers.get('CF-Connecting-IP')
-            or request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
-            or request.remote_addr or 'unknown')
+    """Real client IP — behind the Cloudflare tunnel it's in CF-Connecting-IP.
+
+    Only a proxy on this machine (cloudflared connects from loopback) gets to
+    say who the client is. The server listens on every interface, and trusting
+    the header from anyone let a LAN client rotate it on each request and
+    guess the island code without ever being throttled.
+    """
+    remote = request.remote_addr or 'unknown'
+    if remote in ('127.0.0.1', '::1', 'localhost'):
+        return (request.headers.get('CF-Connecting-IP')
+                or request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+                or remote)
+    return remote
+
+
+_RATE_BUCKET_MAX = 10000
+
+
+def _prune_bucket(bucket, now, window):
+    """Keep a throttle map bounded without forgetting who is throttled.
+
+    The old `bucket.clear()` at 10,000 entries wiped every throttled IP's
+    history too — the cheapest reset a distributed guesser could ask for.
+    """
+    if len(bucket) <= _RATE_BUCKET_MAX:
+        return
+    for key in [k for k, ts in bucket.items() if not ts or now - ts[-1] >= window]:
+        del bucket[key]
+    if len(bucket) > _RATE_BUCKET_MAX:
+        for key in sorted(bucket, key=lambda k: bucket[k][-1])[:len(bucket) - _RATE_BUCKET_MAX]:
+            del bucket[key]
 
 
 def _rate_limited(bucket, ip, limit, window):
@@ -139,10 +171,37 @@ def _rate_limited(bucket, ip, limit, window):
     if len(attempts) >= limit:
         return True
     attempts.append(now)
-    # Don't let the map grow unbounded under a distributed guessing attempt
-    if len(bucket) > 10000:
-        bucket.clear()
+    _prune_bucket(bucket, now, window)
     return False
+
+
+# Wrong Discord link-code claims. link_codes budgets them per Discord id, but
+# the id is whatever the caller sends — rotating it swept all 21,600 codes in
+# seconds and bound a stranger's pending link to an id of the caller's choice.
+# These two budgets are keyed on things the caller can't choose.
+_CLAIM_FAIL_PER_IP = 10
+_CLAIM_FAIL_PER_IP_WINDOW = 300.0
+_CLAIM_FAIL_GLOBAL = 60
+_CLAIM_FAIL_GLOBAL_WINDOW = 600.0
+_claim_failures = {}
+_claim_failures_global = []
+
+
+def _claim_throttled(ip):
+    now = time.time()
+    _claim_failures_global[:] = [t for t in _claim_failures_global
+                                 if now - t < _CLAIM_FAIL_GLOBAL_WINDOW]
+    mine = [t for t in _claim_failures.get(ip, []) if now - t < _CLAIM_FAIL_PER_IP_WINDOW]
+    _claim_failures[ip] = mine
+    return (len(mine) >= _CLAIM_FAIL_PER_IP
+            or len(_claim_failures_global) >= _CLAIM_FAIL_GLOBAL)
+
+
+def _record_claim_failure(ip):
+    now = time.time()
+    _claim_failures.setdefault(ip, []).append(now)
+    _claim_failures_global.append(now)
+    _prune_bucket(_claim_failures, now, _CLAIM_FAIL_PER_IP_WINDOW)
 
 
 def _access_rate_limited(ip):
@@ -167,9 +226,12 @@ app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB limit for iOS
 
 try:
     socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins=ALLOWED_ORIGINS)
-except:
+except Exception:
+    # Loud, not a warning: threading mode means the Werkzeug development
+    # server in production and real thread races in code written for one
+    # event loop. A broken gevent install should be impossible to miss.
+    logger.exception("gevent is unavailable — FALLING BACK to threading mode")
     socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=ALLOWED_ORIGINS)
-    logger.warning("Using threading mode - consider installing gevent for better performance")
 
 # Enable response compression for performance
 try:
@@ -280,9 +342,15 @@ class GameState:
         try:
             if touched_gid is not None and touched_gid in self.games:
                 self.games[touched_gid]['lastActivity'] = time.time()
+            # Compact and fsynced. indent=2 tripled the bytes and pushed every
+            # save through the pure-Python encoder (~70 ms of a blocked event
+            # loop per action at 60 games); without the fsync a power cut
+            # could leave a zero-length file behind the rename.
             with open(temp_file, 'w') as f:
-                json.dump(self.games, f, indent=2)
-            os.rename(temp_file, self._FILE)
+                json.dump(self.games, f, separators=(',', ':'))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, self._FILE)
             logger.debug("Game state saved successfully")
             return True
         except Exception as e:
@@ -328,37 +396,50 @@ class GameState:
             # exceed the cap now, so anything above it is that old corruption —
             # give the Challenge its budget back rather than leaving the game
             # dead.
-            for gid, game in self.games.items():
-                ch = game.get("challenge")
-                if isinstance(ch, dict) and ch.get("actionCount", 0) > MAX_CHALLENGE_ACTIONS:
-                    logger.warning(
-                        f"Healing poisoned challenge actionCount in {gid} "
-                        f"({ch['actionCount']} -> 0)")
-                    ch["actionCount"] = 0
-                # Every card saved before cards had identities gets one now.
-                # Deliberately not saved here: the in-memory state is
-                # authoritative and the next ordinary action persists it, so a
-                # boot doesn't pay for a full rewrite of the store.
-                minted = ensure_card_uids(game)
-                if minted:
-                    logger.info(f"Backfilled {minted} card uid(s) in {gid}")
-                # Games in flight when the Inheritance card became six
-                # colour-bound cards are holding six of a type the catalogue
-                # no longer has. Give them colours rather than leave an
-                # eighth of the draw pile unplayable.
-                bound = ensure_seat_bound_inheritance(game)
-                if bound:
-                    logger.info(f"Bound {bound} legacy Inheritance card(s) "
-                                f"to seat colours in {gid}")
-                # Grant Immunity left the catalogue (Task A0) — sweep any
-                # copies a game in flight is still holding.
-                purged = ensure_no_grant_immunity(game)
-                if purged:
-                    logger.info(f"Removed {purged} retired Grant Immunity "
-                                f"card(s) from {gid}")
+            for gid, game in list(self.games.items()):
+                try:
+                    self._heal_loaded_game(gid, game)
+                except Exception:
+                    # One game a heal can't digest must not take the whole
+                    # store down with it: before, any exception here sent
+                    # every live game to _backup_and_reset.
+                    logger.exception(f"Could not heal game {gid} on load — setting it aside")
+                    self._archive_game(gid, game)
+                    del self.games[gid]
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading {self._FILE}: {e}")
             self._backup_and_reset()
+
+    def _heal_loaded_game(self, gid, game):
+        """Idempotent, in-place heals for a game saved by an older build."""
+        ch = game.get("challenge")
+        if (isinstance(ch, dict)
+                and (ch.get("actionCount") or 0) > MAX_CHALLENGE_ACTIONS):
+            logger.warning(
+                f"Healing poisoned challenge actionCount in {gid} "
+                f"({ch['actionCount']} -> 0)")
+            ch["actionCount"] = 0
+        # Every card saved before cards had identities gets one now.
+        # Deliberately not saved here: the in-memory state is
+        # authoritative and the next ordinary action persists it, so a
+        # boot doesn't pay for a full rewrite of the store.
+        minted = ensure_card_uids(game)
+        if minted:
+            logger.info(f"Backfilled {minted} card uid(s) in {gid}")
+        # Games in flight when the Inheritance card became six
+        # colour-bound cards are holding six of a type the catalogue
+        # no longer has. Give them colours rather than leave an
+        # eighth of the draw pile unplayable.
+        bound = ensure_seat_bound_inheritance(game)
+        if bound:
+            logger.info(f"Bound {bound} legacy Inheritance card(s) "
+                        f"to seat colours in {gid}")
+        # Grant Immunity left the catalogue (Task A0) — sweep any
+        # copies a game in flight is still holding.
+        purged = ensure_no_grant_immunity(game)
+        if purged:
+            logger.info(f"Removed {purged} retired Grant Immunity "
+                        f"card(s) from {gid}")
 
     def _backup_and_reset(self):
         """Backs up a corrupted game file and resets the game state."""
@@ -403,32 +484,52 @@ class GameState:
         # phase string is 'final_tribal' (never matched), so the entry was
         # dead — but had any code path ever set phase='final', the hourly
         # collector would have DELETED A LIVE FINAL TRIBAL mid-ceremony.
-        for gid, game in self.games.items():
+        # A snapshot: requests add games while the hourly sweep walks them.
+        for gid, game in list(self.games.items()):
             last_activity = game.get('lastActivity', game.get('createdAt', current_time))
             age = current_time - last_activity
             phase = game.get('phase', 'lobby')
 
+            # An abandoned Final Tribal is swept on the same month-long idle
+            # clock as any game in progress — a live one is touched far more
+            # often than that, so the mid-ceremony hazard above can't arise.
             if (phase == 'lobby' and age > LOBBY_TIMEOUT) or \
-               (phase in ['playing', 'tribal_council'] and age > PLAYING_TIMEOUT) or \
+               (phase in ['playing', 'tribal_council', 'final_tribal'] and age > PLAYING_TIMEOUT) or \
                (phase == 'finished' and age > FINISHED_TIMEOUT):
                 games_to_remove.append(gid)
 
         for gid in games_to_remove:
-            self._archive_game(gid, self.games[gid])
-            del self.games[gid]
+            game = self.games.pop(gid, None)
+            if game is not None:
+                self._archive_game(gid, game)
 
         if games_to_remove:
             logger.info(f"Cleaned up {len(games_to_remove)} old games (archived)")
             self._save()
+        try:
+            pruned = push_notify.prune(self.games.keys())
+            if pruned:
+                logger.info(f"Forgot {pruned} push subscription(s) for games that are gone")
+        except Exception:
+            logger.exception("Could not prune push subscriptions")
         return len(games_to_remove)
 
     def _start_gc_thread(self):
-        """Starts a background thread for periodic garbage collection."""
+        """Periodic garbage collection, on the server's own event loop.
+
+        This was a real OS thread (gevent is never monkey-patched), sweeping a
+        dict request handlers mutate with no lock — and it had no try/except,
+        so the first "dictionary changed size" killed collection for the life
+        of the process.
+        """
         def gc_worker():
             while True:
-                time.sleep(3600) # Run every hour
-                self.garbage_collect()
-        threading.Thread(target=gc_worker, daemon=True).start()
+                socketio.sleep(3600)  # Run every hour
+                try:
+                    self.garbage_collect()
+                except Exception:
+                    logger.exception("Garbage collection failed; retrying next hour")
+        socketio.start_background_task(gc_worker)
 
     def create_game(self, deckMode=None, expansion=None, settings=None, **kwargs):
         """
@@ -444,6 +545,8 @@ class GameState:
                       creating device's defaults (sanitized; junk is dropped)
         """
         gid = str(uuid.uuid4())[:8]
+        while gid in self.games:   # 8 hex chars: rare, but a collision overwrote a live game
+            gid = str(uuid.uuid4())[:8]
         deck_mode = "extended" if str(deckMode or "official").lower() == "extended" else "official"
         self.games[gid] = {
             'id': gid, 'players': {}, 'turnOrder': [], 'currentTurnIndex': 0,
@@ -649,6 +752,12 @@ class GameState:
         expansion = bool(g.get("expansion"))
         player_count = len(g["players"])
 
+        # A fresh deal starts from a clean table even if the store still holds
+        # a previous game's leftovers (see reset_game).
+        for key in ("discard", "pending_theft", "pending_discards", "pending_nullifier",
+                    "_pending_alerts", "pendingTurnPlayerId", "hallOfFameRecorded"):
+            g.pop(key, None)
+
         # Setup order matters: deal from the shuffled Action Cards FIRST (step 3),
         # then assemble the Tribal Council Cards into what's left (step 5). Dealing
         # from an already-assembled deck can put a Tribal Council Card in a hand.
@@ -713,8 +822,7 @@ class GameState:
 
     def get_game_state(self, gid):
         """Returns the complete state of a game (hidden challenge info stripped)."""
-        self._sweep_expired_discards(gid)
-        self._sweep_expired_theft(gid)
+        self.sweep_expired_windows(gid)
         game = self.games.get(gid)
         if not game: return None
         # Backstop, on the live object rather than the copy so the identity is
@@ -738,6 +846,13 @@ class GameState:
         # flushes) — same rule as the hidden holders: never on the wire.
         for key in [k for k in enriched_game if k.startswith("_")]:
             del enriched_game[key]
+        # The Draw Pile is face down. Every phone used to receive it in draw
+        # order — upcoming cards and where each Tribal Council Card sits. The
+        # web never reads it and iOS only counts it, so it goes out as
+        # same-length placeholders (old builds keep their count) plus a count.
+        deck = enriched_game.get("deck") or []
+        enriched_game["deckCount"] = len(deck)
+        enriched_game["deck"] = [{"type": "hidden"} for _ in deck]
         # Where everyone is standing, derived fresh from the phase. Clients read
         # players[pid].place and never have to know about placeChoice — that
         # keeps a stale choice from ever showing someone at the wrong place.
@@ -761,6 +876,18 @@ class GameState:
             player["seatLabel"] = seats.SEAT_LABELS.get(key)
         return enriched_game
     
+    def sweep_expired_windows(self, gid):
+        """Resolve every reactive window whose clock has run out.
+
+        Runs on every state read and, for games with a window open, on the
+        server heartbeat — so the table hears about it without waiting for
+        someone's poll. Returns True if anything changed.
+        """
+        fired = self._sweep_expired_discards(gid)
+        fired = self._sweep_expired_theft(gid) or fired
+        fired = self._sweep_expired_nullifier(gid) or fired
+        return fired
+
     def _get_council_leader_id(self, game):
         """Get the current council leader ID from game state."""
         # Check currentVote first
@@ -804,7 +931,21 @@ class GameState:
         current_vote = game.get("currentVote")
         if not current_vote:
             return {"success": False, "message": "No active tribal council found"}
-            
+
+        # A second "It Is Time to Vote" (a double tap, a retried request) used
+        # to run everything below again: it emptied a ballot box whose Vote
+        # Cards had already been spent, so those voters could only pass, and
+        # from the reveal it reopened a council that had been tallied.
+        phase_now = current_vote.get("phase")
+        if phase_now == "voting":
+            return {"success": True, "message": "The vote is already open"}
+        if phase_now in ("immunity", "reveal"):
+            return {"success": False, "message": "The votes are already in"}
+
+        blocked = self._ceremony_block_reason(game)
+        if blocked:
+            return {"success": False, "message": blocked}
+
         # Initialize voting state
         current_vote["phase"] = "voting"
         current_vote["votes"] = {}
@@ -873,8 +1014,14 @@ class GameState:
         necklace_holder = game.get("necklaceHolder")
         vote_targets = {}
         for vote in votesData:
+            # Only the TOTAL used to be checked against the voter's cards, so
+            # [{B: 5}, {C: -4}] spent one Vote Card and put five votes on B.
+            if not isinstance(vote, dict):
+                return {"success": False, "message": "Each vote must name a target and a count"}
             target_id = vote.get("targetId")
             vote_count = vote.get("votes", 0)
+            if isinstance(vote_count, bool) or not isinstance(vote_count, int) or vote_count < 0:
+                return {"success": False, "message": "Votes must be whole numbers"}
 
             if not target_id or target_id not in game["players"]:
                 return {"success": False, "message": f"Invalid vote target: {target_id}"}
@@ -900,7 +1047,7 @@ class GameState:
         # Tribal Council; Extra Vote Cards MAY be used now or saved for later.
         mandatory_votes, optional_votes = self.rules_engine.get_vote_capacity(voter)
         total_votes_available = mandatory_votes + optional_votes
-        total_votes_cast = sum(vote.get("votes", 0) for vote in votesData)
+        total_votes_cast = sum(vote_targets.values())
 
         if total_votes_available == 0:
             if total_votes_cast > 0:
@@ -963,7 +1110,16 @@ class GameState:
         # Validate game is in tribal council phase
         if game.get("phase") != "tribal_council":
             return {"success": False, "message": "Immunity can only be played during tribal council"}
-        
+
+        # "AFTER all players have voted, but BEFORE votes are tallied" — the
+        # idol window. Outside it the idol was accepted anyway: before the
+        # vote against the Guide, and after the tally (a tap racing the
+        # Leader's reveal) consumed for no effect at all.
+        if (game.get("currentVote") or {}).get("phase") != "immunity":
+            return {"success": False,
+                    "message": "An Immunity Idol is played after everyone has voted "
+                               "and before the votes are read"}
+
         # Check if player has already played immunity this tribal
         if player.get("immunityPlayed", False):
             return {"success": False, "message": "Player has already played immunity this tribal council"}
@@ -996,8 +1152,10 @@ class GameState:
         if target.get("isEliminated", False):
             return {"success": False, "message": "Cannot protect eliminated players"}
         
-        # Remove immunity idol from hand
+        # Remove immunity idol from hand; it lands on the Discard Pile like
+        # every other played card (it used to leave the game entirely).
         immunity_card = hand.pop(immunity_card_idx)
+        game.setdefault("discard", []).append(immunity_card)
         
         # Apply immunity protection using rules engine
         params = {"targetId": target_id}
@@ -1049,6 +1207,10 @@ class GameState:
                 "idolPlayerId": playerId,
                 "targetId": target_id,
                 "reactive_window_open": True,
+                # One silent holder froze a bot-led council forever: only the
+                # Leader can call time, and a bot Leader never did. Silence is
+                # a decline once the clock runs out (swept on read).
+                "deadline": time.time() + NULLIFIER_WINDOW_SECONDS,
                 # Underscore-prefixed: get_game_state strips these before the
                 # state leaves the server. This list names every nullifier
                 # holder at the table and must never reach a client.
@@ -1121,8 +1283,9 @@ class GameState:
         if nullifier_card_idx is None:
             return {"success": False, "message": "Player does not have an idol nullifier"}
         
-        # Remove nullifier from hand
+        # Remove nullifier from hand; onto the Discard Pile with the rest
         nullifier_card = hand.pop(nullifier_card_idx)
+        game.setdefault("discard", []).append(nullifier_card)
         
         # Apply nullifier effect using rules engine
         params = {"targetId": targetId}
@@ -1171,8 +1334,8 @@ class GameState:
             return {"success": False, "message": "Invalid player ID"}
 
         hand = player.get("hand") or []
-        reachable = takeable_indices(hand)
-        if not isinstance(cardIdx, int) or cardIdx not in reachable:
+        reachable = penalty_discardable_indices(hand)
+        if not isinstance(cardIdx, int) or isinstance(cardIdx, bool) or cardIdx not in reachable:
             # Not clamped: an out-of-range index must not quietly resolve to a
             # real card the player never chose.
             return {"success": False, "message": "Choose a card you can actually give up"}
@@ -1224,7 +1387,7 @@ class GameState:
         for pid in list(window.get("awaiting") or []):
             player = game["players"].get(pid)
             hand = (player or {}).get("hand") or []
-            reachable = takeable_indices(hand)
+            reachable = penalty_discardable_indices(hand)
             if reachable:
                 discarded = hand.pop(reachable[-1])
                 game.setdefault("discard", []).append(discarded)
@@ -1321,6 +1484,42 @@ class GameState:
 
         self._save(gid)
         return {"success": True, "message": "You held your peace.", "windowClosed": False}
+
+    def _sweep_expired_nullifier(self, gid):
+        """Silence is a decline: an expired idol window closes and the idol stands.
+
+        Same read-path sweep as the theft and penalty windows. A window opened
+        before deadlines existed gets one now rather than closing on sight.
+        """
+        game = self.games.get(gid)
+        window = (game or {}).get("pending_nullifier")
+        if not window or not window.get("reactive_window_open"):
+            return False
+        deadline = window.get("deadline")
+        if deadline is None:
+            window["deadline"] = time.time() + NULLIFIER_WINDOW_SECONDS
+            return False
+        if time.time() < deadline:
+            return False
+        game.pop("pending_nullifier", None)
+        logger.info(f"Idol Nullifier window expired in {gid} — the idol stands")
+        self._save(gid)
+        return True
+
+    def _ceremony_block_reason(self, game):
+        """Why the council can't move on: a raid still waiting on its answer.
+
+        A Control The Vote played on a Sorry For You holder opens a window the
+        ceremony used to ignore. The vote went ahead without the taken ballot,
+        and when the council ended first, the held take resumed after the next
+        council's Vote Cards were dealt — the thief walked off with the
+        victim's next ballot.
+        """
+        theft = game.get("pending_theft")
+        if theft and theft.get("reactive_window_open"):
+            victim = game["players"].get(theft.get("targetId"), {}).get("name", "someone")
+            return f"Waiting on {victim} - they may respond to the raid"
+        return None
 
     def _nullifier_block_reason(self, game):
         """Why the ceremony cannot move on yet, without naming who is holding it."""
@@ -1590,18 +1789,17 @@ class GameState:
             # every tied player and the council still owes one, the choice moves
             # down the "unclear who is voted out" ladder rather than quietly
             # completing a double with a single flip.
-            tied_players = self.rules_engine.elimination_ladder(
+            forced, tied_players = self.rules_engine.elimination_ladder_split(
                 game,
                 current_vote.get("voteResults") or {},
                 protected_players=current_vote.get("protectedPlayers") or [],
                 picks_needed=picks_left,
                 exclude=tuple(eliminated),
             )
-            if 0 < len(tied_players) <= picks_left:
-                # No choice left to make — everyone still standing on the ladder goes
-                eliminated.extend(tied_players)
-                tied_players = []
-                picks_left = eliminations_needed - len(eliminated)
+            # Whoever the ladder forces goes without a choice; only the
+            # overflowing group (if any) is left to the Leader.
+            eliminated.extend(forced)
+            picks_left = eliminations_needed - len(eliminated)
             current_vote["eliminated"] = eliminated
 
         current_vote["tiedPlayers"] = tied_players
@@ -1633,10 +1831,17 @@ class GameState:
             
         game = self.games[gid]
         current_vote = game.get("currentVote")
-        
+
         if not current_vote:
             return {"success": False, "message": "No active tribal council found"}
-            
+
+        # The Final Tribal keeps currentVote (with its `eliminated` list), so a
+        # second tap — a retry, a stale screen — replayed every vote-out: it
+        # restarted Final Tribal and wiped the jury's votes, or flipped a
+        # finalist's last card and crowned the other with no jury at all.
+        if game.get("phase") != "tribal_council" or current_vote.get("phase") != "reveal":
+            return {"success": False, "message": "This Tribal Council is already over"}
+
         if current_vote.get("tieBreakNeeded", False):
             return {"success": False, "message": "Cannot complete tribal council - tie-break needed"}
             
@@ -1767,6 +1972,7 @@ class GameState:
                 "playerId": winner_id,
                 "playerName": game["players"][winner_id].get("name", winner_id),
             }
+            self._record_hall_of_fame(game, winner_id)
             if "currentVote" in game:
                 del game["currentVote"]
             message = (
@@ -1791,37 +1997,7 @@ class GameState:
             # Rotate tribal council leader to next active player
             self._rotate_tribal_leader(game)
 
-            # Advance turn to next player if needed
-            if "turnOrder" in game and game["turnOrder"]:
-                turn_order = game["turnOrder"]
-
-                # "I'm The Leader Now" gives its player the next turn once tribal
-                # ends — "or the player after you if you are eliminated."
-                pending = game.pop("pendingTurnPlayerId", None)
-                if pending and pending in turn_order and not game["players"][pending].get("isEliminated", False):
-                    game["currentTurnIndex"] = turn_order.index(pending)
-                else:
-                    # Walk from the ITLN player's seat if they were eliminated,
-                    # otherwise from the drawer's seat as usual.
-                    if pending and pending in turn_order:
-                        current_index = turn_order.index(pending)
-                    else:
-                        current_index = game.get("currentTurnIndex", 0)
-                    attempts = 0
-                    while attempts < len(turn_order):
-                        current_index = (current_index + 1) % len(turn_order)
-                        next_player_id = turn_order[current_index]
-                        if not game["players"][next_player_id].get("isEliminated", False):
-                            break
-                        attempts += 1
-
-                    game["currentTurnIndex"] = current_index
-
-            # Fresh turn — the new current player still owes a Steal before drawing
-            for player in game["players"].values():
-                player["hasStolen"] = False
-                player["hasPlayed"] = False
-                player["hasDrawn"] = False
+            self._advance_turn_after_council(game)
 
             message = (
                 f"Tribal council completed - {len(voted_out_players)} voted out "
@@ -1878,6 +2054,39 @@ class GameState:
             result["inheritance_messages"] = inheritance_messages
 
         return result
+
+    def _advance_turn_after_council(self, game):
+        """Hand the torch on once a council is over and play resumes."""
+        if "turnOrder" in game and game["turnOrder"]:
+            turn_order = game["turnOrder"]
+
+            # "I'm The Leader Now" gives its player the next turn once tribal
+            # ends — "or the player after you if you are eliminated."
+            pending = game.pop("pendingTurnPlayerId", None)
+            if pending and pending in turn_order and not game["players"][pending].get("isEliminated", False):
+                game["currentTurnIndex"] = turn_order.index(pending)
+            else:
+                # Walk from the ITLN player's seat if they were eliminated,
+                # otherwise from the drawer's seat as usual.
+                if pending and pending in turn_order:
+                    current_index = turn_order.index(pending)
+                else:
+                    current_index = game.get("currentTurnIndex", 0)
+                attempts = 0
+                while attempts < len(turn_order):
+                    current_index = (current_index + 1) % len(turn_order)
+                    next_player_id = turn_order[current_index]
+                    if not game["players"][next_player_id].get("isEliminated", False):
+                        break
+                    attempts += 1
+
+                game["currentTurnIndex"] = current_index
+
+        # Fresh turn — the new current player still owes a Steal before drawing
+        for player in game["players"].values():
+            player["hasStolen"] = False
+            player["hasPlayed"] = False
+            player["hasDrawn"] = False
 
     def _rotate_tribal_leader(self, game):
         """
@@ -1994,9 +2203,23 @@ class GameState:
         # Validate game is in tribal council phase
         if game.get("phase") != "tribal_council":
             return {"success": False, "message": "Game is not in tribal council phase"}
-        
+
+        # Once a ballot is in the box its Vote Card is spent, and a reset had
+        # no way to give it back: everyone went into the next council with
+        # nothing to cast. From here the council has to run to its end.
+        old_vote = game.get("currentVote") or {}
+        if (old_vote.get("votes") or old_vote.get("votingStarted")
+                or old_vote.get("phase") in ("voting", "immunity", "reveal")):
+            return {"success": False,
+                    "message": "The vote has begun — this council has to finish"}
+
         # Return to playing phase
         game["phase"] = "playing"
+
+        # The Tribal Council Card was drawn and resolved (by being called
+        # off) — it goes to the Discard Pile like any other played card.
+        game.setdefault("discard", []).append(
+            new_card(f"tribal_council_{old_vote.get('type', 'single')}"))
 
         # Reset tribal council state back to the idle shape a new game starts with
         # (rather than deleting it) so start_voting and the client can read it.
@@ -2015,6 +2238,12 @@ class GameState:
         for player in game["players"].values():
             player["hasVoted"] = False
             player["immunityPlayed"] = False
+
+        # The drawer's turn ended with the draw that called the council; the
+        # reset used to leave them at hasStolen+hasDrawn with no way to end
+        # the turn (neither client has an end-turn button). Play resumes the
+        # way it would after any council.
+        self._advance_turn_after_council(game)
 
         self._save(gid)
         logger.info(f"Reset tribal council in game {gid}")
@@ -2068,6 +2297,17 @@ class GameState:
 
         game = self.games[gid]
 
+        # Reaching the reveal by a bare phase change skipped the tally, and
+        # from there reveal_votes and complete_tribal both refused — a wedge
+        # only a reset could clear. The reveal has exactly one door.
+        if target_phase == "reveal":
+            return self.reveal_votes(gid)
+
+        if (game.get("currentVote") or {}).get("phase") != target_phase:
+            blocked = self._ceremony_block_reason(game)
+            if blocked:
+                return {"success": False, "message": blocked}
+
         # Use rules engine to advance tribal phase with validation
         # The idol window and the reveal both require a full Voting Box —
         # "Immunity Idol ... can only be played AFTER all players have voted."
@@ -2079,12 +2319,6 @@ class GameState:
             if missing:
                 return {"success": False,
                         "message": f"The Voting Box hasn't reached everyone — waiting on {missing}"}
-
-        # An idol awaiting its answer holds the ceremony where it is.
-        if target_phase == "reveal":
-            blocked = self._nullifier_block_reason(game)
-            if blocked:
-                return {"success": False, "message": blocked}
 
         success, message = self.rules_engine.advance_tribal_phase(game, target_phase)
         
@@ -2157,6 +2391,17 @@ class GameState:
         
         # Determine tribal council leader (most recent elimination)
         leader_id = jury_members[-1] if jury_members else finalists[0]
+
+        # The last council's currentVote stays on the game (the reveal still
+        # reads it), and shipped iOS builds take the Leader from its
+        # councilLeaderId before the per-player flag — so the Final Tribal
+        # controls went to whoever drew the last Tribal card, and a tie could
+        # never be broken (break_final_tie checks finalTribal.leader). Every
+        # leader signal now names the Final Tribal Leader.
+        for pid, p in game.get("players", {}).items():
+            p["isCouncilLeader"] = (pid == leader_id)
+        if isinstance(game.get("currentVote"), dict):
+            game["currentVote"]["councilLeaderId"] = leader_id
         
         game["finalTribal"] = {
             "phase": "questions",
@@ -2206,6 +2451,7 @@ class GameState:
             final_tribal["tieBreakNeeded"] = False
             game["phase"] = "finished"
             game["winner"] = winner_id
+            self._record_hall_of_fame(game, winner_id)
             logger.info(f"Final tribal winner determined: {winner_id} with {max_votes} votes")
         else:
             # Tie - leader must break
@@ -2402,6 +2648,7 @@ class GameState:
         # Mark game as finished
         game["phase"] = "finished"
         game["winner"] = winnerId
+        self._record_hall_of_fame(game, winnerId)
 
         self._save(gid)
         logger.info(f"Final tie broken in game {gid}: leader {leaderId} chose {winnerId} as winner")
@@ -3334,14 +3581,75 @@ class GameState:
             "current_player_id": turn_order[current_index]
         }
 
+    @staticmethod
+    def _winner_id_of(game):
+        """The finished game's winner id, whichever shape `winner` was stored in."""
+        winner = game.get("winner")
+        if isinstance(winner, dict):
+            return winner.get("playerId")
+        return winner or (game.get("finalTribal") or {}).get("winner")
+
+    def _record_hall_of_fame(self, game, winner_id):
+        """Carve a finished game's Sole Survivor into winners.json — once.
+
+        This used to happen only when a phone called /api/game/finish, and no
+        client ever did: the web button said "coming soon" and the iOS one sat
+        on a screen the finished phase never shows. So the Hall of Fame the
+        README describes as automatic never recorded a single game.
+
+        Idempotent per game (`hallOfFameRecorded`), and never for a game with
+        a computer player in it — practice, not history. Returns True when a
+        record exists for this game afterwards.
+        """
+        if game.get("hallOfFameRecorded"):
+            return True
+        if any(p.get("isBot") for p in game.get("players", {}).values()):
+            return False
+        winner = game.get("players", {}).get(winner_id)
+        if not winner:
+            return False
+
+        records = _read_winner_records()
+        if records is None:
+            # Unreadable: keep the evidence rather than overwrite years of
+            # history with a one-entry file, and start a fresh one.
+            bad = f"{self._WINNERS_FILE}.corrupt.{int(time.time())}"
+            try:
+                os.replace(self._WINNERS_FILE, bad)
+                logger.error(f"winners.json was unreadable — preserved as {bad}")
+            except OSError as e:
+                logger.error(f"winners.json is unreadable and could not be moved aside: {e}")
+                return False
+            records = []
+
+        import datetime
+        records.append({
+            "winner_name": winner.get("name", "Unknown Player"),
+            "date": datetime.datetime.now().strftime('%Y-%m-%d'),
+            "game_id": game.get("id"),
+            "timestamp": time.time(),
+            "id": uuid.uuid4().hex[:12],
+        })
+        if not _write_winner_records(records):
+            return False
+        game["hallOfFameRecorded"] = True
+        logger.info(f"Hall of Fame: {winner.get('name')} won game {game.get('id')}")
+        return True
+
     def record_winner(self, gid, winnerId=None, **kwargs):
-        """Record game winner."""
+        """Record a finished game's winner in the Hall of Fame (idempotent).
+
+        Finishing a game records it automatically now; this route remains for
+        clients that still call it. It used to accept any player as winner, in
+        any phase, as many times as it was called — ending a live game and
+        writing a duplicate win on every tap.
+        """
         if gid not in self.games:
             return {"success": False, "message": "Game not found"}
-        
+
         if not winnerId:
             return {"success": False, "message": "winnerId is required"}
-        
+
         game = self.games[gid]
 
         # House rule: a game with a computer player in it is practice, not
@@ -3350,65 +3658,19 @@ class GameState:
             return {"success": False,
                     "message": "Games with computer players aren't recorded in the Hall of Fame"}
 
-        # Validate winner exists
-        if winnerId not in game["players"]:
-            return {"success": False, "message": "Invalid winner ID"}
-        
-        winner = game["players"][winnerId]
-        winner_name = winner.get("name", "Unknown Player")
-        
-        # Load existing winners
-        winners = []
-        if os.path.exists(self._WINNERS_FILE):
-            try:
-                with open(self._WINNERS_FILE, 'r') as f:
-                    content = f.read().strip()
-                    if content:
-                        winners = json.loads(content)
-            except (json.JSONDecodeError, IOError, OSError) as e:
-                logger.error(f"Failed to load winners file: {e}")
-                # Continue anyway - will create new file
-        
-        # Add new winner
-        import datetime
-        current_date = datetime.datetime.now().strftime('%Y-%m-%d')
-        winner_entry = {
-            "winner_name": winner_name,
-            "date": current_date,
-            "game_id": gid,
-            "timestamp": time.time(),
-            "id": uuid.uuid4().hex[:12]
-        }
-        winners.append(winner_entry)
-        
-        # Save winners file atomically
-        temp_file = f"{self._WINNERS_FILE}.tmp.{uuid.uuid4().hex[:8]}"
-        try:
-            with open(temp_file, 'w') as f:
-                json.dump(winners, f, indent=2)
-            os.rename(temp_file, self._WINNERS_FILE)
-            logger.info(f"Recorded winner: {winner_name} for game {gid}")
-        except (IOError, OSError) as e:
-            logger.error(f"Failed to save winner: {e}")
-            if os.path.exists(temp_file):
-                try:
-                    os.remove(temp_file)
-                except OSError:
-                    pass
+        if game.get("phase") != "finished":
+            return {"success": False, "message": "The game isn't over yet"}
+
+        if winnerId != self._winner_id_of(game):
+            return {"success": False, "message": "That isn't who the jury chose"}
+
+        winner_name = game["players"].get(winnerId, {}).get("name", "Unknown Player")
+        if not self._record_hall_of_fame(game, winnerId):
             return {"success": False, "message": "Failed to save winner"}
-        
-        # Mark game as finished
-        game["phase"] = "finished"
-        game["winner"] = {
-            "playerId": winnerId,
-            "playerName": winner_name,
-            "date": current_date
-        }
-        
         self._save(gid)
-        
+
         return {
-            "success": True, 
+            "success": True,
             "message": f"Congratulations {winner_name}! Game completed and winner recorded.",
             "winner": winner_name,
             "winnerId": winnerId
@@ -3460,6 +3722,15 @@ class GameState:
         game["interaction"] = None
         game.pop("winner", None)
         game.pop("pendingTurnPlayerId", None)
+        # Everything else a played game leaves behind. The old Discard Pile
+        # reshuffled into the next game's deck (8 Idols in a 4-Idol box); a
+        # stale penalty window paid itself from the next deal and skipped the
+        # first turn; a stale nullifier window froze the first reveal; and the
+        # ledger carried every grudge into the bots' next game.
+        for key in ("discard", "pending_theft", "pending_discards", "pending_nullifier",
+                    "_pending_alerts", "_ledger", "eventLog", "hallOfFameRecorded",
+                    "tribalInterrupted"):
+            game.pop(key, None)
 
         # Reset all player states
         for player in game["players"].values():
@@ -3684,8 +3955,8 @@ def safe_api_call(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"API operation={func.__name__} error: {e}")
+        except Exception:
+            logger.exception(f"API operation={func.__name__} failed")
             return jsonify(success=False, message="Internal server error"), 500
     return wrapper
 
@@ -3792,7 +4063,6 @@ def _emit_narrator_events(gid, action, request_data, narrator_before, game_after
         # rides the ordinary push below.
         if action == 'play_card' and not (isinstance(result, dict) and result.get('secret')):
             player_id = request_data.get('playerId')
-            card_index = request_data.get('cardIndex')
             # Try to get card name from result or player's hand
             card_name = 'a card'
             if isinstance(result, dict) and result.get('cardName'):
@@ -3901,8 +4171,10 @@ def handle(action, required):
                     return jsonify(success=False,
                                    message="Only the player whose turn it is can end the turn"), 403
 
+        # update_game_settings is not here: it has its own rule (any human may
+        # set the pace while a bot leads), which this gate used to pre-empt.
         LEADER_ONLY = {'advance_tribal_phase', 'reveal_votes', 'complete_tribal',
-                       'start_voting', 'reset_tribal_council', 'update_game_settings'}
+                       'start_voting', 'reset_tribal_council'}
         if action in LEADER_ONLY:
             cv = game_state.games[gid].get("currentVote") or {}
             leader = cv.get("councilLeaderId")
@@ -3910,6 +4182,18 @@ def handle(action, required):
             if leader and caller != leader:
                 return jsonify(success=False,
                                message="Only the Tribal Council Leader can do that"), 403
+
+        # Ids are strings. A list or dict where an id belongs reached the game
+        # methods and could fail halfway — after a card had already left a
+        # hand — and the half-applied state was then saved.
+        for key, value in d.items():
+            if key.endswith('Id') and value is not None and (
+                    not isinstance(value, str) or len(value) > 64):
+                return jsonify(success=False, message=f"Invalid {key}"), 400
+            if key.endswith('Ids') and value is not None and (
+                    not isinstance(value, list)
+                    or not all(isinstance(v, str) and len(v) <= 64 for v in value)):
+                return jsonify(success=False, message=f"Invalid {key}"), 400
 
         kwargs = {k: v for k, v in d.items() if k != 'gameId'}
 
@@ -3935,11 +4219,10 @@ def handle(action, required):
 
             result = getattr(game_state, action)(gid, **kwargs)
 
-        except Exception as e:
-            gid = d.get('gameId', 'unknown')
-            logger.error(f"API operation={action} gameId={gid} error: {e}")
-            error_msg = f"Operation {action} failed: {str(e)}"
-            return jsonify(success=False, message=error_msg), 500
+        except Exception:
+            logger.exception(f"API operation={action} gameId={gid} crashed")
+            return jsonify(success=False,
+                           message="Something went wrong on the island — try again"), 500
 
         _flush_steal_alerts(gid)
 
@@ -3956,6 +4239,21 @@ def handle(action, required):
             logger.warning(f"Action '{action}' returned None for game {gid}")
             return jsonify(success=False, message=f"Action '{action}' failed - invalid request"), 400
 
+        # The story so far: remember every visible outcome for the history panel.
+        # Refusals change nothing and stay between the server and the actor, and
+        # a result carrying a redacted log_message uses it — the full message may
+        # name hidden cards that only the actor should see. Appended BEFORE the
+        # broadcast, or every other phone's history ran one action behind.
+        if action not in ('add_bot', 'remove_bot', 'rename_player', 'move_place'):
+            _append_event_log(gid, result)
+
+        if action in ('reset_game', 'delete_game') and bot_runner:
+            try:
+                bot_runner.forget(gid)
+            except Exception:
+                logger.exception(f"Bot runner could not forget {gid}")
+
+        fresh_state = None
         try:
             if action == 'delete_game':
                 # The game no longer exists — tell every phone in the room to
@@ -3975,24 +4273,16 @@ def handle(action, required):
                         'playerId': winner_id,
                     })
                 socketio.emit('game_reset', {'gameId': gid}, to=gid)
-                socketio.emit('global_reset', {'gameId': gid})
             else:
-                game_data = game_state.get_game_state(gid) or {}
-                socketio.emit('state_update', game_data, to=gid)
+                fresh_state = game_state.get_game_state(gid)
+                socketio.emit('state_update', fresh_state or {}, to=gid)
 
                 # Emit specific game events for narrator
                 game_after = game_state.games.get(gid, {})
                 _emit_narrator_events(gid, action, d, narrator_before, game_after, result)
 
-        except Exception as e:
-            logger.error(f"Socket operation=state_update gameId={gid} error: {e}")
-
-        # The story so far: remember every visible outcome for the history panel.
-        # Refusals change nothing and stay between the server and the actor, and
-        # a result carrying a redacted log_message uses it — the full message may
-        # name hidden cards that only the actor should see.
-        if action not in ('add_bot', 'remove_bot', 'rename_player', 'move_place'):
-            _append_event_log(gid, result)
+        except Exception:
+            logger.exception(f"Socket operation=state_update gameId={gid} failed")
 
         # A state change may put a bot on the clock
         if bot_runner:
@@ -4011,26 +4301,69 @@ def handle(action, required):
         # result of its own action. Skipped for delete/reset/record_winner:
         # those games are gone or wiped and clients get dedicated events.
         if action not in ('delete_game', 'reset_game', 'record_winner'):
-            fresh_state = game_state.get_game_state(gid)
+            # The broadcast's copy, when there was one: get_game_state deep-
+            # copies the whole game, and this used to do it twice per action.
+            if fresh_state is None:
+                fresh_state = game_state.get_game_state(gid)
             if fresh_state is not None:
                 response_data["gameState"] = fresh_state
         return jsonify(response_data)
-        
-    except Exception as e:
-        logger.error(f"Unexpected error in handle(): {e}")
+
+    except Exception:
+        logger.exception("Unexpected error in handle()")
         return jsonify(success=False, message="Internal server error"), 500
 
 # ───────────────────────────── Flask Routes ─────────────────────────────
+def _client_build_id():
+    """A short hash of every shipped client file — it changes on every deploy
+    that changes the client, and on no other."""
+    digest = hashlib.sha1()
+    for root, _dirs, files in sorted(os.walk(STATIC_DIR)):
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            digest.update(os.path.relpath(path, STATIC_DIR).encode())
+            try:
+                with open(path, 'rb') as f:
+                    digest.update(f.read())
+            except OSError:
+                pass
+    return digest.hexdigest()[:12]
+
+
+CLIENT_BUILD = _client_build_id()
+
+
+@app.route("/sw.js")
+def service_worker():
+    """The service worker, stamped with this build's id.
+
+    A browser only installs a new service worker when the bytes of sw.js
+    change, and nothing changed them on a deploy — so every phone that had
+    the app installed kept serving its cached build, and fixes that had been
+    live for weeks were reported as still broken. The stamp makes every deploy
+    a new worker; no-cache makes the browser actually ask.
+    """
+    try:
+        with open(os.path.join(STATIC_DIR, "sw.js"), encoding="utf-8") as f:
+            body = f.read().replace("__BUILD__", CLIENT_BUILD)
+    except OSError:
+        return jsonify(success=False, message="404 Not Found"), 404
+    return Response(body, mimetype="text/javascript",
+                    headers={"Cache-Control": "no-cache",
+                             "Service-Worker-Allowed": "/"})
+
+
 @app.route("/")
 def index():
-    # Serve optimized version if available, fallback to original
+    # Serve optimized version if available, fallback to original. The shell is
+    # always revalidated: a cached page would pin a phone to an old build.
     optimized_path = os.path.join(app.static_folder, "index-optimized.html")
     if os.path.exists(optimized_path):
-        logger.info("Serving optimized version")
-        return send_from_directory(app.static_folder, "index-optimized.html")
+        response = send_from_directory(app.static_folder, "index-optimized.html", max_age=0)
     else:
-        logger.info("Serving original version (optimized version not found)")
-        return send_from_directory(app.static_folder, "index.html")
+        response = send_from_directory(app.static_folder, "index.html", max_age=0)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 @app.route("/join/<code>")
 def join_link(code):
@@ -4179,18 +4512,31 @@ def api_access():
     return response
 
 
+@app.route('/api/access/forget', methods=['POST'])
+@safe_api_call
+def api_access_forget():
+    """Drop this browser's access cookie.
+
+    The cookie is HttpOnly, so the web app's "Forget this island" could never
+    clear it from JavaScript — the phone stayed ashore after forgetting.
+    """
+    response = jsonify(success=True, message="The island is forgotten")
+    response.delete_cookie(ACCESS_COOKIE, samesite='Lax')
+    return response
+
+
 # ───────────────────────────── REST API ─────────────────────────────
 @app.route('/api/ping', methods=['GET'])
 @safe_api_call
 def api_ping():
     """Health check endpoint"""
+    # Outside the gate, so it says only that the server is up and which build
+    # it is serving — enough for redeploy.sh to confirm a deploy took, without
+    # telling a stranger how many games are running.
     return jsonify(
-        success=True, 
+        success=True,
         timestamp=time.time(),
-        server_info={
-            'games_active': len(game_state.games),
-            'uptime': time.time() - start_time if 'start_time' in globals() else 0
-        }
+        build=CLIENT_BUILD,
     )
 
 @app.route('/api/seats', methods=['GET'])
@@ -4263,9 +4609,14 @@ def api_discord_link_claim():
     `discord_bot.py` is otherwise a strict observer. This endpoint cannot touch
     a game: it binds a Discord account to a pending code and nothing else.
     """
+    ip = _client_ip()
+    if _claim_throttled(ip):
+        return jsonify(success=False,
+                       message="Too many tries. Wait a few minutes and ask the app for a new code."), 429
     d = request.get_json(silent=True) or {}
     ok, message = link_codes.claim(d.get('code'), str(d.get('discordUserId') or ''))
     if not ok:
+        _record_claim_failure(ip)
         return jsonify(success=False, message=message), 400
     logger.info("Discord account linked via code")
     return jsonify(success=True, message=message)
@@ -4348,58 +4699,20 @@ def api_voice_active():
         watching.append({
             "gameId": gid,
             "phase": game.get("phase"),
+            "lastActivity": game.get("lastActivity", 0),
             "linkedPlayers": sum(
                 1 for p in players if p.get("discordUserId") and not p.get("isBot")
             ),
         })
 
-    watching.sort(key=lambda entry: entry["gameId"])
+    # Most recently touched first. Sorting by id handed the bot whichever
+    # stale game's uuid happened to sort first — Friday's abandoned table over
+    # tonight's. Recency alone, not "in progress before lobby": last night's
+    # unfinished game must not outrank the lobby everyone is joining now.
+    watching.sort(key=lambda entry: entry["lastActivity"], reverse=True)
     response = jsonify(games=watching)
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     return response
-
-@app.route('/api/batch', methods=['POST'])
-@safe_api_call
-def api_batch():
-    """Handle batched API requests for performance optimization"""
-    try:
-        data = request.get_json()
-        operations = data.get('operations', [])
-        results = []
-        
-        for operation in operations:
-            try:
-                # Execute each operation (simplified implementation)
-                endpoint = operation.get('endpoint', '')
-                method = operation.get('method', 'POST')
-                op_data = operation.get('data', {})
-                
-                # Route to appropriate handler based on endpoint
-                # This is a simplified implementation - in production you'd
-                # want more sophisticated routing
-                if endpoint == '/turn/advance':
-                    result = game_state.advance_turn(op_data.get('gameId'))
-                elif endpoint == '/turn/draw':
-                    result = game_state.draw_card(op_data.get('gameId'), op_data.get('playerId'))
-                else:
-                    result = {"success": False, "message": "Unsupported batch operation"}
-                
-                results.append({
-                    "operation": operation,
-                    "result": result
-                })
-                
-            except Exception as e:
-                results.append({
-                    "operation": operation,
-                    "result": {"success": False, "message": str(e)}
-                })
-        
-        return jsonify({"success": True, "results": results})
-        
-    except Exception as e:
-        logger.error(f"Batch API error: {e}")
-        return jsonify({"success": False, "message": "Batch processing failed"}), 500
 
 @app.route('/api/winners', methods=['GET'])
 @safe_api_call
@@ -4456,60 +4769,27 @@ def add_winner():
     if not data:
         return jsonify(success=False, message="Invalid JSON data"), 400
         
-    winner_name = data.get('winner_name', '').strip()
-    date = data.get('date', '').strip()
+    winner_name, date, error = _validate_winner_fields(data)
+    if error:
+        return jsonify(success=False, message=error), 400
 
-    if not winner_name:
-        return jsonify(success=False, message="Winner name is required"), 400
-    if len(winner_name) > 50:
-        return jsonify(success=False, message="Winner name too long"), 400
-        
-    if not date:
-        return jsonify(success=False, message="Date is required"), 400
-        
-    try:
-        time.strptime(date, '%Y-%m-%d')
-    except ValueError:
-        return jsonify(success=False, message="Invalid date format (use YYYY-MM-DD)"), 400
+    winners = _read_winner_records()
+    if winners is None:
+        return jsonify(success=False, message="Failed to load existing winners"), 500
 
-    winners = []
-    if os.path.exists(GameState._WINNERS_FILE):
-        try:
-            with open(GameState._WINNERS_FILE, 'r') as f:
-                content = f.read().strip()
-                if content:
-                    winners = json.loads(content)
-        except (json.JSONDecodeError, IOError, OSError) as e:
-            logger.error(f"Failed to load winners file: {e}")
-            return jsonify(success=False, message="Failed to load existing winners"), 500
-    
     winners.append({
         "winner_name": winner_name,
         "date": date,
         "game_id": "manual_entry",
         "id": uuid.uuid4().hex[:12]
     })
-    
-    temp_file = f"{GameState._WINNERS_FILE}.tmp"
-    try:
-        with open(temp_file, 'w') as f:
-            json.dump(winners, f, indent=2)
-        
-        if os.path.exists(GameState._WINNERS_FILE):
-            os.remove(GameState._WINNERS_FILE)
-        os.rename(temp_file, GameState._WINNERS_FILE)
-        
-        logger.info(f"Added winner: {winner_name} on {date}")
-        return jsonify(success=True)
-        
-    except (IOError, OSError, TypeError, ValueError) as e:
-        logger.error(f"Failed to save winner: {e}")
-        if os.path.exists(temp_file):
-            try:
-                os.remove(temp_file)
-            except OSError:
-                pass
+
+    # One write path for the file: the old remove-then-rename here left a
+    # window with no winners.json at all.
+    if not _write_winner_records(winners):
         return jsonify(success=False, message="Failed to save winner"), 500
+    logger.info(f"Added winner: {winner_name} on {date}")
+    return jsonify(success=True)
 
 
 def _read_winner_records():
@@ -4542,12 +4822,14 @@ def _read_winner_records():
 
 
 def _write_winner_records(records):
-    """Atomically replace the winners file."""
+    """Atomically (and durably) replace the winners file."""
     temp_file = f"{GameState._WINNERS_FILE}.tmp.{uuid.uuid4().hex[:8]}"
     try:
         with open(temp_file, 'w') as f:
             json.dump(records, f, indent=2)
-        os.rename(temp_file, GameState._WINNERS_FILE)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, GameState._WINNERS_FILE)
         return True
     except (IOError, OSError) as e:
         logger.error(f"Failed to write winners file: {e}")
@@ -4558,14 +4840,27 @@ def _write_winner_records(records):
         return False
 
 
+_WINNER_NAME_RE = re.compile(r"^[\w\-\. ']+$")
+
+
 def _validate_winner_fields(data):
-    """Shared validation for editing win records. Returns (name, date, error)."""
+    """Shared validation for win records. Returns (name, date, error).
+
+    Names were free text up to 50 characters, and the web client rendered
+    them into an attribute — `x" autofocus onfocus="…` ran script on every
+    phone that opened the edit form. Letters (any language), digits, spaces
+    and - _ . ' only, like player names.
+    """
+    if not isinstance(data, dict):
+        return None, None, "Invalid JSON data"
     name = str(data.get('winner_name', '')).strip()
     date = str(data.get('date', '')).strip()
     if not name:
         return None, None, "Winner name is required"
     if len(name) > 50:
         return None, None, "Winner name too long"
+    if not _WINNER_NAME_RE.match(name):
+        return None, None, "Names can use letters, numbers, spaces and - _ . ' only"
     if not date:
         return None, None, "Date is required"
     try:
@@ -4579,6 +4874,15 @@ def _validate_winner_fields(data):
 # The UI verification suite needs deterministic hands to stage rule scenarios
 # (a Sorry For You defense, a Camp Raid marker, a locked card sheet...).
 if os.environ.get("SURVIVOR_TEST_HOOKS") == "1":
+    @app.route('/api/test/deck/<game_id>', methods=['GET'])
+    def test_real_deck(game_id):
+        # The public state sends the Draw Pile face down; the composition
+        # checks in the e2e harnesses need to see it face up.
+        game = game_state.games.get(game_id)
+        if not game:
+            return jsonify(success=False, message="Game not found"), 404
+        return jsonify(success=True, deck=game.get("deck", []))
+
     @app.route('/api/test/set_hand', methods=['POST'])
     def test_set_hand():
         data = request.get_json(silent=True) or {}
@@ -4843,7 +5147,10 @@ def api_push_subscribe():
         return jsonify(success=False, message="Game or player not found"), 404
     if not isinstance(sub, dict) or not sub.get("endpoint"):
         return jsonify(success=False, message="A push subscription is required"), 400
-    push_notify.subscribe(gid, pid, sub)
+    cleaned = push_notify.clean_subscription(sub)
+    if cleaned is None:
+        return jsonify(success=False, message="That isn't a push service this island can use"), 400
+    push_notify.subscribe(gid, pid, cleaned)
     return jsonify(success=True, message="You'll hear the conch from anywhere")
 
 @app.route('/api/push/unsubscribe', methods=['POST'])
@@ -5118,7 +5425,8 @@ def handle_unhandled_exception(e):
         return jsonify(success=False, message=f"{e.code} {e.name}"), e.code
 
     logger.error(f"Unhandled Exception: {e}", exc_info=True)
-    return jsonify(success=False, message=f"An internal server error occurred: {str(e)}"), 500
+    # The details are in the log; a client gets no stack internals.
+    return jsonify(success=False, message="An internal server error occurred"), 500
 
 
 # ── Computer players ─────────────────────────────────────────────────────────
@@ -5126,11 +5434,44 @@ def handle_unhandled_exception(e):
 # everything here tolerates bot_runner being None so test imports are unaffected.
 bot_runner = None
 
-def _bot_broadcast(gid, action):
-    """Bots act outside any request context — push fresh state to the room."""
+def _bot_broadcast(gid, action, kwargs=None, result=None, narrator_before=None):
+    """Bots act outside any request context — push fresh state to the room.
+
+    With the action's arguments and the before-snapshot, the narrator hears a
+    bot's move the way it hears a phone's. It used to hear nothing: a council
+    a bot led (most councils at a bot-heavy table) announced no elimination,
+    and bot card plays, votes and idols were silent.
+    """
     _flush_steal_alerts(gid)
     game_data = game_state.get_game_state(gid) or {}
     socketio.emit('state_update', game_data, to=gid)
+    if narrator_before is not None:
+        try:
+            request_data = dict(kwargs or {}, gameId=gid)
+            _emit_narrator_events(gid, action, request_data, narrator_before,
+                                  game_state.games.get(gid, {}), result)
+        except Exception:
+            logger.exception(f"Bot narration failed for {gid}")
+
+
+def _sweep_and_broadcast_windows():
+    """Expired reactive windows resolve on the heartbeat, for every game.
+
+    The read-path sweep resolved them for whichever phone polled next, and
+    only that phone saw it — the rest of the table waited on its own poll.
+    """
+    for gid, game in list(game_state.games.items()):
+        if not any(game.get(k) for k in ("pending_theft", "pending_discards",
+                                         "pending_nullifier")):
+            continue
+        try:
+            if game_state.sweep_expired_windows(gid):
+                _flush_steal_alerts(gid)
+                socketio.emit('state_update', game_state.get_game_state(gid) or {}, to=gid)
+                if bot_runner:
+                    bot_runner.poke(gid)
+        except Exception:
+            logger.exception(f"Window sweep failed for {gid}")
 
 def _bot_spawn_later(delay, fn, *args):
     def _run():
@@ -5144,9 +5485,13 @@ def _bot_heartbeat_loop():
     while True:
         socketio.sleep(2)
         try:
+            _sweep_and_broadcast_windows()
+        except Exception:
+            logger.exception("Window sweep error")
+        try:
             bot_runner.heartbeat()
-        except Exception as e:
-            logger.error(f"Bot heartbeat error: {e}")
+        except Exception:
+            logger.exception("Bot heartbeat error")
 
 
 if __name__=='__main__':
@@ -5184,7 +5529,7 @@ if __name__=='__main__':
         print("🏝️  Survivor Voting Server")
         print("="*50)
         print(f"🌐 Server starting on: http://{IP}:{port}")
-        print(f"📱 Find your device's Wi-Fi IP in Settings to connect.")
+        print("📱 Find your device's Wi-Fi IP in Settings to connect.")
         print(f"🔧 Debug mode: {app.debug}")
         print("="*50)
         
@@ -5192,7 +5537,9 @@ if __name__=='__main__':
         
         socketio.run(
             app,
-            host='0.0.0.0',
+            # HOST=127.0.0.1 when only the tunnel should reach the server; the
+            # default stays every interface so LAN play keeps working.
+            host=os.environ.get('HOST', '0.0.0.0'),
             port=port,
             debug=False,
             use_reloader=False,

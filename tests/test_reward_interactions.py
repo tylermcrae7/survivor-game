@@ -365,8 +365,9 @@ class TestSpyShack(InteractionTestBase):
         self.give_card(self.me, "the_spy_shack")
 
         result = self.play(self.me, "the_spy_shack", targetId=victim, takeIndex=vote_index)
-        self.assertTrue(result["success"], result.get("message"))
+        self.assertFalse(result["success"])
         self.assertIn("Vote Card", result["message"])
+        self.assertIn("the_spy_shack", [c["type"] for c in self.hand(self.me)])
 
         self.assertEqual(self.game["players"][victim]["voteCards"], victim_votes_before)
         self.assertEqual(self.game["players"][self.me]["voteCards"], my_votes_before)

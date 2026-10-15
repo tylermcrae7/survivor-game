@@ -115,7 +115,13 @@ def api(path, body=None, method=None):
 
 def state(gid):
     _, s = api(f"/api/game/{gid}/state", method="GET")
-    return s if isinstance(s, dict) else {}
+    s = s if isinstance(s, dict) else {}
+    # The public state sends the Draw Pile face down; a server started with
+    # SURVIVOR_TEST_HOOKS=1 shows it face up for the composition checks.
+    dst, deck = api(f"/api/test/deck/{gid}", method="GET")
+    if dst == 200 and isinstance(deck, dict) and "deck" in deck:
+        s["deck"] = deck["deck"]
+    return s
 
 
 

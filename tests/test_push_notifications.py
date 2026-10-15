@@ -163,6 +163,45 @@ class TestSendTriggers(PushTestBase):
         self.assertTrue(result is None or result.get("success", True) is not False)
 
 
+
+class TestRealSigningAndEndpoints(PushTestBase):
+    """The rest of this file replaces _webpush, which is how a PEM key that
+    pywebpush could never parse shipped with every send failing."""
+
+    def test_the_stored_key_signs_a_real_vapid_header(self):
+        if not push_notify.AVAILABLE:
+            self.skipTest("pywebpush not installed")
+        from py_vapid import Vapid
+        keys = push_notify.get_keys()
+        self.assertTrue(keys["private"].startswith("-----BEGIN"))
+        # What shipped: the PEM string straight into pywebpush's parser
+        with self.assertRaises(Exception):
+            Vapid.from_string(private_key=keys["private"])
+        signer = push_notify._vapid_key(keys["private"])
+        headers = signer.sign({"sub": "mailto:test@example.com",
+                               "aud": "https://fcm.googleapis.com"})
+        self.assertIn("Authorization", headers)
+
+    def test_only_real_push_services_are_reachable(self):
+        ok = {"endpoint": "https://web.push.apple.com/abc", "keys": {"p256dh": "x", "auth": "y"}}
+        self.assertEqual(push_notify.clean_subscription(ok), ok)
+        for endpoint in ("http://fcm.googleapis.com/x",          # not https
+                         "https://127.0.0.1:8080/admin",         # the Mac itself
+                         "https://fcm.googleapis.com.evil.example/x",
+                         "https://example.com/push"):
+            sub = dict(ok, endpoint=endpoint)
+            self.assertIsNone(push_notify.clean_subscription(sub), endpoint)
+        bloated = dict(ok, keys={"p256dh": "x" * 5000, "auth": "y"})
+        self.assertIsNone(push_notify.clean_subscription(bloated))
+        extra = dict(ok, junk="z" * 100)
+        self.assertNotIn("junk", push_notify.clean_subscription(extra))
+
+    def test_subscriptions_for_gone_games_are_pruned(self):
+        push_notify.subscribe("live", "p1", FAKE_SUB)
+        push_notify.subscribe("gone", "p2", FAKE_SUB)
+        self.assertEqual(push_notify.prune(["live"]), 1)
+        self.assertEqual(list(json.load(open(push_notify.SUBS_FILE))), ["live:p1"])
+
 if __name__ == '__main__':
     print("🔔 Testing turn notifications (Web Push)")
     print("=" * 60)

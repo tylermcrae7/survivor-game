@@ -30,8 +30,7 @@ convention as the Rocks challenge engine).
 import logging
 
 from rules_engine import request_take, takeable_indices
-import random
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +231,7 @@ class InteractionEngine:
             givers = [p for p in (a, b)
                       if takeable_indices(game["players"][p].get("hand"))]
             if not givers:
-                return self._finish(game, it, f"A tie — but neither player has a card to swap.")
+                return self._finish(game, it, "A tie — but neither player has a card to swap.")
             it["phase"] = "give"
             it["giveReason"] = "swap"
             it["_gives"] = {}

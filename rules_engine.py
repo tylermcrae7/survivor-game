@@ -133,6 +133,17 @@ def takeable_indices(hand: Optional[List[Dict[str, Any]]]) -> List[int]:
 	return [i for i, card in enumerate(hand or []) if is_takeable(card)]
 
 
+def penalty_discardable_indices(hand: Optional[List[Dict[str, Any]]]) -> List[int]:
+	"""Indices a Sorry For You penalty may discard: never a mandatory ballot.
+
+	A GIVEN Goodwill Gamble is as much its holder's ballot as their Vote Card
+	(see SurvivorRulesEngine._is_ballot) — discarding it would cost them a vote
+	they are required to cast.
+	"""
+	return [i for i, card in enumerate(hand or [])
+	        if is_takeable(card) and not SurvivorRulesEngine._is_ballot(card)]
+
+
 def tribal_elimination_type(card: Optional[Dict[str, Any]]) -> str:
 	"""
 	How many players a Tribal Council Card sends home: "single" or "double".
@@ -812,6 +823,10 @@ class SurvivorRulesEngine:
 		"""
 		deck = list(action_deck)
 		tribal_cards = self._create_tribal_council_cards(player_count)
+		# _create_tribal_council_cards builds singles then doubles, and the
+		# insert below is positional — unshuffled, every game ran the same
+		# schedule (4 players: always single, single, double, double).
+		random.shuffle(tribal_cards)
 		tribal_count = len(tribal_cards)
 		if tribal_cards:
 			deck = self._insert_tribal_cards(deck, tribal_cards)
@@ -1129,6 +1144,10 @@ class SurvivorRulesEngine:
 				return False, f"{card.get('name', card.get('type'))} requires a valid target player"
 			if game["players"][target_id].get("isEliminated", False):
 				return False, "Cannot target eliminated players"
+			# Every targeted card is aimed at someone else — on yourself it
+			# either burns the card or (Goodwill Gamble) mints a second ballot.
+			if target_id == player_id:
+				return False, f"You can't play {card.get('name', card.get('type'))} on yourself — pick another player"
 
 		# Category-specific validation
 		category = card.get("category")
@@ -1138,13 +1157,6 @@ class SurvivorRulesEngine:
 			return self._validate_action_card_play(game, player_id, card, phase, params)
 		elif category == "vote":
 			return self._validate_vote_card_play(game, player_id, card, phase, params)
-		elif category == "tribal_advantage":
-			if card.get("type") == "control_the_vote":
-				blocked = self._control_the_vote_block_reason(
-					game, player_id, params.get("targetId"))
-				if blocked:
-					return False, blocked
-			return True, "Tribal advantage play is valid"
 		elif category == "challenge":
 			return self._validate_challenge_card_play(game, player_id, card, phase, params)
 		elif category == "tribal_council":
@@ -1263,9 +1275,16 @@ class SurvivorRulesEngine:
 		except ValueError:
 			return False, f"Invalid tribal phase: {target_phase}"
 			
+		# A repeat of the phase you're already in is a double tap, not a
+		# transition: re-running the initialisers below cleared every hasVoted
+		# mid-vote (a re-sent pass then overwrote a real ballot) and every
+		# immunityPlayed mid-idol-window (a second idol from the same player).
+		if current_phase == target_phase_enum:
+			return True, f"Already in {target_phase} phase"
+
 		# Check if transition is valid
 		valid_transitions = TRIBAL_PHASE_TRANSITIONS.get(current_phase, [])
-		if target_phase_enum not in valid_transitions and current_phase != target_phase_enum:
+		if target_phase_enum not in valid_transitions:
 			valid_next = [p.value for p in valid_transitions]
 			return False, f"Cannot advance from {current_phase_str} to {target_phase}. Valid next phases: {valid_next}"
 			
@@ -1376,28 +1395,32 @@ class SurvivorRulesEngine:
 			if game["players"][target_id].get("isEliminated"):
 				return {"success": False,
 				        "message": f"{name} cannot target an eliminated player"}
+			if target_id == player_id:
+				return {"success": False,
+				        "message": f"{name} must target another player"}
+
+		advantage_effects = {
+		"control_the_vote": lambda card: self._effect_control_the_vote(game, player_id, card, {"targetId": target_id}),
+		"goodwill_gamble": lambda card: self._effect_goodwill_gamble(game, player_id, card, {"targetId": target_id}),
+		"im_the_leader_now": lambda card: self._effect_im_the_leader_now(game, player_id, card, {}),
+		"steal_vote": lambda card: self._effect_steal_vote(game, player_id, card, {"targetId": target_id}),
+		"block_vote": lambda card: self._effect_block_vote(game, player_id, card, {"targetId": target_id}),
+		}
+
+		# Looked up before the pop: an idol or an action card sent down this
+		# route used to be discarded first and refused second.
+		effect_func = advantage_effects.get(advantage_type)
+		if not effect_func:
+			return {"success": False, "message": f"Unknown tribal advantage type: {advantage_type}"}
 
 		# Remove the card from hand; it lands on the Discard Pile
 		# (Goodwill Gamble instead moves to its recipient)
 		advantage_card = hand.pop(tribal_card_idx)
 		if advantage_type != "goodwill_gamble":
 			game.setdefault("discard", []).append(advantage_card)
-		
-		# Execute advantage effect
-		advantage_effects = {
-		"control_the_vote": lambda: self._effect_control_the_vote(game, player_id, advantage_card, {"targetId": target_id}),
-		"goodwill_gamble": lambda: self._effect_goodwill_gamble(game, player_id, advantage_card, {"targetId": target_id}),
-		"im_the_leader_now": lambda: self._effect_im_the_leader_now(game, player_id, advantage_card, {}),
-		"steal_vote": lambda: self._effect_steal_vote(game, player_id, advantage_card, {"targetId": target_id}),
-		"block_vote": lambda: self._effect_block_vote(game, player_id, advantage_card, {"targetId": target_id}),
-		}
-		
-		effect_func = advantage_effects.get(advantage_type)
-		if not effect_func:
-			return {"success": False, "message": f"Unknown tribal advantage type: {advantage_type}"}
-			
+
 		# Execute the effect
-		effect_result = effect_func()
+		effect_result = effect_func(advantage_card)
 
 		# Record the played advantage — this list is broadcast to the whole
 		# room (the "Advantages Played" history), so a secret effect (Steal A
@@ -1437,6 +1460,15 @@ class SurvivorRulesEngine:
 			target = game["players"][target_id]
 			if target.get("isEliminated", False):
 				return False, "Cannot target eliminated players"
+
+		# The iOS door (play_tribal_advantage) always ran this; the play_card
+		# door the web uses never reached it, so the card burned on a target
+		# with no Vote Card, or without one of your own to cast beside it.
+		if card_type == "control_the_vote":
+			blocked = self._control_the_vote_block_reason(
+				game, player_id, params.get("targetId"))
+			if blocked:
+				return False, blocked
 
 		# One give, ever. A GIVEN goodwill is its recipient's ballot — "they
 		# can use it to VOTE for any player they want" — never a re-giftable
@@ -1488,6 +1520,12 @@ class SurvivorRulesEngine:
 					return False, "Your alliance partner must be another player"
 				if victim_id in (player_id, ally_id):
 					return False, "Alliance partners can't steal from each other — pick a victim outside the alliance"
+				# requires_target is False for this card, so the generic
+				# eliminated-target check never saw these two.
+				if game["players"][ally_id].get("isEliminated"):
+					return False, "Your alliance partner has to still be in the game"
+				if game["players"][victim_id].get("isEliminated"):
+					return False, "Their camp stands empty — pick a victim still in the game"
 
 		# ── Card-specific parameter validation, BEFORE the card leaves the hand ──
 		# (Missing parameters used to surface only in the effect, after the card
@@ -1526,6 +1564,9 @@ class SurvivorRulesEngine:
 					return False, f"{target.get('name', 'That player')} has no cards to look at"
 				if not isinstance(take_index, int) or not 0 <= take_index < len(target_hand):
 					return False, "The Spy Shack requires choosing which card to take (takeIndex)"
+				if not is_takeable(target_hand[take_index]):
+					return False, ("A Vote Card can't be taken — choose another card, "
+					               "and your Spy Shack stays in hand")
 
 		elif card_type == "reward_challenge_do_or_die":
 			if params.get("targetId") == player_id:
@@ -1697,6 +1738,57 @@ class SurvivorRulesEngine:
 				break
 		return out
 
+	def elimination_ladder_split(
+		self,
+		game: Dict[str, Any],
+		vote_counts: Optional[Dict[str, int]] = None,
+		protected_players=None,
+		idol_players=None,
+		picks_needed: int = 1,
+		exclude=(),
+	) -> Tuple[List[str], List[str]]:
+		"""The ladder as (forced, choices).
+
+		``elimination_ladder`` returns every candidate up to the tier that can
+		supply the picks, which made all of them choices: with one non-immune
+		player and two idol players at a Double Elimination, the Leader could
+		send home both idol players and spare the one person the ladder says
+		must go first. A tier (or, among players with votes, a vote-count
+		group) that fits inside the picks still owed is forced; only the
+		first group that overflows is the Leader's to choose from.
+		"""
+		protected_players = set(protected_players or ())
+		idol_players = set(idol_players or ())
+		players = game.get("players", {})
+		counts = {pid: n for pid, n in (vote_counts or {}).items() if n > 0}
+
+		alive = [pid for pid, p in players.items() if not p.get("isEliminated", False)]
+		safe = protected_players | idol_players
+		non_immune = [pid for pid in alive if pid not in safe]
+
+		with_votes = [pid for pid in non_immune if counts.get(pid, 0) > 0]
+		groups = [
+			[pid for pid in with_votes if counts[pid] == n]
+			for n in sorted({counts[pid] for pid in with_votes}, reverse=True)
+		]
+		groups.append([pid for pid in non_immune if counts.get(pid, 0) == 0])
+		groups.append([pid for pid in alive if pid in safe])
+
+		forced: List[str] = []
+		remaining = picks_needed
+		for group in groups:
+			if remaining <= 0:
+				break
+			group = [pid for pid in group if pid not in exclude and pid not in forced]
+			if not group:
+				continue
+			if len(group) <= remaining:
+				forced.extend(group)
+				remaining -= len(group)
+			else:
+				return forced, group
+		return forced, []
+
 	def resolve_tribal_eliminations(
 		self,
 		game: Dict[str, Any],
@@ -1745,16 +1837,6 @@ class SurvivorRulesEngine:
 		if len(alive) <= 2:
 			needed = min(needed, max(0, len(alive) - 1))
 
-		def players_left_after(chosen) -> int:
-			left = 0
-			for pid in alive:
-				cards = players[pid].get("characterCards", 1)
-				if pid in chosen:
-					cards -= 1
-				if cards >= 1:
-					left += 1
-			return left
-
 		# Candidate tiers for the "unclear who is voted out" ladder. Immunity Idol
 		# players and the Necklace wearer are only chosen as a last resort.
 		safe = protected_players | idol_players
@@ -1763,12 +1845,6 @@ class SurvivorRulesEngine:
 			[pid for pid in non_immune if counts.get(pid, 0) > 0],
 			key=lambda pid: -counts[pid],
 		)
-
-		def ladder(picks_needed: int, exclude=()) -> List[str]:
-			return self.elimination_ladder(
-				game, counts, protected_players=protected_players,
-				idol_players=idol_players, picks_needed=picks_needed,
-				exclude=exclude)
 
 		# (The official 3-players-left rule is applied AFTER vote resolution, to
 		#  the players actually voted out — see the guard at the bottom. A
@@ -1792,14 +1868,16 @@ class SurvivorRulesEngine:
 
 		def unclear(picks_needed: int, already: List[str]) -> None:
 			"""Fill the result using the unclear-who-is-voted-out priority ladder."""
-			candidates = ladder(picks_needed, exclude=tuple(already))
-			result["eliminated"] = list(already)
-			if len(candidates) <= picks_needed:
-				result["eliminated"].extend(candidates)
+			forced, choices = self.elimination_ladder_split(
+				game, counts, protected_players=protected_players,
+				idol_players=idol_players, picks_needed=picks_needed,
+				exclude=tuple(already))
+			result["eliminated"] = list(already) + forced
+			if not choices:
 				result["reason"] = "Unclear who is voted out — only enough candidates for a forced outcome"
 			else:
 				result["tieBreakNeeded"] = True
-				result["tiedPlayers"] = candidates
+				result["tiedPlayers"] = choices
 				result["reason"] = "Unclear who is voted out — Council Leader must choose"
 
 		if not with_votes:
@@ -1946,9 +2024,9 @@ class SurvivorRulesEngine:
 			# (see sync_vote_counters), so there is no counter to zero out here.
 			player.pop("mustUseExtraVotes", None)
 
-			# Reset camp raid markers
-			player.pop("campRaidedBy", None)
-			
+			# campRaidedBy deliberately survives: Camp Raid takes "the next card
+			# they draw", and a council that lands before that draw (the raider's
+			# own end-of-turn draw is often the Tribal card) used to erase it.
 
 		# Reset any global tribal flags. The real keys are snake_case — this
 		# line said "pendingTheft" and so had never removed anything in its
@@ -1956,7 +2034,9 @@ class SurvivorRulesEngine:
 		# blocking every turn after it, with no UI left to resolve it.
 		game.pop("tribalInterrupted", None)
 		theft = game.pop("pending_theft", None)
-		if theft and theft.get("_resume"):
+		if theft and (theft.get("_resume") or {}).get("kind") == "vote_card":
+			logger.warning("Dropped a Control The Vote take the council outlived")
+		elif theft and theft.get("_resume"):
 			# The council ended while a Sorry For You window hung open.
 			# The take was already won — resume it rather than letting
 			# the reward die with the phase.
@@ -2053,7 +2133,11 @@ class SurvivorRulesEngine:
 			
 		player = game["players"][player_id]
 		target = game["players"][target_id]
-		
+
+		# A fresh idol is fresh protection: the reveal ignores protection while
+		# idolNullified is set, so a second idol on a nullified player was
+		# consumed for nothing.
+		target.pop("idolNullified", None)
 		target["immunityIdolProtection"] = True
 		
 		if target_id == player_id:
@@ -2117,7 +2201,7 @@ class SurvivorRulesEngine:
 		for tid in thief_ids:
 			thief = game["players"][tid]
 			hand = thief.get("hand") or []
-			discardable = takeable_indices(hand)
+			discardable = penalty_discardable_indices(hand)
 			if len(discardable) > 1:
 				awaiting.append(tid)
 			elif discardable:
@@ -2125,7 +2209,8 @@ class SurvivorRulesEngine:
 				game.setdefault("discard", []).append(discarded)
 				lines.append(f"{thief['name']} discarded {discarded.get('name', 'a card')}")
 			elif hand:
-				lines.append(f"{thief['name']} holds only their Vote Card — nothing to discard")
+				held = "Vote Card" if all(c.get("type") == "vote" for c in hand) else "ballots"
+				lines.append(f"{thief['name']} holds only their {held} — nothing to discard")
 			else:
 				lines.append(f"{thief['name']} had nothing to discard")
 
@@ -2456,18 +2541,6 @@ class SurvivorRulesEngine:
 			stolen_card_dicts.append(stolen_card)
 
 		thief["hasStolen"] = True
-
-		# Check for Camp Raid effect - steal extra card at end of turn
-		if target.get("campRaidedBy") == thief_id:
-			target["campRaidedBy"] = None  # Use up the camp raid
-			reachable = takeable_indices(target.get("hand"))
-			if reachable:
-				extra_stolen = target["hand"].pop(random.choice(reachable))
-				thief["hand"].append(extra_stolen)
-				stolen_cards.append(f"(+{extra_stolen.get('type', 'unknown')} from Camp Raid)")
-				# The synthetic string above is the public/HTTP shape; the
-				# private alert names it like any other real card.
-				stolen_card_dicts.append(extra_stolen)
 
 		_record_steal_alert(game, thief_id, target_id, len(stolen_cards), cards=stolen_card_dicts)
 		logger.info(f"Player {thief_id} stole {len(stolen_cards)} cards from {target_id}")
