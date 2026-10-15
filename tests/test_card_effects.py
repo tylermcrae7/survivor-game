@@ -748,9 +748,11 @@ class TestVoteCardIsNotStealable(CardEffectTestBase):
         self.hand(asker)[:] = [{"type": "knowledge_is_power"}]
         self.hand(victim)[:] = [{"type": "vote"}]
 
+        # An illegal demand is refused while the card is still in hand (c9274d6):
+        # it never resolves, so it can't be the gamble that spends the card.
         result = self.play(asker, "knowledge_is_power", targetId=victim, cardType="vote")
-        self.assertTrue(result["success"], result.get("message"))
-        self.assertNotIn("vote", self.hand_types(asker))
+        self.assertFalse(result["success"])
+        self.assertEqual(self.hand_types(asker), ["knowledge_is_power"])
         self.assertEqual(self.hand_types(victim), ["vote"])
 
     def test_random_take_effects_never_reach_the_vote_card(self):
